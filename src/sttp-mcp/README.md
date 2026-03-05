@@ -4,6 +4,8 @@
 
 **Spatio-Temporal Transfer Protocol (STTP)** is a typed intermediate representation that encodes conversational state into a compressed, confidence-weighted structure any model can reconstruct. This is the MCP server that exposes that capability as tools.
 
+Licensed under Apache-2.0. See [LICENSE](../../LICENSE).
+
 ---
 
 ## The Problem

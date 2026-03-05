@@ -4,13 +4,15 @@
 
 KeryxInstrumenta is a collection of standalone instruments built on protocols designed for persistent, stateful AI communication. Each tool is independent, production-ready, and interoperable with any model or architecture.
 
+Licensed under Apache-2.0. See [LICENSE](./LICENSE).
+
 ---
 
 ## Instruments
 
 | Instrument | Status | Description |
 |---|---|---|
-| [sttp-mcp](./sttp-mcp) | `active` | MCP server for STTP context persistence, retrieval, and session calibration |
+| [sttp-mcp](./src/sttp-mcp) | `active` | MCP server for STTP context persistence, retrieval, and session calibration |
 
 *More instruments coming as the ecosystem grows.*
 

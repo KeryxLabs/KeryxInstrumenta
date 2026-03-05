@@ -23,6 +23,9 @@
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageId>SttpMcp</PackageId>
     <PackageVersion>0.1.0-beta</PackageVersion>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/KeryxLabs/KeryxInstrumenta</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/KeryxLabs/KeryxInstrumenta/tree/main/src/sttp-mcp</PackageProjectUrl>
     <PackageTags>AI; MCP; server; stdio</PackageTags>
     <Description>Spatio-Temporal Transfer Protocol (STTP) is a typed intermediate representation
       that encodes conversational state into a compressed, confidence-weighted structure any model
