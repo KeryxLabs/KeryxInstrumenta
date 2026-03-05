@@ -131,13 +131,49 @@ Arguments:
 ## Getting Started
 
 ```bash
-# coming soon
+# 1) Build the image
+docker build -t sttp-mcp:local .
+
+# 2) Run over stdio (for quick local verification)
+docker run --rm -i -v "$PWD/data:/data" sttp-mcp:local
 ```
 
 Requirements:
-- .NET 9
+- Docker (recommended), or .NET 10 SDK for local builds
 - SurrealDB (embedded, no separate server required)
 - Any MCP-compatible client
+
+### MCP client configuration (Docker)
+
+If your MCP client supports command-based servers, run STTP through Docker so users don't need a local .NET runtime:
+
+```json
+{
+    "mcpServers": {
+        "sttp-mcp": {
+            "command": "docker",
+            "args": [
+                "run",
+                "--rm",
+                "-i",
+                "-v",
+                "/absolute/path/to/sttp-data:/data",
+                "sttp-mcp:local"
+            ]
+        }
+    }
+}
+```
+
+### Local .NET run (without Docker)
+
+```bash
+dotnet restore
+dotnet build
+dotnet run --project ./sttp-mcp.csproj
+```
+
+By default, embedded storage resolves under `STTP_MCP_DATA_ROOT` (defaults to `~/.sttp-mcp`).
 
 ---
 

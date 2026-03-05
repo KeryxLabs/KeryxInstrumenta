@@ -1,0 +1,11 @@
+.git
+.github
+.vscode
+bin
+obj
+data
+docs/example_data
+*.user
+*.suo
+*.swp
+*.tmp
