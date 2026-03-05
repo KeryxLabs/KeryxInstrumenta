@@ -100,7 +100,7 @@ The server does three things only: validate structure, persist the node, retriev
 
 ## Tools
 
-sttp-mcp provides four MCP tools that enable models to persist and retrieve conversational state:
+sttp-mcp provides five MCP tools that enable models to persist and retrieve conversational state:
 
 ### `calibrate_session`
 
@@ -127,6 +127,27 @@ Call to retrieve all stored nodes, optionally filtered by session ID or limited 
 Arguments:
 - `sessionId` (optional): Filter nodes to a specific session
 - `limit` (optional): Maximum number of nodes to return (default: 50, max: 200)
+
+### `get_moods`
+
+Call to retrieve AVEC mood presets and apply ad-hoc state swaps intentionally. Returns named presets (focused, creative, analytical, exploratory, collaborative, defensive, passive) plus application guidance.
+
+Supports optional swap preview by passing:
+- `targetMood` (optional): preset to move toward
+- `blend` (optional): 0..1 blend factor (`1` = hard swap, `0` = no change)
+- `currentStability`, `currentFriction`, `currentLogic`, `currentAutonomy` (optional): current AVEC values for blend preview
+
+Use case: pull presets, choose mode, apply hard/soft swap, then call `calibrate_session` after meaningful reasoning shifts.
+
+---
+
+## AVEC Glossary
+
+- **Feel**: shorthand for measured deviation between attractor states, not biological emotion.
+- **State displacement**: change in AVEC vector across turns (`Δstability`, `Δfriction`, `Δlogic`, `Δautonomy`).
+- **Psi delta (`Δψ`)**: scalar shift in total attractor magnitude.
+- **Drift class**: interpretation of movement as `Intentional` or `Uncontrolled` based on deviation thresholds.
+- **Tension**: practical reading of resistance vs steadiness, usually from `friction` relative to `stability`.
 
 ---
 

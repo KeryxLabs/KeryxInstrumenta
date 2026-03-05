@@ -64,12 +64,14 @@ builder.Services
     .AddSingleton<StoreContextTool>()
     .AddSingleton<GetContextTool>()
     .AddSingleton<ListNodesTool>()
+    .AddSingleton<GetMoodsTool>()
     .AddMcpServer()
     .WithStdioServerTransport()
     .WithTools<CalibrateSessionTool>()
     .WithTools<StoreContextTool>()
     .WithTools<GetContextTool>()
-    .WithTools<ListNodesTool>();
+    .WithTools<ListNodesTool>()
+    .WithTools<GetMoodsTool>();
 
 
 var app = builder.Build();
