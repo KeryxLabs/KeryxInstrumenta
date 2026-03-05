@@ -41,6 +41,15 @@ The instruments in this repo are designed to work standalone. They are also the 
 
 ---
 
+## AVEC Glossary
+
+- **Feel**: shorthand for measured deviation between attractor states, not biological emotion.
+- **State displacement**: change in AVEC vector across turns (`Δstability`, `Δfriction`, `Δlogic`, `Δautonomy`).
+- **Psi delta (`Δψ`)**: scalar shift in total attractor magnitude.
+- **Drift class**: interpretation of movement as `Intentional` or `Uncontrolled` based on deviation thresholds.
+
+---
+
 ## Contributing
 
 KeryxInstrumenta is open source. Contributions welcome — new instruments, adapters, compression handlers, storage backends.
