@@ -165,9 +165,8 @@ sttp-mcp is the entry point. KeryxMemento is the full memory layer — hierarchi
 ## Protocol Specification
 
 Full STTP protocol specification, grammar decisions, and validation results:
-- [Protocol Spec](./docs/sttp-spec.md)
-- [Grammar Decisions](./docs/grammar-decisions.md)
-- [Validation Summary](./docs/validation-summary.md)
+- [Grammar Decisions](./docs/grammar_decisions.md)
+- [Validation Summary](./docs/validation_summary.md)
 
 ---
 
