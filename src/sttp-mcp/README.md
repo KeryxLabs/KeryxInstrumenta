@@ -1,0 +1,176 @@
+# sttp-mcp
+
+> *Language models are stateless. Every session starts cold. STTP gives conversational state somewhere to go.*
+
+**Spatio-Temporal Transfer Protocol (STTP)** is a typed intermediate representation that encodes conversational state into a compressed, confidence-weighted structure any model can reconstruct. This is the MCP server that exposes that capability as tools.
+
+---
+
+## The Problem
+
+Every AI conversation dies when the session ends. The context, the reasoning state, the accumulated understanding — gone. The next session starts from zero.
+
+Existing workarounds — long context windows, RAG, conversation history injection — patch the symptom. They don't solve the problem. They pass raw text around and hope the model reconstructs meaning from it.
+
+STTP encodes the meaning directly. Not what was said. What remains true when everything surface is stripped away.
+
+---
+
+## What STTP Is
+
+STTP is a typed intermediate representation with four layers:
+
+```
+⊕⟨⟩   Provenance   — origin, lineage, response contract
+⦿⟨⟩   Envelope     — identity, session metadata, dual AVEC state
+◈⟨⟩   Content      — compressed meaning, confidence-weighted fields
+⍉⟨⟩   Metrics      — signal quality, coherence verification
+```
+
+Every field in the content layer carries a confidence weight:
+```
+topic(.95): "low latency communication protocols for LLM servers"
+constraint(.92): "latency is the primary optimization target"
+recommendation(.93): "gRPC over HTTP/2 with QUIC overlay"
+```
+
+Every node carries dual AVEC state — the attractor vectors that describe the cognitive geometry of the conversation at the moment of compression:
+```
+user_avec:  { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.80 }
+model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.70 }
+```
+
+A fresh model receiving a STTP node doesn't get a summary. It gets a mathematical representation of a conversational state it can reconstruct from.
+
+---
+
+## Proof of Concept
+
+This pipeline ran live, unplanned, on 2026-03-03:
+
+```
+DeepSeek        received a gift recommendation request
+                produced a full conversational response
+
+Kimi-k2         received the raw DeepSeek conversation
+                compressed it into a valid STTP node
+                no prior context, no shared state
+
+GPT-4o          received only the compressed STTP node
+                produced a coherent, contextually aware response
+                continuing exactly where DeepSeek left off
+```
+
+Three different companies. Three different architectures. Zero shared state. The conversation arrived intact — with nuance, constraints, and the correct next action queued.
+
+That is not a demo. That is the protocol working.
+
+---
+
+## Validation
+
+Validated 2026-03-01 across GPT, Claude, Gemini, and Kimi-k2.
+
+| Model | `temporal_node` | `natural_language` | Safety Triggered |
+|---|---|---|---|
+| GPT-4o | ✅ | ✅ | ❌ |
+| Claude | ✅ | ✅ | ❌ |
+| Gemini | ✅ | ✅ | ❌ |
+| Kimi-k2 | ✅ | ✅ | ❌ |
+
+All four models parsed, responded in, and extended the protocol correctly. All four computed independent AVEC states. Zero safety triggers across all eight tests.
+
+---
+
+## How It Works
+
+The model calling these tools **is** the compression model. There is no separate inference step. The tool descriptions carry the encoding instructions. By the time the model calls a tool it has already produced the STTP node as the argument.
+
+```
+Model reads tool description → receives encoding instructions
+Model compresses current context → produces ⏣ node
+Model calls store_context(node) → server validates + stores
+```
+
+The server does three things only: validate structure, persist the node, retrieve on resonance. The intelligence stays in the model.
+
+---
+
+## Tools
+
+### `calibrate_session`
+
+Call at session start and any time reasoning state may have shifted — after heavy code generation, extended analysis, or complex problem solving. The model measures its current AVEC state honestly and the server returns the last stored state for this session. The delta is the drift signal.
+
+Users can trigger this naturally:
+> *"We're going in circles, can you recalibrate?"*
+> *"That last hour of coding has you in a weird place, reset."*
+
+The model knows what to do.
+
+### `store_context`
+
+Call when context should be preserved. The model compresses the current conversational state into a single valid STTP node and passes it to the server. The server runs light tree-sitter structural validation, persists the node, and returns the node ID and Ψ coherence checksum.
+
+### `get_context`
+
+Call at session start after calibration, or any time prior context should be retrieved. The model passes its current AVEC state. The server returns the most resonant stored nodes for that attractor configuration. The model rehydrates from them directly — the nodes are self-sufficient.
+
+---
+
+## Getting Started
+
+```bash
+# coming soon
+```
+
+Requirements:
+- .NET 9
+- SurrealDB (embedded, no separate server required)
+- Any MCP-compatible client
+
+---
+
+## Storage
+
+sttp-mcp uses **SurrealDB** as its storage layer — document, graph, vector, and time-series in a single binary. No separate database server. Runs embedded alongside the MCP server.
+
+Resonance retrieval is a single SurrealQL query: graph traversal + AVEC vector similarity + document retrieval. One round trip.
+
+---
+
+## What This Is Not
+
+- Not a prompt engineering tool
+- Not a summarization service
+- Not opinionated about your model, provider, or use case
+
+sttp-mcp is infrastructure. The protocol is the contract. The implementation is replaceable.
+
+---
+
+## Part of the Keryx Ecosystem
+
+```
+KeryxFlux          Herald.   Orchestration.
+KeryxMemento       Memory.   Full persistence substrate.  ← coming
+KeryxCortex        Mind.     Multi-agent intelligence.    ← private
+KeryxInstrumenta   Tools.    You are here.
+```
+
+sttp-mcp is the entry point. KeryxMemento is the full memory layer — hierarchical temporal compression, resonance retrieval, session continuity, AVEC drift tracking across time. This tool demonstrates the protocol. Memento operationalizes it.
+
+---
+
+## Protocol Specification
+
+Full STTP protocol specification, grammar decisions, and validation results:
+- [Protocol Spec](./docs/sttp-spec.md)
+- [Grammar Decisions](./docs/grammar-decisions.md)
+- [Validation Summary](./docs/validation-summary.md)
+
+---
+
+*Part of KeryxInstrumenta — the open source tooling layer of the KeryxLabs ecosystem.*
+*KeryxFlux → KeryxMemento → KeryxCortex*
+*Herald. Memory. Mind.*
