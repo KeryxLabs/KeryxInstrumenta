@@ -10,7 +10,7 @@ public record SttpNode
     public string? ParentNodeId { get; init; }
     public required AvecState UserAvec { get; init; }
     public required AvecState ModelAvec { get; init; }
-    public required AvecState CompressionAvec { get; init; }
+    public AvecState? CompressionAvec { get; init; }
     public required float Rho { get; init; }
     public required float Kappa { get; init; }
     public required float Psi { get; init; }           // ⍉ compiler checksum

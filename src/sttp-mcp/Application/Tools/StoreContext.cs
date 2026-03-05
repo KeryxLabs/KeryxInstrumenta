@@ -3,10 +3,11 @@ using SttpMcp.Domain.Models;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 using SttpMcp.Parsing;
+using Microsoft.Extensions.Logging;
 
 namespace SttpMcp.Application.Tools;
 
-public sealed class StoreContextTool(INodeStore store, INodeValidator validator)
+public sealed class StoreContextTool(INodeStore store, INodeValidator validator, ILogger<StoreContextTool> logger)
 {
     private readonly SttpNodeParser _parser = new();
     
@@ -77,14 +78,36 @@ public sealed class StoreContextTool(INodeStore store, INodeValidator validator)
                 ValidationError = $"ParseFailure: {parseResult.Error}"
             };
         var parsed = parseResult.Node!;
-        var nodeId = await store.StoreAsync(parsed, ct);
-
-        return new StoreResult
+        
+        // Debug logging
+        logger.LogInformation("Parsed node - UserAvec.Psi: {UserPsi}, ModelAvec.Psi: {ModelPsi}, CompressionAvec.Psi: {CompPsi}",
+            parsed.UserAvec.Psi, parsed.ModelAvec.Psi, parsed.CompressionAvec?.Psi);
+        logger.LogInformation("CompressionAvec: S={S}, F={F}, L={L}, A={A}",
+            parsed.CompressionAvec?.Stability, parsed.CompressionAvec?.Friction, 
+            parsed.CompressionAvec?.Logic, parsed.CompressionAvec?.Autonomy);
+        
+        try
         {
-            NodeId = nodeId,
-            Psi = parsed.Psi,
-            Valid = true
-        };
+            var nodeId = await store.StoreAsync(parsed, ct);
+
+            return new StoreResult
+            {
+                NodeId = nodeId,
+                Psi = parsed.Psi,
+                Valid = true
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Store operation failed");
+            return new StoreResult
+            {
+                NodeId = string.Empty,
+                Psi = 0f,
+                Valid = false,
+                ValidationError = $"StoreFailure: {ex.Message}"
+            };
+        }
     }
 
     // minimal parser — extracts envelope fields from raw ⏣ text

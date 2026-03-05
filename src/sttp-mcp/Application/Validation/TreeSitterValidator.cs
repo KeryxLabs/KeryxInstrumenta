@@ -68,7 +68,7 @@ public sealed class TreeSitterValidator : INodeValidator
     public bool VerifyPsi(SttpNode node)
     {
         // Ψ = Σ(V_a) across compression_avec dimensions
-        var computed = node.CompressionAvec.Psi;
+        var computed = node.CompressionAvec?.Psi ?? 0.0f;
         var stored = node.Psi;
         // allow small float tolerance
         return Math.Abs(computed - stored) < 0.01f;

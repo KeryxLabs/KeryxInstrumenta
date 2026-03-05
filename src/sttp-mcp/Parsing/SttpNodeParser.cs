@@ -32,10 +32,10 @@ public sealed class SttpNodeParser
         RegexOptions.Compiled | RegexOptions.Singleline);
 
     // ⍉ metrics
-    private static readonly Regex RhoRx   = new(@"rho:\s*(?<v>[\d.]+)",   RegexOptions.Compiled);
+    private static readonly Regex RhoRx = new(@"rho:\s*(?<v>[\d.]+)", RegexOptions.Compiled);
     private static readonly Regex KappaRx = new(@"kappa:\s*(?<v>[\d.]+)", RegexOptions.Compiled);
-    private static readonly Regex PsiRx   = new(
-        @"⍉⟨.*?psi:\s*(?<v>[\d.]+)", 
+    private static readonly Regex PsiRx = new(
+        @"⍉⟨.*?psi:\s*(?<v>[\d.]+)",
         RegexOptions.Compiled | RegexOptions.Singleline);
 
     // ─────────────────────────────────────────
@@ -44,6 +44,10 @@ public sealed class SttpNodeParser
     {
         try
         {
+            // Extract blocks first
+            var metricsBlock = ExtractMetricsBlock(raw);
+
+            // Parse AVECs from the main raw text (gets user_avec, model_avec)
             var avecMatches = AvecRx.Matches(raw);
             var avecMap = avecMatches
                 .Cast<Match>()
@@ -51,26 +55,31 @@ public sealed class SttpNodeParser
                     m => m.Groups["name"].Value,
                     m => ParseAvec(m));
 
-            // extract ⍉ block for psi — avoid matching psi inside AVEC blocks
-            var metricsBlock = ExtractMetricsBlock(raw);
+            // Parse compression_avec specifically from metrics block
+            var compressionAvecMatch = AvecRx.Match(metricsBlock);
+            if (compressionAvecMatch.Success &&
+                compressionAvecMatch.Groups["name"].Value == "compression_avec")
+            {
+                avecMap["compression_avec"] = ParseAvec(compressionAvecMatch);
+            }
 
             var node = new SttpNode
             {
-                Raw              = raw,
-                SessionId        = sessionId,
-                Tier             = TierRx.Match(raw).Groups["v"].Value,
-                Timestamp        = ParseTimestamp(raw),
+                Raw = raw,
+                SessionId = sessionId,
+                Tier = TierRx.Match(raw).Groups["v"].Value,
+                Timestamp = ParseTimestamp(raw),
                 CompressionDepth = ParseInt(CompressionDepthRx, raw),
-                ParentNodeId     = ParseParentNode(raw),
-                UserAvec         = avecMap.GetValueOrDefault("user_avec")
+                ParentNodeId = ParseParentNode(raw),
+                UserAvec = avecMap.GetValueOrDefault("user_avec")
                                    ?? AvecState.Zero,
-                ModelAvec        = avecMap.GetValueOrDefault("model_avec")
+                ModelAvec = avecMap.GetValueOrDefault("model_avec")
                                    ?? AvecState.Zero,
-                CompressionAvec  = avecMap.GetValueOrDefault("compression_avec")
+                CompressionAvec = avecMap.GetValueOrDefault("compression_avec")
                                    ?? AvecState.Zero,
-                Rho              = ParseFloat(RhoRx,   metricsBlock),
-                Kappa            = ParseFloat(KappaRx, metricsBlock),
-                Psi              = ParseFloat(PsiRx,   metricsBlock)
+                Rho = ParseFloat(RhoRx, metricsBlock),
+                Kappa = ParseFloat(KappaRx, metricsBlock),
+                Psi = ParseFloat(PsiRx, metricsBlock)
             };
 
             return ParseResult.Ok(node);
@@ -86,9 +95,9 @@ public sealed class SttpNodeParser
     private static AvecState ParseAvec(Match m) => new()
     {
         Stability = ParseGroupFloat(m, "stability"),
-        Friction  = ParseGroupFloat(m, "friction"),
-        Logic     = ParseGroupFloat(m, "logic"),
-        Autonomy  = ParseGroupFloat(m, "autonomy")
+        Friction = ParseGroupFloat(m, "friction"),
+        Logic = ParseGroupFloat(m, "logic"),
+        Autonomy = ParseGroupFloat(m, "autonomy")
         // psi is computed — never parsed from source
     };
 

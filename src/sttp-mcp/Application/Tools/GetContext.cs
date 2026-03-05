@@ -2,12 +2,13 @@ using SttpMcp.Domain.Contracts;
 using SttpMcp.Domain.Models;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
+using Microsoft.Extensions.Logging;
 
 
 
 namespace SttpMcp.Application.Tools;
 
-public sealed class GetContextTool(INodeStore store)
+public sealed class GetContextTool(INodeStore store, ILogger<GetContextTool> logger)
 {
     [McpServerTool(Name = "get_context"), Description("""
         Retrieve persisted context for this session.
@@ -32,36 +33,49 @@ public sealed class GetContextTool(INodeStore store)
         int limit = 5,
         CancellationToken ct = default)
     {
-        var current = new AvecState
+        try
         {
-            Stability = stability,
-            Friction = friction,
-            Logic = logic,
-            Autonomy = autonomy
-        };
+            var current = new AvecState
+            {
+                Stability = stability,
+                Friction = friction,
+                Logic = logic,
+                Autonomy = autonomy
+            };
 
-        var nodes = await store.GetByResonanceAsync(sessionId, current, limit, ct);
+            var nodes = await store.GetByResonanceAsync(sessionId, current, limit, ct);
 
-        if (nodes.Count == 0)
+            if (nodes.Count == 0)
+                return new RetrieveResult
+                {
+                    Nodes = [],
+                    Retrieved = 0,
+                    PsiRange = new PsiRange { Min = 0, Max = 0, Average = 0 }
+                };
+
+            var psiValues = nodes.Select(n => n.Psi).ToList();
+
+            return new RetrieveResult
+            {
+                Nodes = nodes,
+                Retrieved = nodes.Count,
+                PsiRange = new PsiRange
+                {
+                    Min = psiValues.Min(),
+                    Max = psiValues.Max(),
+                    Average = psiValues.Average()
+                }
+            };
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "GetContext failed");
             return new RetrieveResult
             {
                 Nodes = [],
                 Retrieved = 0,
                 PsiRange = new PsiRange { Min = 0, Max = 0, Average = 0 }
             };
-
-        var psiValues = nodes.Select(n => n.Psi).ToList();
-
-        return new RetrieveResult
-        {
-            Nodes = nodes,
-            Retrieved = nodes.Count,
-            PsiRange = new PsiRange
-            {
-                Min = psiValues.Min(),
-                Max = psiValues.Max(),
-                Average = psiValues.Average()
-            }
-        };
+        }
     }
 }
