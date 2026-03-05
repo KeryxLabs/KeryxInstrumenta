@@ -29,6 +29,25 @@ public sealed class InMemoryNodeStore : INodeStore
         return Task.FromResult<IReadOnlyList<SttpNode>>(result);
     }
 
+    public Task<IReadOnlyList<SttpNode>> ListNodesAsync(
+        int limit = 50,
+        string? sessionId = null,
+        CancellationToken ct = default)
+    {
+        var cappedLimit = Math.Clamp(limit, 1, 200);
+
+        var query = _nodes.AsEnumerable();
+        if (!string.IsNullOrWhiteSpace(sessionId))
+            query = query.Where(n => n.SessionId == sessionId);
+
+        var result = query
+            .OrderByDescending(n => n.Timestamp)
+            .Take(cappedLimit)
+            .ToList();
+
+        return Task.FromResult<IReadOnlyList<SttpNode>>(result);
+    }
+
     public Task<AvecState?> GetLastAvecAsync(
         string sessionId, CancellationToken ct = default)
     {

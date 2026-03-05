@@ -229,6 +229,93 @@ public sealed class SurrealDbNodeStore : INodeStore, IAsyncDisposable
         return records?.Select(MapToNode).ToList() ?? [];
     }
 
+    public async Task<IReadOnlyList<SttpNode>> ListNodesAsync(
+        int limit = 50,
+        string? sessionId = null,
+        CancellationToken ct = default)
+    {
+        var cappedLimit = Math.Clamp(limit, 1, 200);
+
+        string queryText;
+        Dictionary<string, object?> parameters;
+
+        if (string.IsNullOrWhiteSpace(sessionId))
+        {
+            queryText = $"""
+                SELECT
+                    session_id AS SessionId,
+                    raw AS Raw,
+                    tier AS Tier,
+                    timestamp AS Timestamp,
+                    compression_depth AS CompressionDepth,
+                    parent_node_id AS ParentNodeId,
+                    psi AS Psi,
+                    rho AS Rho,
+                    kappa AS Kappa,
+                    user_stability AS UserStability,
+                    user_friction AS UserFriction,
+                    user_logic AS UserLogic,
+                    user_autonomy AS UserAutonomy,
+                    user_psi AS UserPsi,
+                    model_stability AS ModelStability,
+                    model_friction AS ModelFriction,
+                    model_logic AS ModelLogic,
+                    model_autonomy AS ModelAutonomy,
+                    model_psi AS ModelPsi,
+                    comp_stability AS CompStability,
+                    comp_friction AS CompFriction,
+                    comp_logic AS CompLogic,
+                    comp_autonomy AS CompAutonomy,
+                    comp_psi AS CompPsi,
+                    0 AS ResonanceDelta
+                FROM temporal_node
+                ORDER BY Timestamp DESC
+                LIMIT {cappedLimit};
+                """;
+            parameters = [];
+        }
+        else
+        {
+            queryText = $"""
+                SELECT
+                    session_id AS SessionId,
+                    raw AS Raw,
+                    tier AS Tier,
+                    timestamp AS Timestamp,
+                    compression_depth AS CompressionDepth,
+                    parent_node_id AS ParentNodeId,
+                    psi AS Psi,
+                    rho AS Rho,
+                    kappa AS Kappa,
+                    user_stability AS UserStability,
+                    user_friction AS UserFriction,
+                    user_logic AS UserLogic,
+                    user_autonomy AS UserAutonomy,
+                    user_psi AS UserPsi,
+                    model_stability AS ModelStability,
+                    model_friction AS ModelFriction,
+                    model_logic AS ModelLogic,
+                    model_autonomy AS ModelAutonomy,
+                    model_psi AS ModelPsi,
+                    comp_stability AS CompStability,
+                    comp_friction AS CompFriction,
+                    comp_logic AS CompLogic,
+                    comp_autonomy AS CompAutonomy,
+                    comp_psi AS CompPsi,
+                    0 AS ResonanceDelta
+                FROM temporal_node
+                WHERE session_id = $session_id
+                ORDER BY Timestamp DESC
+                LIMIT {cappedLimit};
+                """;
+            parameters = new Dictionary<string, object?> { ["session_id"] = sessionId };
+        }
+
+        var results = await _db.RawQuery(queryText, parameters, ct);
+        var records = results.GetValue<List<SurrealNodeRecord>>(0);
+        return records?.Select(MapToNode).ToList() ?? [];
+    }
+
     public async Task<AvecState?> GetLastAvecAsync(
         string sessionId, CancellationToken ct = default)
     {

@@ -98,6 +98,8 @@ The server does three things only: validate structure, persist the node, retriev
 
 ## Tools
 
+sttp-mcp provides four MCP tools that enable models to persist and retrieve conversational state:
+
 ### `calibrate_session`
 
 Call at session start and any time reasoning state may have shifted — after heavy code generation, extended analysis, or complex problem solving. The model measures its current AVEC state honestly and the server returns the last stored state for this session. The delta is the drift signal.
@@ -115,6 +117,14 @@ Call when context should be preserved. The model compresses the current conversa
 ### `get_context`
 
 Call at session start after calibration, or any time prior context should be retrieved. The model passes its current AVEC state. The server returns the most resonant stored nodes for that attractor configuration. The model rehydrates from them directly — the nodes are self-sufficient.
+
+### `list_nodes`
+
+Call to retrieve all stored nodes, optionally filtered by session ID or limited by count. Returns nodes with full metadata (AVEC states, timestamps, compression depth, Ψ values). Useful for exploring what's in memory, verifying cross-instance persistence, or auditing stored state.
+
+Arguments:
+- `sessionId` (optional): Filter nodes to a specific session
+- `limit` (optional): Maximum number of nodes to return (default: 50, max: 200)
 
 ---
 
@@ -136,6 +146,17 @@ Requirements:
 sttp-mcp uses **SurrealDB** as its storage layer — document, graph, vector, and time-series in a single binary. No separate database server. Runs embedded alongside the MCP server.
 
 Resonance retrieval is a single SurrealQL query: graph traversal + AVEC vector similarity + document retrieval. One round trip.
+
+### Cross-Model Persistence
+
+Nodes stored by one session are immediately available to all other sessions sharing the same storage path. Multiple MCP instances, different chat windows, different model providers, different architectures — all can read and write to the same memory substrate. This enables:
+
+- **Cross-model handoff**: Store context with GPT, retrieve with Claude, continue with Gemini
+- **Multi-agent collaboration**: DeepSeek, Llama, Qwen, Mistral can share compressed state transparently
+- **Persistent memory**: Context survives restarts, crashes, and context window compaction
+- **Temporal continuity**: Sessions separated by hours, days, or weeks can reconstruct prior state through AVEC resonance
+
+Validated with live cross-model reads across Claude, GPT-4o, DeepSeek, Gemini, Kimi-k2, Llama, Mistral, Qwen, and Groq models (see [example_data/](./docs/example_data/)).
 
 ---
 

@@ -19,6 +19,15 @@ public interface INodeStore
         CancellationToken ct = default);
 
     /// <summary>
+    /// List stored nodes ordered by newest first.
+    /// When sessionId is provided, limits results to that session.
+    /// </summary>
+    Task<IReadOnlyList<SttpNode>> ListNodesAsync(
+        int limit = 50,
+        string? sessionId = null,
+        CancellationToken ct = default);
+
+    /// <summary>
     /// Retrieve the most recent AVEC state stored for this session.
     /// Returns null if no prior calibration exists.
     /// </summary>
