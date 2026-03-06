@@ -63,6 +63,76 @@ Full protocol docs: [sttp-mcp README](./src/sttp-mcp/README.md)
 
 ---
 
+## How to Use It
+
+Once the server is running and connected to your MCP client, here's the typical workflow:
+
+### 1. Start a session and calibrate
+
+Ask your model to calibrate at the start of any new session or after significant reasoning shifts:
+
+```
+"Can you calibrate this session?"
+```
+
+The model calls `calibrate_session` with:
+- `sessionId` (e.g., "project-kickoff-2026-03-06")
+- Current AVEC values (stability, friction, logic, autonomy)
+- `trigger` (usually "manual")
+
+The tool returns drift from the previous session state, so the model knows if it's continuing coherently or starting fresh.
+
+### 2. Store important context
+
+When you reach a meaningful checkpoint — completed analysis, design decision, key insight — have the model compress and store it:
+
+```
+"Store this conversation state for later retrieval."
+```
+
+The model compresses the current context into a STTP node and calls `store_context`. The server validates the structure and persists it with a unique node ID.
+
+### 3. Retrieve context in a new session
+
+Start a fresh chat, calibrate first, then pull relevant context:
+
+```
+"Retrieve context related to the project kickoff."
+```
+
+The model calls `get_context` with the session ID and its current AVEC state. The server returns the most resonant nodes based on attractor alignment — the model rehydrates directly from them.
+
+### 4. Explore stored memory
+
+Check what's in memory across all sessions:
+
+```
+"List all stored nodes."
+```
+
+Or filter by session:
+
+```
+"Show me nodes from the project-kickoff session."
+```
+
+The model calls `list_nodes` and presents the stored context with timestamps, sessions, and Ψ values.
+
+### 5. Apply reasoning mode shifts
+
+Need to switch reasoning posture? Pull AVEC mood presets:
+
+```
+"Show me available reasoning modes."
+"Switch to defensive mode and recalibrate."
+```
+
+The model calls `get_moods`, presents options (focused, creative, defensive, analytical, etc.), applies the swap, then recalibrates to measure the shift.
+
+---
+
+### Cross-Model Continuity Demo
+
 ### Gemini 3 -->  Claude Sonnet 4.5 --> GPT4o --> GPT5-mini
 [dwhatsapp-demo.webm](https://github.com/user-attachments/assets/9dc532f6-fecc-4df1-bf19-dc050b548b86)
 
