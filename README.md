@@ -63,6 +63,11 @@ Full protocol docs: [sttp-mcp README](./src/sttp-mcp/README.md)
 
 ---
 
+### Gemini 3 -->  Claude Sonnet 4.5 --> GPT4o --> GPT5-mini
+[dwhatsapp-demo.webm](https://github.com/user-attachments/assets/9dc532f6-fecc-4df1-bf19-dc050b548b86)
+
+
+
 ## Proof
 
 ### Multi-model validation (2026-03-01)
