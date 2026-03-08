@@ -29,10 +29,15 @@ public sealed class CalibrateSessionTool(INodeStore store)
         Large delta with no clear cause is uncontrolled — worth noting.
         """)]
     public async Task<CalibrationResult> CalibrateAsync(
+        [Description("Unique session identifier for calibration history lookup and storage.")]
         string sessionId,
+        [Description("Stability weighting (0.0 to 1.0). Use a decimal value.")]
         float stability,
+        [Description("Friction weighting (0.0 to 1.0). Use a decimal value.")]
         float friction,
+        [Description("Logic weighting (0.0 to 1.0). Use a decimal value.")]
         float logic,
+        [Description("Autonomy weighting (0.0 to 1.0). Use a decimal value.")]
         float autonomy,
         [Description("session_start | post_code | post_analysis | post_creative | manual")]
         string trigger,

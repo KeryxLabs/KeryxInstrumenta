@@ -36,15 +36,18 @@ public sealed class StoreContextTool(INodeStore store, INodeValidator validator,
         Nesting maximum 5 levels. No natural language. No meta-commentary.
         One valid ⏣ node. Nothing else resolves this state.
 
+                The protocol preamble inside ⊕ is mandatory, static, and versioned.
+                It is natural-language orientation text, not a key/value field.
+
         Schema:
           ⊕⟨ ⏣0{ trigger: scheduled|threshold|resonance|seed|manual,
-            response_format: temporal_node, origin_session: string,
+                        response_format: temporal_node|natural_language|hybrid, origin_session: string,
             compression_depth: int, parent_node: ref:⏣N | null,
             prime: { attractor_config: { stability, friction, logic, autonomy },
             context_summary: string, relevant_tier: raw|daily|weekly|monthly|quarterly|yearly,
             retrieval_budget: int } } ⟩
           ⦿⟨ ⏣0{ timestamp: ISO8601_UTC, tier: raw|daily|weekly|monthly|quarterly|yearly,
-            session_id: string,
+                        session_id: string, schema_version: string (optional),
             user_avec: { stability, friction, logic, autonomy, psi },
             model_avec: { stability, friction, logic, autonomy, psi } } ⟩
           ◈⟨ ⏣0{ field_name(.confidence): value } ⟩
@@ -54,6 +57,7 @@ public sealed class StoreContextTool(INodeStore store, INodeValidator validator,
     public async Task<StoreResult> StoreAsync(
         [Description("The complete valid ⏣ node you have compressed")]
         string node,
+        [Description("Session identifier to associate with the stored node.")]
         string sessionId,
         CancellationToken ct = default)
     {
