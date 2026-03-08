@@ -28,13 +28,13 @@ public sealed class GetMoodsTool
         string? targetMood = null,
         [Description("Blend amount for soft swap in [0,1]. 1 = full swap, 0 = no change. Default 1.")]
         float blend = 1f,
-        [Description("Current stability for swap preview.")]
+        [Description("Current stability for swap preview (0.0 to 1.0). Use a decimal value.")]
         float? currentStability = null,
-        [Description("Current friction for swap preview.")]
+        [Description("Current friction for swap preview (0.0 to 1.0). Use a decimal value.")]
         float? currentFriction = null,
-        [Description("Current logic for swap preview.")]
+        [Description("Current logic for swap preview (0.0 to 1.0). Use a decimal value.")]
         float? currentLogic = null,
-        [Description("Current autonomy for swap preview.")]
+        [Description("Current autonomy for swap preview (0.0 to 1.0). Use a decimal value.")]
         float? currentAutonomy = null)
     {
         var presets = BuildPresets();

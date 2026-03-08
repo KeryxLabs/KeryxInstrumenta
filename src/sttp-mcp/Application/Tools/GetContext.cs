@@ -24,10 +24,15 @@ public sealed class GetContextTool(INodeStore store, ILogger<GetContextTool> log
         are now — not where the session started.
         """)]
     public async Task<RetrieveResult> GetAsync(
+        [Description("Session identifier used to scope resonance retrieval.")]
         string sessionId,
+        [Description("Current stability weighting (0.0 to 1.0). Use a decimal value.")]
         float stability,
+        [Description("Current friction weighting (0.0 to 1.0). Use a decimal value.")]
         float friction,
+        [Description("Current logic weighting (0.0 to 1.0). Use a decimal value.")]
         float logic,
+        [Description("Current autonomy weighting (0.0 to 1.0). Use a decimal value.")]
         float autonomy,
         [Description("Maximum nodes to retrieve. Default 5.")]
         int limit = 5,
