@@ -51,10 +51,21 @@
   
   </ItemGroup>
 <ItemGroup>
-    <ProjectReference Include="/home/theelevators/surrealdb_repo/surrealdb.net/SurrealDb.Net/SurrealDb.Net.csproj " />
-    <ProjectReference Include="/home/theelevators/surrealdb_repo/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
-
+    <ProjectReference Include="../../_deps/surrealdb.net/SurrealDb.Net/SurrealDb.Net.csproj " />
+    <ProjectReference Include="../../_deps/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
 </ItemGroup>
 
-
+<!-- Native SurrealKv library from NuGet cache. The ProjectReference above
+     provides the patched C# code but doesn't build the Rust library.
+     Remove once the upstream PR merges and PackageReference is restored. -->
+<ItemGroup>
+  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-x64/native/libsurreal_surrealkv.so"
+           Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == ''"
+           CopyToOutputDirectory="PreserveNewest"
+           Link="libsurreal_surrealkv.so" />
+  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-arm64/native/libsurreal_surrealkv.so"
+           Condition="'$(RuntimeIdentifier)' == 'linux-arm64'"
+           CopyToOutputDirectory="PreserveNewest"
+           Link="libsurreal_surrealkv.so" />
+</ItemGroup>
 </Project>

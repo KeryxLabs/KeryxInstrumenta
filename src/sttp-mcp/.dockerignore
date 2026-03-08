@@ -4,6 +4,7 @@
 bin
 obj
 data
+publish
 docs/example_data
 *.user
 *.suo

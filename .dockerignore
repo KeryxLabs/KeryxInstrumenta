@@ -1,0 +1,13 @@
+.git
+.github
+.vscode
+src/sttp-mcp/bin
+src/sttp-mcp/obj
+src/sttp-mcp/data
+src/sttp-mcp/docs/example_data
+_deps/surrealdb.net/**/*.suo
+_deps/surrealdb.net/**/*.user
+_deps/surrealdb.net/**/bin
+_deps/surrealdb.net/**/obj
+*.swp
+*.tmp

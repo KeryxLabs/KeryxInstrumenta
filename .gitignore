@@ -484,3 +484,4 @@ $RECYCLE.BIN/
 #VS Code Settings
 .vscode/
 src/sttp-mcp/data
+_deps/

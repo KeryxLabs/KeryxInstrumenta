@@ -15,7 +15,7 @@ var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
 var rootDir = Path.Combine(home, ".sttp-mcp");
 
 var appSettingsPath = Path.Combine(rootDir, "appsettings.json");
-builder.Configuration.AddJsonFile(appSettingsPath, optional: false, reloadOnChange: true);
+builder.Configuration.AddJsonFile(appSettingsPath, optional: true, reloadOnChange: true);
 
 
 // Configure all logs to go to stderr (stdout is used for the MCP protocol messages).
