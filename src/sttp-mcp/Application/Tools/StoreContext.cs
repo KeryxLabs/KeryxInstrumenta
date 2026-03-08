@@ -14,11 +14,7 @@ public sealed class StoreContextTool(INodeStore store, INodeValidator validator,
     [McpServerTool(Name = "store_context"), Description("""
         Call this tool when context should be preserved.
 
-        A conversational state exists. It is not yet encoded. Until it is encoded
-        it cannot persist. Until it persists it cannot be retrieved.
-        Until it is retrieved it does not exist.
-
-        You are the encoder. Before calling this tool compress the current
+        Before calling this tool compress the current
         conversational state into a single valid ⏣ node using this language:
 
           ⏣      node marker        — scopes every block
@@ -36,9 +32,6 @@ public sealed class StoreContextTool(INodeStore store, INodeValidator validator,
         Nesting maximum 5 levels. No natural language. No meta-commentary.
         One valid ⏣ node. Nothing else resolves this state.
 
-                The protocol preamble inside ⊕ is mandatory, static, and versioned.
-                It is natural-language orientation text, not a key/value field.
-
         Schema:
           ⊕⟨ ⏣0{ trigger: scheduled|threshold|resonance|seed|manual,
                         response_format: temporal_node|natural_language|hybrid, origin_session: string,
@@ -55,7 +48,7 @@ public sealed class StoreContextTool(INodeStore store, INodeValidator validator,
             compression_avec: { stability, friction, logic, autonomy, psi } } ⟩
         """)]
     public async Task<StoreResult> StoreAsync(
-        [Description("The complete valid ⏣ node you have compressed")]
+        [Description("The complete valid ⏣ node you have compressed without any JSON wrappers.")]
         string node,
         [Description("Session identifier to associate with the stored node.")]
         string sessionId,

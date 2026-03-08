@@ -7,6 +7,7 @@ using SttpMcp.Domain.Models;
 using SttpMcp.Storage.SurrealDb.Models;
 using SurrealDb.Net;
 using Microsoft.Extensions.Logging;
+using SurrealDb.Net.Models.Response;
 
 namespace SttpMcp.Storage.SurrealDb;
 
@@ -24,7 +25,8 @@ public sealed class SurrealDbNodeStore : INodeStore, IAsyncDisposable
     // ── Schema bootstrap ─────────────────
     public async Task InitializeAsync(CancellationToken ct = default)
     {
-        await _db.RawQuery("""
+        var schema = @"
+            
             DEFINE TABLE IF NOT EXISTS temporal_node SCHEMAFULL;
             DEFINE FIELD IF NOT EXISTS session_id        ON temporal_node TYPE string;
             DEFINE FIELD IF NOT EXISTS raw               ON temporal_node TYPE string;
@@ -65,7 +67,18 @@ public sealed class SurrealDbNodeStore : INodeStore, IAsyncDisposable
                 ON temporal_node FIELDS session_id;
             DEFINE INDEX IF NOT EXISTS idx_cal_session
                 ON calibration FIELDS session_id;
-            """, cancellationToken: ct);
+            SELECT * FROM calibration LIMIT 0; 
+            ";
+        try
+        {
+            
+        SurrealDbResponse res = await _db.RawQuery( schema, null,ct);
+        }catch(Exception ex)
+        {
+            _logger.LogError(ex, "unabel to initizalize");
+        }
+
+
     }
 
     // ── INodeStore ────────────────────────
