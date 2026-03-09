@@ -66,7 +66,7 @@ docker run --rm -i -v "$PWD/data:/data" ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta
         "ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta",
         "--remote",
         "--remote-endpoint",
-        "ws://path:port/rpc",
+        "http://surreal_db_url:port",
         "--username",
         "user",
         "--password",
