@@ -32,6 +32,9 @@ docker build -t sttp-mcp:local .
 
 # Run over stdio
 docker run --rm -i -v "$PWD/data:/data" sttp-mcp:local
+
+#Run from global image
+docker run --rm -i -v "$PWD/data:/data" ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta
 ```
 
 ### Configure your MCP client
@@ -44,11 +47,36 @@ docker run --rm -i -v "$PWD/data:/data" sttp-mcp:local
             "args": [
                 "run", "--rm", "-i",
                 "-v", "/absolute/path/to/sttp-data:/data",
-                "sttp-mcp:local"
+                "ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta"
             ]
         }
     }
 }
+```
+```json
+{
+  "servers": {
+    "sttp-mcp": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "-i",
+        "--rm",
+        "ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta",
+        "--remote",
+        "--remote-endpoint",
+        "ws://path:port/rpc",
+        "--username",
+        "user",
+        "--password",
+        "pass"
+      ]
+    }
+  },
+  "inputs": []
+}
+
 ```
 
 ### Tools Available
