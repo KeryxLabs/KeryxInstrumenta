@@ -7,6 +7,7 @@ using AdaptiveCodecContextEngine.Models.Lsp;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Surreal;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 var builder = Host.CreateApplicationBuilder(args);
 
@@ -69,12 +70,13 @@ builder.Services
 .AddSingleton<MetricsCollector>();
 
 builder.Services
-.AddSingleton(_ => new LspClient(Console.OpenStandardInput()))
+.AddSingleton(sp => new LspClient(Console.OpenStandardInput(), sp.GetRequiredService<ILogger<LspClient>>()))
 .AddSingleton(sp =>
 {
     var acc = sp.GetRequiredService<IOptions<AccOptions>>().Value;
     var gitChannel = sp.GetRequiredService<Channel<GitEvent>>();
-    return new GitWatcher(acc.RepositoryPath, gitChannel);
+    var logger = sp.GetRequiredService<ILogger<GitWatcher>>();
+    return new GitWatcher(acc.RepositoryPath, gitChannel, logger);
 })
 .AddHostedService<AccHostedService>();
 

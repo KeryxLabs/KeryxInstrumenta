@@ -1,18 +1,21 @@
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Git;
 using LibGit2Sharp;
+using Microsoft.Extensions.Logging;
 
 public class GitWatcher
 {
     private readonly string _repoPath;
     private readonly Channel<GitEvent> _eventChannel;
     private readonly FileSystemWatcher _fsWatcher;
+    private readonly ILogger<GitWatcher> _logger;
     private Repository? _repo;
     
-    public GitWatcher(string repoPath, Channel<GitEvent> eventChannel)
+    public GitWatcher(string repoPath, Channel<GitEvent> eventChannel, ILogger<GitWatcher> logger)
     {
         _repoPath = repoPath;
         _eventChannel = eventChannel;
+        _logger = logger;
         _fsWatcher = new FileSystemWatcher(repoPath)
         {
             IncludeSubdirectories = true,
@@ -22,6 +25,7 @@ public class GitWatcher
     
     public async Task StartAsync(CancellationToken ct)
     {
+        _logger.LogInformation("GitWatcher starting for repo: {RepoPath}", _repoPath);
         _repo = new Repository(_repoPath);
         
         // Hook up file system events
@@ -35,6 +39,7 @@ public class GitWatcher
         // Initial index of entire repo
         await IndexRepository(ct);
         
+        _logger.LogInformation("GitWatcher watching for changes.");
         // Keep watching
         await Task.Delay(Timeout.Infinite, ct);
     }
@@ -44,6 +49,7 @@ public class GitWatcher
         // Filter by language extension
         if (!IsRelevantFile(e.FullPath)) return;
         
+        _logger.LogDebug("File changed: {FilePath}", e.FullPath);
         _eventChannel.Writer.TryWrite(new GitEvent
         {
             Type = GitEventType.Modified,
@@ -56,6 +62,7 @@ public class GitWatcher
     {
         if (!IsRelevantFile(e.FullPath)) return;
         
+        _logger.LogDebug("File renamed: {OldPath} -> {NewPath}", e.OldFullPath, e.FullPath);
         _eventChannel.Writer.TryWrite(new GitEvent
         {
             Type = GitEventType.Renamed,
@@ -67,11 +74,14 @@ public class GitWatcher
     
     private async Task IndexRepository(CancellationToken ct)
     {
+        _logger.LogInformation("Starting full repository index: {RepoPath}", _repoPath);
         // Walk all files in repo
         var files = Directory.EnumerateFiles(_repoPath, "*.*", SearchOption.AllDirectories)
             .Where(IsRelevantFile);
         
-        foreach (var file in files)
+        var fileList = files.ToList();
+        _logger.LogInformation("Indexing {Count} files from repository.", fileList.Count);
+        foreach (var file in fileList)
         {
             if (ct.IsCancellationRequested) break;
             

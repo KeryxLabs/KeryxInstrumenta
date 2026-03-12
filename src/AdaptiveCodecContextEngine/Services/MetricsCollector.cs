@@ -3,6 +3,7 @@ using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Git;
 using AdaptiveCodecContextEngine.Models.Lsp;
 using AdaptiveCodecContextEngine.Models.Surreal;
+using Microsoft.Extensions.Logging;
 public class MetricsCollector
 {
     private readonly Channel<LspMessage> _lspChannel;
@@ -14,6 +15,7 @@ public class MetricsCollector
     private readonly SurrealDbRepository _repository;
     private readonly LspReferenceTracker _referenceTracker;
     private readonly LspClient _lspClient; // New: for sending requests
+    private readonly ILogger<MetricsCollector> _logger;
 
     // Cache of symbols by file for quick lookup
     private readonly ConcurrentDictionary<string, List<DocumentSymbol>> _symbolCache = new();
@@ -21,27 +23,32 @@ public class MetricsCollector
     public MetricsCollector(
         GitWatcher gitWatcher,
         SurrealDbRepository repository,
-        LspClient lspClient)
+        LspClient lspClient,
+        LizardAnalyzer lizard,
+        ILogger<MetricsCollector> logger)
     {
         _lspChannel = Channel.CreateUnbounded<LspMessage>();
         _gitChannel = Channel.CreateUnbounded<GitEvent>();
         _updateChannel = Channel.CreateUnbounded<NodeUpdate>();
         _dependencyChannel = Channel.CreateUnbounded<DependencyEdge>();
-        _lizard = new LizardAnalyzer();
+        _lizard = lizard;
         _gitWatcher = gitWatcher;
         _repository = repository;
         _referenceTracker = new LspReferenceTracker();
         _lspClient = lspClient;
+        _logger = logger;
     }
 
     public async Task StartAsync(CancellationToken ct)
     {
+        _logger.LogInformation("MetricsCollector starting processing pipelines.");
         var lspTask = ProcessLspMessages(ct);
         var gitTask = ProcessGitEvents(ct);
         var updateTask = ProcessNodeUpdates(ct);
         var dependencyTask = ProcessDependencies(ct);
 
         await Task.WhenAll(lspTask, gitTask, updateTask, dependencyTask);
+        _logger.LogInformation("MetricsCollector pipelines stopped.");
     }
 
     private async Task ProcessLspMessages(CancellationToken ct)
@@ -84,6 +91,7 @@ public class MetricsCollector
         string fileUri,
         CancellationToken ct)
     {
+        _logger.LogDebug("Processing {Count} symbols from {FileUri}", symbols.Length, fileUri);
         // Cache symbols for this file
         _symbolCache[fileUri] = symbols.ToList();
 
@@ -298,6 +306,7 @@ public class MetricsCollector
 
             if (toNodeId != null)
             {
+                _logger.LogDebug("Creating dependency {From} -{Type}-> {To}", edge.FromNodeId, edge.RelationshipType, toNodeId);
                 await _repository.UpsertDependencyAsync(
                     edge.FromNodeId,
                     toNodeId,
@@ -435,6 +444,7 @@ public class MetricsCollector
             // Skip deleted files
             if (gitEvent.Type == GitEventType.Deleted) continue;
 
+            _logger.LogDebug("Processing git event {EventType} for {FilePath}", gitEvent.Type, gitEvent.FilePath);
             // Run lizard on the file
             var lizardResult = await _lizard.AnalyzeFileAsync(gitEvent.FilePath, ct);
 
@@ -478,6 +488,7 @@ public class MetricsCollector
     {
         await foreach (var update in _updateChannel.Reader.ReadAllAsync(ct))
         {
+            _logger.LogDebug("Upserting node {NodeId}", update.NodeId);
             // Upsert to SurrealDB - merges LSP + Lizard + Git data
             await _repository.UpsertNodeAsync(update);
         }

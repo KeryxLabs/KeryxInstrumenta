@@ -2,22 +2,26 @@ using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lsp;
 using AdaptiveCodecContextEngine.Models.Surreal;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using SurrealDb.Net;
 
 public class SurrealDbRepository
 {
     private readonly ISurrealDbClient _db;
     private readonly AvecCalculator _avecCalculator;
+    private readonly ILogger<SurrealDbRepository> _logger;
     private bool _schemaInitialized = false;
     
-    public SurrealDbRepository(ISurrealDbClient client, IConfiguration configuration)
+    public SurrealDbRepository(ISurrealDbClient client, IConfiguration configuration, ILogger<SurrealDbRepository> logger)
     {
         _db = client;
         _avecCalculator = new AvecCalculator(configuration.Get<AvecWeights>()!);
+        _logger = logger;
     }
     
     public async Task InitializeAsync()
     {
+        _logger.LogInformation("Initializing SurrealDB schema...");
         await _db.Use("acc", "nodes");
         
         if (!_schemaInitialized)
@@ -25,6 +29,7 @@ public class SurrealDbRepository
             await CreateSchema();
             await CreateEvents();
             _schemaInitialized = true;
+            _logger.LogInformation("SurrealDB schema initialized.");
         }
     }
     
@@ -216,6 +221,7 @@ public class SurrealDbRepository
         // Check if AVEC needs recalculation
         if (node != null)
         {
+            _logger.LogDebug("Upserted node {NodeId}", node.NodeId);
             await RecalculateAvecIfNeededAsync(node.NodeId);
         }
         
@@ -236,6 +242,8 @@ public class SurrealDbRepository
         var needsRecalc = avecData?.GetValueOrDefault("needs_recalc") as bool? ?? false;
         
         if (!needsRecalc) return;
+        
+        _logger.LogDebug("Recalculating AVEC for node {NodeId}", nodeId);
         
         // Fetch full node
         var nodeQuery = "SELECT * FROM node:⟨$node_id⟩";
@@ -442,4 +450,79 @@ public class SurrealDbRepository
         var first = records?.FirstOrDefault();
         return first?.GetValueOrDefault("node_id");
     }
+    public async Task<List<NodeDto>> SearchByNameAsync(string name, int limit = 10)
+{
+    var query = @"
+        SELECT * FROM node
+        WHERE name CONTAINS $name
+        LIMIT $limit;
+    ";
+    
+    var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["name"] = name, ["limit"] = limit });
+    var records = result.GetValue<List<NodeDto>>(0);
+    return records ?? new List<NodeDto>();
+}
+
+public async Task<List<NodeDto>> GetNodesWithHighFrictionAsync(double minFriction = 0.7, int limit = 20)
+{
+    var query = @"
+        SELECT * FROM node
+        WHERE avec IS NOT NONE
+          AND avec.friction >= $min_friction
+        ORDER BY avec.friction DESC
+        LIMIT $limit;
+    ";
+    
+    var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["min_friction"] = minFriction, ["limit"] = limit });
+    var records = result.GetValue<List<NodeDto>>(0);
+    return records ?? new List<NodeDto>();
+}
+
+public async Task<List<NodeDto>> GetUnstableNodesAsync(double maxStability = 0.4, int limit = 20)
+{
+    var query = @"
+        SELECT * FROM node
+        WHERE avec IS NOT NONE
+          AND avec.stability <= $max_stability
+        ORDER BY avec.stability ASC
+        LIMIT $limit;
+    ";
+    
+    var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["max_stability"] = maxStability, ["limit"] = limit });
+    var records = result.GetValue<List<NodeDto>>(0);
+    return records ?? new List<NodeDto>();
+}
+
+public async Task<ProjectStatsDto> GetProjectStatsAsync()
+{
+    var query = @"
+        SELECT 
+            count() as total_nodes,
+            math::mean(avec.stability) as avg_stability,
+            math::mean(avec.logic) as avg_logic,
+            math::mean(avec.friction) as avg_friction,
+            math::mean(avec.autonomy) as avg_autonomy
+        FROM node
+        WHERE avec IS NOT NONE
+        GROUP ALL;
+    ";
+    
+    var result = await _db.RawQuery(query, null);
+    var records = result.GetValue<List<Dictionary<string, object>>>(0);
+    var stats = records?.FirstOrDefault();
+    
+    if (stats == null)
+    {
+        return new ProjectStatsDto();
+    }
+    
+    return new ProjectStatsDto
+    {
+        TotalNodes = Convert.ToInt32(stats.GetValueOrDefault("total_nodes", 0)),
+        AverageStability = Convert.ToDouble(stats.GetValueOrDefault("avg_stability", 0.0)),
+        AverageLogic = Convert.ToDouble(stats.GetValueOrDefault("avg_logic", 0.0)),
+        AverageFriction = Convert.ToDouble(stats.GetValueOrDefault("avg_friction", 0.0)),
+        AverageAutonomy = Convert.ToDouble(stats.GetValueOrDefault("avg_autonomy", 0.0))
+    };
+}
 }

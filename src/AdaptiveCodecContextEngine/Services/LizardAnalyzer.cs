@@ -1,15 +1,19 @@
 using System.Diagnostics;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lizard;
+using Microsoft.Extensions.Logging;
 using System.Globalization;
 using System.Text;
 
 public class LizardAnalyzer
 {
     private readonly string _lizardPath;
-    public LizardAnalyzer(string? lizardPath = null)
+    private readonly ILogger<LizardAnalyzer> _logger;
+
+    public LizardAnalyzer(ILogger<LizardAnalyzer> logger)
     {
-        _lizardPath = lizardPath ?? "lizard";
+        _lizardPath = "lizard";
+        _logger = logger;
     }
 
     public async Task<LizardResult?> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
@@ -37,7 +41,7 @@ public class LizardAnalyzer
 
             if (process.ExitCode != 0)
             {
-                Console.WriteLine($"Lizard error: {error}");
+                _logger.LogError("Lizard exited with code {ExitCode}: {Error}", process.ExitCode, error);
                 return null;
             }
 
@@ -45,7 +49,7 @@ public class LizardAnalyzer
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to run lizard: {ex.Message}");
+            _logger.LogError(ex, "Failed to run lizard on {FilePath}", filePath);
             return null;
         }
     }
@@ -102,7 +106,7 @@ public class LizardAnalyzer
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to parse lizard CSV: {ex.Message}");
+            _logger.LogWarning(ex, "Failed to parse lizard CSV output.");
             return null;
         }
     }

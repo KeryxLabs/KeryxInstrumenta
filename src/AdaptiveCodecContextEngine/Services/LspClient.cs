@@ -1,15 +1,18 @@
 using System.Text;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lsp;
+using Microsoft.Extensions.Logging;
 
 public class LspClient
 {
     private readonly Stream _stdin;
+    private readonly ILogger<LspClient> _logger;
     private int _requestIdCounter = 0;
     
-    public LspClient(Stream stdin)
+    public LspClient(Stream stdin, ILogger<LspClient> logger)
     {
         _stdin = stdin;
+        _logger = logger;
     }
     
     public async Task RequestOutgoingCallsAsync(Guid requestId, string uri, Position position)
@@ -52,6 +55,7 @@ public class LspClient
     
     private async Task SendRequest(LspRequest request)
     {
+        _logger.LogDebug("Sending LSP request: {Method} ({Id})", request.Method, request.Id);
         var json = JsonSerializer.Serialize(request, ACCJsonContext.Default.LspRequest);
         var content = Encoding.UTF8.GetBytes(json);
         var header = $"Content-Length: {content.Length}\r\n\r\n";
