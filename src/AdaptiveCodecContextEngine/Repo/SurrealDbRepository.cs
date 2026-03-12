@@ -1,18 +1,19 @@
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lsp;
 using AdaptiveCodecContextEngine.Models.Surreal;
+using Microsoft.Extensions.Configuration;
 using SurrealDb.Net;
 
 public class SurrealDbRepository
 {
-    private readonly SurrealDbClient _db;
+    private readonly ISurrealDbClient _db;
     private readonly AvecCalculator _avecCalculator;
     private bool _schemaInitialized = false;
     
-    public SurrealDbRepository(string connectionString, AvecWeights weights)
+    public SurrealDbRepository(ISurrealDbClient client, IConfiguration configuration)
     {
-        _db = new SurrealDbClient(connectionString);
-        _avecCalculator = new AvecCalculator(weights);
+        _db = client;
+        _avecCalculator = new AvecCalculator(configuration.Get<AvecWeights>()!);
     }
     
     public async Task InitializeAsync()
@@ -69,9 +70,9 @@ public class SurrealDbRepository
             DEFINE FIELD IF NOT EXISTS total_degree ON node TYPE int DEFAULT 0;
             
             -- AVEC
-            DEFINE FIELD IF NOT EXISTS avec ON node TYPE option<object?>;
-            DEFINE FIELD IF NOT EXISTS avec_learned ON node TYPE option<object?>;
-            DEFINE FIELD IF NOT EXISTS avec_delta ON node TYPE option<object?>;
+            DEFINE FIELD IF NOT EXISTS avec ON node TYPE option<object>;
+            DEFINE FIELD IF NOT EXISTS avec_learned ON node TYPE option<object>;
+            DEFINE FIELD IF NOT EXISTS avec_delta ON node TYPE option<object>;
             
             -- Timestamps for idempotency
             DEFINE FIELD IF NOT EXISTS created_at ON node TYPE datetime DEFAULT time::now();

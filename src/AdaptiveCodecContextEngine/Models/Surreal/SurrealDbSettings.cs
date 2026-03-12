@@ -2,7 +2,7 @@ namespace AdaptiveCodecContextEngine.Models.Surreal;
 
 public class SurrealDbEndpointsSettings
 {
-    public string? Embedded { get; set; } = "surrealkv://data/sttp-mcp";
+    public string? Embedded { get; set; } = "surrealkv://data/acc-engine";
     public string? Remote { get; set; }
 
     public static SurrealDbEndpointsSettings Default => new();
@@ -19,7 +19,7 @@ public class SurrealDbSettings
 
     public SurrealDbEndpointsSettings? Endpoints { get; set; } = SurrealDbEndpointsSettings.Default;
     public string Namespace { get; set; } = "keryx";
-    public string Database { get; set; } = "sttp-mcp";
+    public string Database { get; set; } = "acc-engine";
     public string? User { get; set; } = "root";
     public string? Password { get; set; } = "root";
 

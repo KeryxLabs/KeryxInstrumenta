@@ -15,7 +15,6 @@
   </PropertyGroup>
   <PropertyGroup>
     <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
-    <EmbeddedResource Include="appsettings.json" />
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.31.0" />

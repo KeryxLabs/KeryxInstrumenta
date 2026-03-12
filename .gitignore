@@ -485,3 +485,4 @@ $RECYCLE.BIN/
 .vscode/
 src/sttp-mcp/data
 _deps/
+src/AdaptiveCodecContextEngine/data

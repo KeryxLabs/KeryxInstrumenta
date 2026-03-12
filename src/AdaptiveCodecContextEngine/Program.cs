@@ -28,7 +28,7 @@ builder.Services.Configure<AvecWeights>(builder.Configuration.GetSection("AvecWe
 var surrealSettings = new SurrealDbSettings();
 builder.Configuration.GetSection("SurrealDB").Bind(surrealSettings);
 
-if (string.IsNullOrEmpty(surrealSettings.Endpoint())) 
+if (string.IsNullOrEmpty(surrealSettings.Endpoint()))
     throw new Exception("SurrealDb settings missing or invalid.");
 
 // --- 3. Database & Directory Setup ---
@@ -41,34 +41,43 @@ if (dbEndpoint.StartsWith("surrealkv://"))
     if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 }
 
-builder.Services.AddSurreal(dbEndpoint)
+
+
+var options = SurrealDbOptions.Create()
+    .WithEndpoint(dbEndpoint)
+    .WithNamespace(surrealSettings.Namespace)
+    .WithDatabase(surrealSettings.Database)
+    .Build();
+    
+builder.Services.AddSurreal(options)
     .AddSurrealKvProvider();
 
 // --- 4. Register Services ---
 // Channels
-builder.Services.AddSingleton(_ => Channel.CreateUnbounded<LspMessage>());
-builder.Services.AddSingleton(_ => Channel.CreateUnbounded<GitEvent>());
-builder.Services.AddSingleton(_ => Channel.CreateUnbounded<NodeUpdate>());
-builder.Services.AddSingleton(_ => Channel.CreateUnbounded<DependencyEdge>());
+builder.Services
+.AddSingleton(_ => Channel.CreateUnbounded<LspMessage>())
+.AddSingleton(_ => Channel.CreateUnbounded<GitEvent>())
+.AddSingleton(_ => Channel.CreateUnbounded<NodeUpdate>())
+.AddSingleton(_ => Channel.CreateUnbounded<DependencyEdge>());
 
 // Logic Services (Using IOptions for AOT safety)
-builder.Services.AddSingleton<AvecCalculator>(); 
-builder.Services.AddSingleton<SurrealDbRepository>();
-builder.Services.AddSingleton<LspReferenceTracker>();
-builder.Services.AddSingleton<LizardAnalyzer>();
-builder.Services.AddSingleton<MetricsCollector>();
+builder.Services
+.AddSingleton<AvecCalculator>()
+.AddSingleton<SurrealDbRepository>()
+.AddSingleton<LspReferenceTracker>()
+.AddSingleton<LizardAnalyzer>()
+.AddSingleton<MetricsCollector>();
 
-builder.Services.AddSingleton<LspClient>(_ => new LspClient(Console.OpenStandardInput()));
-
-builder.Services.AddSingleton<GitWatcher>(sp => {
+builder.Services
+.AddSingleton(_ => new LspClient(Console.OpenStandardInput()))
+.AddSingleton(sp =>
+{
     var acc = sp.GetRequiredService<IOptions<AccOptions>>().Value;
     var gitChannel = sp.GetRequiredService<Channel<GitEvent>>();
     return new GitWatcher(acc.RepositoryPath, gitChannel);
-});
+})
+.AddHostedService<AccHostedService>();
 
-builder.Services.AddHostedService<AccHostedService>();
-
-// --- 5. Build and Initialize ---
 var host = builder.Build();
 
 // Scope to ensure DB is ready before hosted services kick in
@@ -85,8 +94,6 @@ await host.RunAsync();
 public class AccOptions
 {
     public string RepositoryPath { get; set; } = null!;
-    public string SurrealDbConnection { get; set; } = "ws://localhost:8000";
-    public string Language { get; set; } = "csharp";
     public AvecTarget? Target { get; set; }
 }
 
