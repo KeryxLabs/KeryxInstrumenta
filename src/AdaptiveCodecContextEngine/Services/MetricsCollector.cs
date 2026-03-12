@@ -14,12 +14,12 @@ public class MetricsCollector
     private readonly SurrealDbRepository _repository;
     private readonly LspReferenceTracker _referenceTracker;
     private readonly LspClient _lspClient; // New: for sending requests
-    
+
     // Cache of symbols by file for quick lookup
     private readonly ConcurrentDictionary<string, List<DocumentSymbol>> _symbolCache = new();
-    
+
     public MetricsCollector(
-        GitWatcher gitWatcher, 
+        GitWatcher gitWatcher,
         SurrealDbRepository repository,
         LspClient lspClient)
     {
@@ -33,23 +33,23 @@ public class MetricsCollector
         _referenceTracker = new LspReferenceTracker();
         _lspClient = lspClient;
     }
-    
+
     public async Task StartAsync(CancellationToken ct)
     {
         var lspTask = ProcessLspMessages(ct);
         var gitTask = ProcessGitEvents(ct);
         var updateTask = ProcessNodeUpdates(ct);
         var dependencyTask = ProcessDependencies(ct);
-        
+
         await Task.WhenAll(lspTask, gitTask, updateTask, dependencyTask);
     }
-    
+
     private async Task ProcessLspMessages(CancellationToken ct)
     {
         await foreach (var message in _lspChannel.Reader.ReadAllAsync(ct))
         {
             if (message.Result == null) continue;
-            
+
             // Check if this is a response to a tracked request
             if (message.Id != null && _referenceTracker.GetRequest(message.Id) is { } request)
             {
@@ -57,7 +57,7 @@ public class MetricsCollector
                 _referenceTracker.CompleteRequest(message.Id);
                 continue;
             }
-            
+
             // Parse document symbols
             try
             {
@@ -68,7 +68,7 @@ public class MetricsCollector
                     if (fileUri != null)
                     {
                         await ProcessDocumentSymbols(symbols, fileUri, ct);
-                        
+
                         // After indexing symbols, request dependencies
                         await RequestDependenciesForFile(fileUri, symbols, ct);
                     }
@@ -78,34 +78,34 @@ public class MetricsCollector
             catch { /* Not document symbols */ }
         }
     }
-    
+
     private async Task ProcessDocumentSymbols(
-        DocumentSymbol[] symbols, 
-        string fileUri, 
+        DocumentSymbol[] symbols,
+        string fileUri,
         CancellationToken ct)
     {
         // Cache symbols for this file
         _symbolCache[fileUri] = symbols.ToList();
-        
+
         // Process hierarchy
         foreach (var symbol in symbols)
         {
             await ProcessSymbolHierarchy(symbol, fileUri, parentNamespace: null, ct);
         }
     }
-    
+
     private async Task RequestDependenciesForFile(
-        string fileUri, 
-        DocumentSymbol[] symbols, 
+        string fileUri,
+        DocumentSymbol[] symbols,
         CancellationToken ct)
     {
         // For each method/function, find what it calls
         await RequestDependenciesForSymbols(fileUri, symbols, ct);
     }
-    
+
     private async Task RequestDependenciesForSymbols(
-        string fileUri, 
-        IEnumerable<DocumentSymbol> symbols, 
+        string fileUri,
+        IEnumerable<DocumentSymbol> symbols,
         CancellationToken ct)
     {
         foreach (var symbol in symbols)
@@ -114,22 +114,22 @@ public class MetricsCollector
             if (symbol.Kind is SymbolKind.Method or SymbolKind.Function)
             {
                 var nodeId = GenerateNodeIdFromSymbol(fileUri, symbol);
-                
+
                 // Request definition for this symbol to understand its type
                 var definitionRequestId = Guid.NewGuid();
                 await _lspClient.RequestDefinitionAsync(
                     definitionRequestId,
-                    fileUri, 
+                    fileUri,
                     symbol.SelectionRange.Start);
-                
+
                 // For now, we'll parse the symbol's body to find call sites
                 // This is where we'd request references for each identifier used
                 // But LSP doesn't give us the body directly - we need to analyze
-                
+
                 // Alternative: Use "call hierarchy" LSP feature if available
                 await RequestCallHierarchy(nodeId, fileUri, symbol, ct);
             }
-            
+
             // Handle inheritance
             if (symbol.Kind is SymbolKind.Class or SymbolKind.Interface)
             {
@@ -139,7 +139,7 @@ public class MetricsCollector
                     await ExtractInheritanceRelationships(fileUri, symbol, ct);
                 }
             }
-            
+
             // Recurse into children
             if (symbol.Children != null)
             {
@@ -147,16 +147,16 @@ public class MetricsCollector
             }
         }
     }
-    
+
     private async Task RequestCallHierarchy(
         string fromNodeId,
-        string fileUri, 
-        DocumentSymbol symbol, 
+        string fileUri,
+        DocumentSymbol symbol,
         CancellationToken ct)
     {
         // LSP call hierarchy request
         var requestId = Guid.NewGuid();
-        
+
         _referenceTracker.TrackRequest(requestId, new LspReferenceTracker.ReferenceRequest
         {
             FromNodeId = fromNodeId,
@@ -165,35 +165,35 @@ public class MetricsCollector
             Position = symbol.SelectionRange.Start,
             ExpectedType = LspReferenceTracker.RelationshipType.Calls
         });
-        
+
         await _lspClient.RequestOutgoingCallsAsync(requestId, fileUri, symbol.SelectionRange.Start);
     }
-    
+
     private async Task ExtractInheritanceRelationships(
-        string fileUri, 
-        DocumentSymbol symbol, 
+        string fileUri,
+        DocumentSymbol symbol,
         CancellationToken ct)
     {
         // Parse detail string for base types
         // Example: "class UserService : BaseService, IUserService"
-        
+
         if (symbol.Detail == null) return;
-        
+
         var fromNodeId = GenerateNodeIdFromSymbol(fileUri, symbol);
-        
+
         // Simple parsing - this would need to be more robust
         var parts = symbol.Detail.Split(':', StringSplitOptions.TrimEntries);
         if (parts.Length < 2) return;
-        
+
         var baseTypes = parts[1].Split(',', StringSplitOptions.TrimEntries);
-        
+
         foreach (var baseType in baseTypes)
         {
             var cleanType = baseType.Trim();
-            
+
             // Determine if it's interface or class based on naming convention
             var isInterface = cleanType.StartsWith('I') && cleanType.Length > 1 && char.IsUpper(cleanType[1]);
-            
+
             var edge = new DependencyEdge
             {
                 FromNodeId = fromNodeId,
@@ -201,18 +201,18 @@ public class MetricsCollector
                 RelationshipType = isInterface ? "implements" : "inherits",
                 SourceFileUri = fileUri
             };
-            
+
             await _dependencyChannel.Writer.WriteAsync(edge, ct);
         }
     }
-    
+
     private async Task ProcessTrackedReferenceResponse(
-        LspMessage message, 
+        LspMessage message,
         LspReferenceTracker.ReferenceRequest request,
         CancellationToken ct)
     {
         // This is a response to our reference/call hierarchy request
-        
+
         // Try parsing as call hierarchy outgoing calls
         try
         {
@@ -230,13 +230,13 @@ public class MetricsCollector
                         RelationshipType = "calls",
                         SourceFileUri = request.FileUri
                     };
-                    
+
                     await _dependencyChannel.Writer.WriteAsync(edge, ct);
                 }
             }
         }
         catch { /* Not call hierarchy */ }
-        
+
         // Try parsing as references
         try
         {
@@ -253,41 +253,41 @@ public class MetricsCollector
                         RelationshipType = request.ExpectedType.ToString().ToLowerInvariant(),
                         SourceFileUri = request.FileUri
                     };
-                    
+
                     await _dependencyChannel.Writer.WriteAsync(edge, ct);
                 }
             }
         }
         catch { /* Not references */ }
     }
-    
+
     private CallHierarchyItem[]? ParseOutgoingCalls(JsonElement result)
     {
         // Parse LSP call hierarchy response
         // Format: CallHierarchyOutgoingCall[]
         try
         {
-            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-            return JsonSerializer.Deserialize<CallHierarchyItem[]>(result.GetRawText(), options);
+
+            return JsonSerializer.Deserialize<CallHierarchyItem[]>(result.GetRawText(), ACCJsonContext.Default.CallHierarchyItemArray);
         }
         catch
         {
             return null;
         }
     }
-    
+
     private async Task ProcessDependencies(CancellationToken ct)
     {
         await foreach (var edge in _dependencyChannel.Reader.ReadAllAsync(ct))
         {
             // Resolve the "to" node
             string? toNodeId = null;
-            
+
             if (edge.ToFileUri != null && edge.ToLine.HasValue)
             {
                 // Find node at this location
                 toNodeId = await _repository.FindNodeAtLocationAsync(
-                    UriToFilePath(edge.ToFileUri), 
+                    UriToFilePath(edge.ToFileUri),
                     edge.ToLine.Value);
             }
             else if (edge.ToSymbolName != null)
@@ -295,42 +295,42 @@ public class MetricsCollector
                 // Search for node by name (might need disambiguation)
                 toNodeId = await _repository.FindNodeByNameAsync(edge.ToSymbolName);
             }
-            
+
             if (toNodeId != null)
             {
                 await _repository.UpsertDependencyAsync(
-                    edge.FromNodeId, 
-                    toNodeId, 
+                    edge.FromNodeId,
+                    toNodeId,
                     edge.RelationshipType);
             }
         }
     }
-    
-    
+
+
     // Public method to feed LSP messages from stdio
     public async Task EnqueueLspMessageAsync(LspMessage message, CancellationToken ct = default)
     {
         await _lspChannel.Writer.WriteAsync(message, ct);
     }
-    
-    
+
+
     private async Task ProcessSymbolHierarchy(
-        DocumentSymbol symbol, 
-        string fileUri, 
-        string? parentNamespace, 
+        DocumentSymbol symbol,
+        string fileUri,
+        string? parentNamespace,
         CancellationToken ct)
     {
         // Build namespace chain
-        var currentNamespace = parentNamespace != null 
+        var currentNamespace = parentNamespace != null
             ? $"{parentNamespace}.{symbol.Name}"
             : symbol.Name;
-        
+
         // Only create nodes for classes, methods, functions
-        if (symbol.Kind is SymbolKind.Class or SymbolKind.Method or SymbolKind.Function 
+        if (symbol.Kind is SymbolKind.Class or SymbolKind.Method or SymbolKind.Function
             or SymbolKind.Interface or SymbolKind.Module)
         {
             var nodeId = GenerateNodeIdFromSymbol(fileUri, symbol);
-            
+
             var update = new NodeUpdate
             {
                 NodeId = nodeId,
@@ -344,10 +344,10 @@ public class MetricsCollector
                 Signature = symbol.Detail,
                 ReturnType = ExtractReturnType(symbol.Detail)
             };
-            
+
             await _updateChannel.Writer.WriteAsync(update, ct);
         }
-        
+
         // Process children recursively
         if (symbol.Children != null)
         {
@@ -357,21 +357,21 @@ public class MetricsCollector
             }
         }
     }
-    
+
     private string GenerateNodeIdFromSymbol(string fileUri, DocumentSymbol symbol)
     {
         var filePath = UriToFilePath(fileUri);
         var relativePath = Path.GetRelativePath(Environment.CurrentDirectory, filePath);
         return $"{relativePath}:{symbol.Name}:{symbol.Range.Start.Line}";
     }
-    
+
     private string GenerateNodeIdFromLocation(Location location, string name)
     {
         var filePath = UriToFilePath(location.Uri);
         var relativePath = Path.GetRelativePath(Environment.CurrentDirectory, filePath);
         return $"{relativePath}:{name}:{location.Range.Start.Line}";
     }
-    
+
     private string MapSymbolKindToType(SymbolKind kind) => kind switch
     {
         SymbolKind.Class => "class",
@@ -382,7 +382,7 @@ public class MetricsCollector
         SymbolKind.Namespace => "namespace",
         _ => "unknown"
     };
-    
+
     private string DetectLanguageFromUri(string uri)
     {
         var extension = Path.GetExtension(uri).ToLowerInvariant();
@@ -396,7 +396,7 @@ public class MetricsCollector
             _ => "unknown"
         };
     }
-    
+
     private string UriToFilePath(string uri)
     {
         // Convert file:// URI to filesystem path
@@ -406,7 +406,7 @@ public class MetricsCollector
         }
         return uri;
     }
-    
+
     private string? ExtractFileUri(LspMessage message)
     {
         // Try to extract textDocument.uri from params
@@ -419,7 +419,7 @@ public class MetricsCollector
         }
         return null;
     }
-    
+
     private string? ExtractReturnType(string? detail)
     {
         // Parse return type from signature detail
@@ -427,27 +427,27 @@ public class MetricsCollector
         // For now, return null and let Lizard/language-specific tools handle it
         return null;
     }
-    
+
     private async Task ProcessGitEvents(CancellationToken ct)
     {
         await foreach (var gitEvent in _gitChannel.Reader.ReadAllAsync(ct))
         {
             // Skip deleted files
             if (gitEvent.Type == GitEventType.Deleted) continue;
-            
+
             // Run lizard on the file
             var lizardResult = await _lizard.AnalyzeFileAsync(gitEvent.FilePath, ct);
-            
+
             // Extract git history
             var history = _gitWatcher.ExtractHistory(gitEvent.FilePath);
-            
+
             if (lizardResult?.FunctionList != null)
             {
                 foreach (var function in lizardResult.FunctionList)
                 {
                     // Merge with LSP data if available
                     var nodeId = GenerateNodeId(gitEvent.FilePath, function.Name, function.StartLine);
-                    
+
                     var update = new NodeUpdate
                     {
                         NodeId = nodeId,
@@ -458,22 +458,22 @@ public class MetricsCollector
                         LineStart = function.StartLine,
                         LineEnd = function.EndLine,
                         Signature = function.LongName,
-                        
+
                         // Lizard metrics
                         LinesOfCode = function.Nloc,
                         CyclomaticComplexity = function.CyclomaticComplexity,
                         Parameters = function.ParameterCount,
-                        
+
                         // Git metrics
                         GitHistory = history
                     };
-                    
+
                     await _updateChannel.Writer.WriteAsync(update, ct);
                 }
             }
         }
     }
-    
+
     private async Task ProcessNodeUpdates(CancellationToken ct)
     {
         await foreach (var update in _updateChannel.Reader.ReadAllAsync(ct))
@@ -482,13 +482,13 @@ public class MetricsCollector
             await _repository.UpsertNodeAsync(update);
         }
     }
-    
+
     private string GenerateNodeId(string filePath, string functionName, int lineStart)
     {
         var relativePath = Path.GetRelativePath(Environment.CurrentDirectory, filePath);
         return $"{relativePath}:{functionName}:{lineStart}";
     }
-    
+
     private string DetectLanguage(string filePath)
     {
         var extension = Path.GetExtension(filePath).ToLowerInvariant();

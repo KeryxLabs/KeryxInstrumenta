@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lizard;
 
 
@@ -54,12 +55,7 @@ public class LizardAnalyzer
     {
         try
         {
-            var options = new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            };
-            
-            return JsonSerializer.Deserialize<LizardResult>(json, options);
+            return JsonSerializer.Deserialize<LizardResult>(json, ACCJsonContext.Default.LizardResult);
         }
         catch (Exception ex)
         {

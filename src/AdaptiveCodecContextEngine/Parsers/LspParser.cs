@@ -1,30 +1,28 @@
+using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lsp;
 
 public class LspMessageParser
 {
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        TypeInfoResolver = LspJsonContext.Default
-    };
+    private static readonly ACCJsonContext Ctx = ACCJsonContext.Default;
     
     public static LspMessage? Parse(string json)
     {
-        return JsonSerializer.Deserialize<LspMessage>(json, Options);
+        return JsonSerializer.Deserialize<LspMessage>(json, Ctx.LspMessage);
     }
     
     public static DocumentSymbol[]? ParseDocumentSymbols(JsonElement result)
     {
-        return JsonSerializer.Deserialize<DocumentSymbol[]>(result, Options);
+        return JsonSerializer.Deserialize<DocumentSymbol[]>(result, Ctx.DocumentSymbolArray);
     }
     
     public static SymbolInformation[]? ParseSymbolInformation(JsonElement result)
     {
-        return JsonSerializer.Deserialize<SymbolInformation[]>(result, Options);
+        return JsonSerializer.Deserialize<SymbolInformation[]>(result, Ctx.SymbolInformationArray);
     }
     
     public static Location[]? ParseReferences(JsonElement result)
     {
-        return JsonSerializer.Deserialize<Location[]>(result, Options);
+        return JsonSerializer.Deserialize<Location[]>(result, Ctx.LocationArray);
     }
     
     public static ReferenceParams CreateReferenceParams(string uri, int line, int character, bool includeDeclaration = true)

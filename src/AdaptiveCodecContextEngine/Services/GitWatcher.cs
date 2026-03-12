@@ -1,3 +1,4 @@
+using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Git;
 using LibGit2Sharp;
 

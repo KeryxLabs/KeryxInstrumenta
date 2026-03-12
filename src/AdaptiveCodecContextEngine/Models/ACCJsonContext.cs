@@ -1,6 +1,7 @@
 using AdaptiveCodecContextEngine.Models.Lizard;
+using AdaptiveCodecContextEngine.Models.Lsp;
 
-namespace AdaptiveCodecContextEngine.Models.Lsp;
+namespace AdaptiveCodecContextEngine.Models;
 
 
 [JsonSourceGenerationOptions(
@@ -15,4 +16,9 @@ namespace AdaptiveCodecContextEngine.Models.Lsp;
 [JsonSerializable(typeof(Location[]))]
 [JsonSerializable(typeof(LizardResult))]
 [JsonSerializable(typeof(LizardFunction))]
-internal partial class LspJsonContext : JsonSerializerContext { }
+[JsonSerializable(typeof(CallHierarchyItem[]))]
+[JsonSerializable(typeof(CallHierarchyItem))]
+[JsonSerializable(typeof(LspRequest))]
+[JsonSerializable(typeof(LspRequestParams))]
+[JsonSerializable(typeof(TextDocument))]
+internal partial class ACCJsonContext : JsonSerializerContext { }
