@@ -5,10 +5,13 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <PublishAot>true</PublishAot>
-    <InvariantGlobalization>true</InvariantGlobalization>
-    <IsAotCompatible>true</IsAotCompatible>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <!-- <PublishAot>true</PublishAot> -->
+    <!-- <InvariantGlobalization>true</InvariantGlobalization> -->
+    <!-- <IsAotCompatible>true</IsAotCompatible> -->
   </PropertyGroup>
+
 
   <PropertyGroup>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
@@ -21,9 +24,20 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.4" />
   </ItemGroup>
 
-  <ItemGroup>
+  <!-- <ItemGroup>
     <PackageReference Include="SurrealDb.Embedded.SurrealKv" Version="0.9.0" />
     <PackageReference Include="SurrealDb.Net" Version="0.9.0" />
+  </ItemGroup> -->
+
+  <ItemGroup>
+    <ProjectReference Include="../../_deps/surrealdb.net/SurrealDb.Net/SurrealDb.Net.csproj " />
+    <ProjectReference
+      Include="../../_deps/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+  <None Update="appsettings.json">
+    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+  </None>
+</ItemGroup>
 </Project>

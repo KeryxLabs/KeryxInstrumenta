@@ -1,4 +1,6 @@
 
+using Dahomey.Cbor.Attributes;
+
 public record DependencyDto
 {
     [JsonPropertyName("id")]

@@ -9,6 +9,21 @@ using AdaptiveCodecContextEngine.Models.Surreal;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 
+
+using System.Diagnostics.CodeAnalysis;
+using SurrealDb.Net.Models.Response;
+using Dahomey.Cbor.Serialization.Converters;
+
+// This forces the compiler to see the link between the List and the Interface
+[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(MemberConverter<ProjectStatsDto, int>))]
+[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(MemberConverter<ProjectStatsDto, string>))] // Add one for each property type in your DTO
+[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(ObjectConverter<ProjectStatsDto>))]
+[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(List<ISurrealDbResult>))]
+[DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(ISurrealDbResult))]
+static void PreserveSurrealInternalTypes() {}
+
+PreserveSurrealInternalTypes();
+
 var builder = Host.CreateApplicationBuilder(args);
 
 // --- 1. Setup Paths & Files ---
@@ -48,10 +63,12 @@ var options = SurrealDbOptions.Create()
     .WithEndpoint(dbEndpoint)
     .WithNamespace(surrealSettings.Namespace)
     .WithDatabase(surrealSettings.Database)
+    .WithUsername(surrealSettings.User)
+    .WithPassword(surrealSettings.Password)
     .Build();
     
-builder.Services.AddSurreal(options)
-    .AddSurrealKvProvider();
+builder.Services.AddSurreal(options);
+   //.AddSurrealKvProvider();
 
 // --- 4. Register Services ---
 // Channels
@@ -61,13 +78,16 @@ builder.Services
 .AddSingleton(_ => Channel.CreateUnbounded<NodeUpdate>())
 .AddSingleton(_ => Channel.CreateUnbounded<DependencyEdge>());
 
+
 // Logic Services (Using IOptions for AOT safety)
 builder.Services
 .AddSingleton<AvecCalculator>()
 .AddSingleton<SurrealDbRepository>()
 .AddSingleton<LspReferenceTracker>()
 .AddSingleton<LizardAnalyzer>()
-.AddSingleton<MetricsCollector>();
+.AddSingleton<MetricsCollector>()
+.AddSingleton<IAccQueryService,AccQueryService>()
+.AddHostedService<JsonRpcServer>();
 
 builder.Services
 .AddSingleton(sp => new LspClient(Console.OpenStandardInput(), sp.GetRequiredService<ILogger<LspClient>>()))

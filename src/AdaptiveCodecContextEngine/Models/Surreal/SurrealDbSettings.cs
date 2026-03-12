@@ -11,7 +11,7 @@ public class SurrealDbEndpointsSettings
 public class SurrealDbSettings
 {
 
-    public string Endpoint(bool useRemote = false) => useRemote && !string.IsNullOrWhiteSpace(Endpoints?.Remote)
+    public string Endpoint(bool useRemote = true) => useRemote && !string.IsNullOrWhiteSpace(Endpoints?.Remote)
     ? Endpoints!.Remote
     : !string.IsNullOrWhiteSpace(Endpoints?.Embedded)
         ? Endpoints!.Embedded

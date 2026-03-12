@@ -231,15 +231,14 @@ public class SurrealDbRepository
     private async Task RecalculateAvecIfNeededAsync(string nodeId)
     {
         // Check if recalc needed
-        var checkQuery = "SELECT avec FROM node:⟨$node_id⟩";
+        var checkQuery = "SELECT avec.needs_recalc as needs_recalc FROM node:⟨$node_id⟩";
         var checkParams = new Dictionary<string, object?>
         {
             ["node_id"] = nodeId
         };
         var checkResult = await _db.RawQuery(checkQuery, checkParams);
-        var checkRecords = checkResult.GetValue<List<Dictionary<string, object?>>>(0);
-        var avecData = checkRecords?.FirstOrDefault()?.GetValueOrDefault("avec") as Dictionary<string, object?>;
-        var needsRecalc = avecData?.GetValueOrDefault("needs_recalc") as bool? ?? false;
+        var checkRecords = checkResult.GetValue<List<AvecStatusDto>>(0);
+        var needsRecalc = checkRecords?.FirstOrDefault()?.NeedsRecalc ?? false;
         
         if (!needsRecalc) return;
         
@@ -433,9 +432,8 @@ public class SurrealDbRepository
             ["line"] = line
         };
         var result = await _db.RawQuery(query, locParams);
-        var records = result.GetValue<List<Dictionary<string, string>>>(0);
-        var first = records?.FirstOrDefault();
-        return first?.GetValueOrDefault("node_id");
+        var records = result.GetValue<List<NodeIdDto>>(0);
+        return records?.FirstOrDefault()?.NodeId;
     }
     
     public async Task<string?> FindNodeByNameAsync(string name)
@@ -446,9 +444,8 @@ public class SurrealDbRepository
             ["name"] = name
         };
         var result = await _db.RawQuery(query, nameParams);
-        var records = result.GetValue<List<Dictionary<string, string>>>(0);
-        var first = records?.FirstOrDefault();
-        return first?.GetValueOrDefault("node_id");
+        var records = result.GetValue<List<NodeIdDto>>(0);
+        return records?.FirstOrDefault()?.NodeId;
     }
     public async Task<List<NodeDto>> SearchByNameAsync(string name, int limit = 10)
 {
@@ -508,21 +505,7 @@ public async Task<ProjectStatsDto> GetProjectStatsAsync()
     ";
     
     var result = await _db.RawQuery(query, null);
-    var records = result.GetValue<List<Dictionary<string, object>>>(0);
-    var stats = records?.FirstOrDefault();
-    
-    if (stats == null)
-    {
-        return new ProjectStatsDto();
-    }
-    
-    return new ProjectStatsDto
-    {
-        TotalNodes = Convert.ToInt32(stats.GetValueOrDefault("total_nodes", 0)),
-        AverageStability = Convert.ToDouble(stats.GetValueOrDefault("avg_stability", 0.0)),
-        AverageLogic = Convert.ToDouble(stats.GetValueOrDefault("avg_logic", 0.0)),
-        AverageFriction = Convert.ToDouble(stats.GetValueOrDefault("avg_friction", 0.0)),
-        AverageAutonomy = Convert.ToDouble(stats.GetValueOrDefault("avg_autonomy", 0.0))
-    };
+    var records = result.GetValue<List<ProjectStatsDto>>(0);
+    return records?.FirstOrDefault() ?? new ProjectStatsDto();
 }
 }

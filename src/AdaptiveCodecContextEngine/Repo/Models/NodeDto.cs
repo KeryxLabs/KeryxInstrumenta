@@ -1,4 +1,9 @@
 
+
+using System.Diagnostics.CodeAnalysis;
+using Dahomey.Cbor.Attributes;
+
+[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)]
 public record NodeDto
 {
     [JsonPropertyName("node_id")]
