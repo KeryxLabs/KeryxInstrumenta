@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Git;
 using AdaptiveCodecContextEngine.Models.Lsp;
@@ -7,32 +8,304 @@ public class MetricsCollector
     private readonly Channel<LspMessage> _lspChannel;
     private readonly Channel<GitEvent> _gitChannel;
     private readonly Channel<NodeUpdate> _updateChannel;
+    private readonly Channel<DependencyEdge> _dependencyChannel;
     private readonly LizardAnalyzer _lizard;
     private readonly GitWatcher _gitWatcher;
     private readonly SurrealDbRepository _repository;
+    private readonly LspReferenceTracker _referenceTracker;
+    private readonly LspClient _lspClient; // New: for sending requests
     
-    // Track which files we've requested symbols for
-    private readonly Dictionary<string, List<DocumentSymbol>> _symbolCache = new();
+    // Cache of symbols by file for quick lookup
+    private readonly ConcurrentDictionary<string, List<DocumentSymbol>> _symbolCache = new();
     
-    public MetricsCollector(GitWatcher gitWatcher, SurrealDbRepository repository)
+    public MetricsCollector(
+        GitWatcher gitWatcher, 
+        SurrealDbRepository repository,
+        LspClient lspClient)
     {
         _lspChannel = Channel.CreateUnbounded<LspMessage>();
         _gitChannel = Channel.CreateUnbounded<GitEvent>();
         _updateChannel = Channel.CreateUnbounded<NodeUpdate>();
+        _dependencyChannel = Channel.CreateUnbounded<DependencyEdge>();
         _lizard = new LizardAnalyzer();
         _gitWatcher = gitWatcher;
         _repository = repository;
+        _referenceTracker = new LspReferenceTracker();
+        _lspClient = lspClient;
     }
     
     public async Task StartAsync(CancellationToken ct)
     {
-        // Spawn all processors
         var lspTask = ProcessLspMessages(ct);
         var gitTask = ProcessGitEvents(ct);
         var updateTask = ProcessNodeUpdates(ct);
+        var dependencyTask = ProcessDependencies(ct);
         
-        await Task.WhenAll(lspTask, gitTask, updateTask);
+        await Task.WhenAll(lspTask, gitTask, updateTask, dependencyTask);
     }
+    
+    private async Task ProcessLspMessages(CancellationToken ct)
+    {
+        await foreach (var message in _lspChannel.Reader.ReadAllAsync(ct))
+        {
+            if (message.Result == null) continue;
+            
+            // Check if this is a response to a tracked request
+            if (message.Id != null && _referenceTracker.GetRequest(message.Id) is { } request)
+            {
+                await ProcessTrackedReferenceResponse(message, request, ct);
+                _referenceTracker.CompleteRequest(message.Id);
+                continue;
+            }
+            
+            // Parse document symbols
+            try
+            {
+                var symbols = LspMessageParser.ParseDocumentSymbols(message.Result.Value);
+                if (symbols != null && symbols.Length > 0)
+                {
+                    var fileUri = ExtractFileUri(message);
+                    if (fileUri != null)
+                    {
+                        await ProcessDocumentSymbols(symbols, fileUri, ct);
+                        
+                        // After indexing symbols, request dependencies
+                        await RequestDependenciesForFile(fileUri, symbols, ct);
+                    }
+                    continue;
+                }
+            }
+            catch { /* Not document symbols */ }
+        }
+    }
+    
+    private async Task ProcessDocumentSymbols(
+        DocumentSymbol[] symbols, 
+        string fileUri, 
+        CancellationToken ct)
+    {
+        // Cache symbols for this file
+        _symbolCache[fileUri] = symbols.ToList();
+        
+        // Process hierarchy
+        foreach (var symbol in symbols)
+        {
+            await ProcessSymbolHierarchy(symbol, fileUri, parentNamespace: null, ct);
+        }
+    }
+    
+    private async Task RequestDependenciesForFile(
+        string fileUri, 
+        DocumentSymbol[] symbols, 
+        CancellationToken ct)
+    {
+        // For each method/function, find what it calls
+        await RequestDependenciesForSymbols(fileUri, symbols, ct);
+    }
+    
+    private async Task RequestDependenciesForSymbols(
+        string fileUri, 
+        IEnumerable<DocumentSymbol> symbols, 
+        CancellationToken ct)
+    {
+        foreach (var symbol in symbols)
+        {
+            // Only track calls from methods/functions
+            if (symbol.Kind is SymbolKind.Method or SymbolKind.Function)
+            {
+                var nodeId = GenerateNodeIdFromSymbol(fileUri, symbol);
+                
+                // Request definition for this symbol to understand its type
+                var definitionRequestId = Guid.NewGuid();
+                await _lspClient.RequestDefinitionAsync(
+                    definitionRequestId,
+                    fileUri, 
+                    symbol.SelectionRange.Start);
+                
+                // For now, we'll parse the symbol's body to find call sites
+                // This is where we'd request references for each identifier used
+                // But LSP doesn't give us the body directly - we need to analyze
+                
+                // Alternative: Use "call hierarchy" LSP feature if available
+                await RequestCallHierarchy(nodeId, fileUri, symbol, ct);
+            }
+            
+            // Handle inheritance
+            if (symbol.Kind is SymbolKind.Class or SymbolKind.Interface)
+            {
+                // Check symbol detail for base class/interface info
+                if (symbol.Detail != null)
+                {
+                    await ExtractInheritanceRelationships(fileUri, symbol, ct);
+                }
+            }
+            
+            // Recurse into children
+            if (symbol.Children != null)
+            {
+                await RequestDependenciesForSymbols(fileUri, symbol.Children, ct);
+            }
+        }
+    }
+    
+    private async Task RequestCallHierarchy(
+        string fromNodeId,
+        string fileUri, 
+        DocumentSymbol symbol, 
+        CancellationToken ct)
+    {
+        // LSP call hierarchy request
+        var requestId = Guid.NewGuid();
+        
+        _referenceTracker.TrackRequest(requestId, new LspReferenceTracker.ReferenceRequest
+        {
+            FromNodeId = fromNodeId,
+            TargetSymbol = symbol.Name,
+            FileUri = fileUri,
+            Position = symbol.SelectionRange.Start,
+            ExpectedType = LspReferenceTracker.RelationshipType.Calls
+        });
+        
+        await _lspClient.RequestOutgoingCallsAsync(requestId, fileUri, symbol.SelectionRange.Start);
+    }
+    
+    private async Task ExtractInheritanceRelationships(
+        string fileUri, 
+        DocumentSymbol symbol, 
+        CancellationToken ct)
+    {
+        // Parse detail string for base types
+        // Example: "class UserService : BaseService, IUserService"
+        
+        if (symbol.Detail == null) return;
+        
+        var fromNodeId = GenerateNodeIdFromSymbol(fileUri, symbol);
+        
+        // Simple parsing - this would need to be more robust
+        var parts = symbol.Detail.Split(':', StringSplitOptions.TrimEntries);
+        if (parts.Length < 2) return;
+        
+        var baseTypes = parts[1].Split(',', StringSplitOptions.TrimEntries);
+        
+        foreach (var baseType in baseTypes)
+        {
+            var cleanType = baseType.Trim();
+            
+            // Determine if it's interface or class based on naming convention
+            var isInterface = cleanType.StartsWith('I') && cleanType.Length > 1 && char.IsUpper(cleanType[1]);
+            
+            var edge = new DependencyEdge
+            {
+                FromNodeId = fromNodeId,
+                ToSymbolName = cleanType,
+                RelationshipType = isInterface ? "implements" : "inherits",
+                SourceFileUri = fileUri
+            };
+            
+            await _dependencyChannel.Writer.WriteAsync(edge, ct);
+        }
+    }
+    
+    private async Task ProcessTrackedReferenceResponse(
+        LspMessage message, 
+        LspReferenceTracker.ReferenceRequest request,
+        CancellationToken ct)
+    {
+        // This is a response to our reference/call hierarchy request
+        
+        // Try parsing as call hierarchy outgoing calls
+        try
+        {
+            var calls = ParseOutgoingCalls(message.Result!.Value);
+            if (calls != null)
+            {
+                foreach (var call in calls)
+                {
+                    var edge = new DependencyEdge
+                    {
+                        FromNodeId = request.FromNodeId,
+                        ToSymbolName = call.Name,
+                        ToFileUri = call.Uri,
+                        ToLine = call.Range.Start.Line,
+                        RelationshipType = "calls",
+                        SourceFileUri = request.FileUri
+                    };
+                    
+                    await _dependencyChannel.Writer.WriteAsync(edge, ct);
+                }
+            }
+        }
+        catch { /* Not call hierarchy */ }
+        
+        // Try parsing as references
+        try
+        {
+            var references = LspMessageParser.ParseReferences(message.Result!.Value);
+            if (references != null)
+            {
+                foreach (var reference in references)
+                {
+                    var edge = new DependencyEdge
+                    {
+                        FromNodeId = request.FromNodeId,
+                        ToFileUri = reference.Uri,
+                        ToLine = reference.Range.Start.Line,
+                        RelationshipType = request.ExpectedType.ToString().ToLowerInvariant(),
+                        SourceFileUri = request.FileUri
+                    };
+                    
+                    await _dependencyChannel.Writer.WriteAsync(edge, ct);
+                }
+            }
+        }
+        catch { /* Not references */ }
+    }
+    
+    private CallHierarchyItem[]? ParseOutgoingCalls(JsonElement result)
+    {
+        // Parse LSP call hierarchy response
+        // Format: CallHierarchyOutgoingCall[]
+        try
+        {
+            var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            return JsonSerializer.Deserialize<CallHierarchyItem[]>(result.GetRawText(), options);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+    
+    private async Task ProcessDependencies(CancellationToken ct)
+    {
+        await foreach (var edge in _dependencyChannel.Reader.ReadAllAsync(ct))
+        {
+            // Resolve the "to" node
+            string? toNodeId = null;
+            
+            if (edge.ToFileUri != null && edge.ToLine.HasValue)
+            {
+                // Find node at this location
+                toNodeId = await _repository.FindNodeAtLocationAsync(
+                    UriToFilePath(edge.ToFileUri), 
+                    edge.ToLine.Value);
+            }
+            else if (edge.ToSymbolName != null)
+            {
+                // Search for node by name (might need disambiguation)
+                toNodeId = await _repository.FindNodeByNameAsync(edge.ToSymbolName);
+            }
+            
+            if (toNodeId != null)
+            {
+                await _repository.UpsertDependencyAsync(
+                    edge.FromNodeId, 
+                    toNodeId, 
+                    edge.RelationshipType);
+            }
+        }
+    }
+    
     
     // Public method to feed LSP messages from stdio
     public async Task EnqueueLspMessageAsync(LspMessage message, CancellationToken ct = default)
@@ -40,72 +313,6 @@ public class MetricsCollector
         await _lspChannel.Writer.WriteAsync(message, ct);
     }
     
-    private async Task ProcessLspMessages(CancellationToken ct)
-    {
-        await foreach (var message in _lspChannel.Reader.ReadAllAsync(ct))
-        {
-            // Handle different LSP message types
-            if (message.Method == "textDocument/publishDiagnostics")
-            {
-                // Could extract test coverage info from diagnostics if available
-                continue;
-            }
-            
-            if (message.Result == null) continue;
-            
-            // Try to parse as document symbols (hierarchical)
-            try
-            {
-                var symbols = LspMessageParser.ParseDocumentSymbols(message.Result.Value);
-                if (symbols != null && symbols.Length > 0)
-                {
-                    await ProcessDocumentSymbols(symbols, message, ct);
-                    continue;
-                }
-            }
-            catch { /* Not document symbols */ }
-            
-            // Try to parse as symbol information (flat)
-            try
-            {
-                var symbolInfo = LspMessageParser.ParseSymbolInformation(message.Result.Value);
-                if (symbolInfo != null && symbolInfo.Length > 0)
-                {
-                    await ProcessSymbolInformation(symbolInfo, ct);
-                    continue;
-                }
-            }
-            catch { /* Not symbol information */ }
-            
-            // Try to parse as references
-            try
-            {
-                var references = LspMessageParser.ParseReferences(message.Result.Value);
-                if (references != null && references.Length > 0)
-                {
-                    await ProcessReferences(references, ct);
-                    continue;
-                }
-            }
-            catch { /* Not references */ }
-        }
-    }
-    
-    private async Task ProcessDocumentSymbols(DocumentSymbol[] symbols, LspMessage message, CancellationToken ct)
-    {
-        // Extract file URI from the request params if available
-        string? fileUri = ExtractFileUri(message);
-        if (fileUri == null) return;
-        
-        // Cache symbols for this file
-        _symbolCache[fileUri] = symbols.ToList();
-        
-        // Recursively process all symbols
-        foreach (var symbol in symbols)
-        {
-            await ProcessSymbolHierarchy(symbol, fileUri, parentNamespace: null, ct);
-        }
-    }
     
     private async Task ProcessSymbolHierarchy(
         DocumentSymbol symbol, 
@@ -149,66 +356,6 @@ public class MetricsCollector
                 await ProcessSymbolHierarchy(child, fileUri, currentNamespace, ct);
             }
         }
-    }
-    
-    private async Task ProcessSymbolInformation(SymbolInformation[] symbols, CancellationToken ct)
-    {
-        foreach (var symbol in symbols)
-        {
-            if (symbol.Kind is SymbolKind.Class or SymbolKind.Method or SymbolKind.Function)
-            {
-                var nodeId = GenerateNodeIdFromLocation(symbol.Location, symbol.Name);
-                
-                var update = new NodeUpdate
-                {
-                    NodeId = nodeId,
-                    Type = MapSymbolKindToType(symbol.Kind),
-                    Language = DetectLanguageFromUri(symbol.Location.Uri),
-                    Name = symbol.Name,
-                    FilePath = UriToFilePath(symbol.Location.Uri),
-                    LineStart = symbol.Location.Range.Start.Line,
-                    LineEnd = symbol.Location.Range.End.Line,
-                    Namespace = symbol.ContainerName
-                };
-                
-                await _updateChannel.Writer.WriteAsync(update, ct);
-            }
-        }
-    }
-    
-    private async Task ProcessReferences(Location[] references, CancellationToken ct)
-    {
-        // References tell us about dependencies (calls, imports, etc.)
-        // Group by file to batch process
-        var referencesByFile = references.GroupBy(r => r.Uri);
-        
-        foreach (var fileGroup in referencesByFile)
-        {
-            foreach (var reference in fileGroup)
-            {
-                // Find the symbol at this reference location
-                var fromNodeId = await FindNodeAtLocation(reference, ct);
-                
-                // This is tricky - we need context about WHAT is being referenced
-                // For now, we'll need to correlate with the original request
-                // that triggered the reference search
-                
-                // TODO: Track reference request context to build accurate dependency edges
-            }
-        }
-    }
-    
-    private async Task<string?> FindNodeAtLocation(Location location, CancellationToken ct)
-    {
-        // Query SurrealDB for node at this file/line
-        var filePath = UriToFilePath(location.Uri);
-        var line = location.Range.Start.Line;
-        
-        // This would need a query like:
-        // SELECT * FROM node WHERE file_path = $path AND line_start <= $line AND line_end >= $line
-        
-        // For now, generate expected ID
-        return GenerateNodeIdFromLocation(location, "unknown");
     }
     
     private string GenerateNodeIdFromSymbol(string fileUri, DocumentSymbol symbol)

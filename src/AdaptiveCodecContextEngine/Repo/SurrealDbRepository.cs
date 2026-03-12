@@ -8,19 +8,19 @@ public class SurrealDbRepository
 {
     private readonly SurrealDbClient _db;
     private readonly AvecCalculator _avecCalculator;
-    
+
     public SurrealDbRepository(string connectionString, AvecWeights weights)
     {
         _db = new SurrealDbClient(connectionString);
         _avecCalculator = new AvecCalculator(weights);
     }
-    
+
     public async Task InitializeAsync()
     {
         await _db.Use("acc", "nodes");
         await CreateSchema();
     }
-    
+
     private async Task CreateSchema()
     {
         // Define node table
@@ -68,7 +68,7 @@ public class SurrealDbRepository
             
             DEFINE INDEX unique_node_id ON node FIELDS node_id UNIQUE;
         ");
-        
+
         // Define dependency edges
         await _db.RawQuery(@"
             DEFINE TABLE IF NOT EXISTS depends SCHEMAFULL TYPE RELATION IN node OUT node;
@@ -78,7 +78,7 @@ public class SurrealDbRepository
             DEFINE INDEX depends_in_out ON depends FIELDS in, out;
         ");
     }
-    
+
     public async Task UpsertNodeAsync(NodeUpdate update)
     {
         // Build the node record
@@ -92,17 +92,17 @@ public class SurrealDbRepository
             ["line_start"] = update.LineStart,
             ["line_end"] = update.LineEnd
         };
-        
+
         // Add optional fields
         if (update.Namespace != null) nodeRecord["namespace"] = update.Namespace;
         if (update.Signature != null) nodeRecord["signature"] = update.Signature;
         if (update.ReturnType != null) nodeRecord["return_type"] = update.ReturnType;
-        
+
         // LSP metrics
         if (update.LinesOfCode.HasValue) nodeRecord["lines_of_code"] = update.LinesOfCode.Value;
         if (update.CyclomaticComplexity.HasValue) nodeRecord["cyclomatic_complexity"] = update.CyclomaticComplexity.Value;
         if (update.Parameters.HasValue) nodeRecord["parameters"] = update.Parameters.Value;
-        
+
         // Git history
         if (update.GitHistory != null)
         {
@@ -113,7 +113,7 @@ public class SurrealDbRepository
             nodeRecord["git_avg_days_between_changes"] = update.GitHistory.AvgDaysBetweenChanges;
             nodeRecord["git_recent_frequency"] = update.GitHistory.RecentFrequency;
         }
-        
+
         // Test coverage
         if (update.TestCoverage != null)
         {
@@ -122,33 +122,33 @@ public class SurrealDbRepository
             nodeRecord["test_branch_coverage"] = update.TestCoverage.BranchCoverage;
             nodeRecord["test_count"] = update.TestCoverage.TestCount;
         }
-        
+
         // Upsert: insert if not exists, merge if exists
         var query = @"
             UPSERT node:⟨$node_id⟩ 
             CONTENT $data
             RETURN AFTER;
         ";
-        
+
         var result = await _db.RawQuery(query, new
         {
             node_id = update.NodeId,
             data = nodeRecord
         });
-        
+
         // After upsert, recalculate AVEC if we have enough data
         await RecalculateAvecAsync(update.NodeId);
     }
-    
+
     private async Task RecalculateAvecAsync(string nodeId)
     {
         // Fetch the node with all metrics
         var query = "SELECT * FROM node:⟨$node_id⟩";
         var result = await _db.RawQuery(query, new { node_id = nodeId });
-        
+
         var node = result.FirstOrDefault();
         if (node == null) return;
-        
+
         // Extract metrics
         var metrics = new NodeMetrics
         {
@@ -164,10 +164,10 @@ public class SurrealDbRepository
             TestLineCoverage = node.GetValueOrDefault<double>("test_line_coverage"),
             TestBranchCoverage = node.GetValueOrDefault<double>("test_branch_coverage")
         };
-        
+
         // Calculate AVEC
         var avec = _avecCalculator.Calculate(metrics);
-        
+
         // Update AVEC field
         var updateQuery = @"
             UPDATE node:⟨$node_id⟩ 
@@ -175,7 +175,7 @@ public class SurrealDbRepository
                 avec.computed_at = time::now()
             RETURN AFTER;
         ";
-        
+
         await _db.RawQuery(updateQuery, new
         {
             node_id = nodeId,
@@ -187,11 +187,11 @@ public class SurrealDbRepository
                 autonomy = avec.Autonomy
             }
         });
-        
+
         // Calculate delta if avec_learned exists
         await CalculateDeltaAsync(nodeId);
     }
-    
+
     private async Task CalculateDeltaAsync(string nodeId)
     {
         var query = @"
@@ -205,10 +205,10 @@ public class SurrealDbRepository
             WHERE avec_learned IS NOT NONE
             RETURN AFTER;
         ";
-        
+
         await _db.RawQuery(query, new { node_id = nodeId });
     }
-    
+
     public async Task UpsertDependencyAsync(string fromNodeId, string toNodeId, string relationshipType)
     {
         var weight = relationshipType switch
@@ -219,13 +219,13 @@ public class SurrealDbRepository
             "references" => 0.3,
             _ => 0.5
         };
-        
+
         var query = @"
             RELATE node:⟨$from⟩->depends->node:⟨$to⟩
             SET relationship_type = $type,
                 weight = $weight;
         ";
-        
+
         await _db.RawQuery(query, new
         {
             from = fromNodeId,
@@ -233,16 +233,16 @@ public class SurrealDbRepository
             type = relationshipType,
             weight
         });
-        
+
         // Update edge counts for both nodes
         await UpdateEdgeCountsAsync(fromNodeId);
         await UpdateEdgeCountsAsync(toNodeId);
-        
+
         // Recalculate AVEC for both (friction/autonomy depend on edges)
         await RecalculateAvecAsync(fromNodeId);
         await RecalculateAvecAsync(toNodeId);
     }
-    
+
     private async Task UpdateEdgeCountsAsync(string nodeId)
     {
         var query = @"
@@ -251,22 +251,22 @@ public class SurrealDbRepository
                 outgoing_edges = (SELECT count() FROM depends WHERE in = $parent.id)[0].count,
                 total_degree = incoming_edges + outgoing_edges;
         ";
-        
+
         await _db.RawQuery(query, new { node_id = nodeId });
     }
-    
+
     public async Task<NodeQueryResult?> QueryRelationsAsync(string nodeId, bool includeScores = false)
     {
         var query = includeScores
             ? "SELECT *, ->depends.* as outgoing, <-depends.* as incoming FROM node:⟨$node_id⟩"
             : "SELECT node_id, name, type, ->depends.out as outgoing, <-depends.in as incoming FROM node:⟨$node_id⟩";
-        
+
         var result = await _db.RawQuery(query, new { node_id = nodeId });
         return result.FirstOrDefault() as NodeQueryResult;
     }
-    
+
     public async Task<List<NodeQueryResult>> QueryDependenciesAsync(
-        string nodeId, 
+        string nodeId,
         DependencyDirection direction = DependencyDirection.Both,
         int maxDepth = -1,
         bool includeScores = false)
@@ -278,18 +278,18 @@ public class SurrealDbRepository
             DependencyDirection.Both => "<->depends<->",
             _ => "<->depends<->"
         };
-        
+
         var depthClause = maxDepth > 0 ? $"..{maxDepth}" : "..";
-        
+
         var query = $@"
             SELECT * FROM node:⟨$node_id⟩{traversal}node{depthClause}
             {(includeScores ? "" : "OMIT avec, avec_learned")}
         ";
-        
+
         var result = await _db.RawQuery(query, new { node_id = nodeId });
         return result.Cast<NodeQueryResult>().ToList();
     }
-    
+
     public async Task<List<NodeQueryResult>> QueryPatternsAsync(
         AvecScores targetProfile,
         double threshold = 0.8,
@@ -310,7 +310,7 @@ public class SurrealDbRepository
             ORDER BY distance ASC
             LIMIT 50;
         ";
-        
+
         var result = await _db.RawQuery(query, new
         {
             stability = targetProfile.Stability,
@@ -319,7 +319,27 @@ public class SurrealDbRepository
             autonomy = targetProfile.Autonomy,
             threshold = 1 - threshold // Convert similarity to distance
         });
-        
+
         return result.Cast<NodeQueryResult>().ToList();
+    }
+    public async Task<string?> FindNodeAtLocationAsync(string filePath, int line)
+    {
+        var query = @"
+        SELECT node_id FROM node 
+        WHERE file_path = $path 
+          AND line_start <= $line 
+          AND line_end >= $line
+        LIMIT 1;
+    ";
+
+        var result = await _db.RawQuery(query, new { path = filePath, line });
+        return result.FirstOrDefault()?.GetValue<string>("node_id");
+    }
+
+    public async Task<string?> FindNodeByNameAsync(string name)
+    {
+        var query = "SELECT node_id FROM node WHERE name = $name LIMIT 1;";
+        var result = await _db.RawQuery(query, new { name });
+        return result.FirstOrDefault()?.GetValue<string>("node_id");
     }
 }
