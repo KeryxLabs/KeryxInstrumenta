@@ -36,4 +36,9 @@ namespace AdaptiveCodecContextEngine.Models;
 [JsonSerializable(typeof(List<NodeDto>))]
 [JsonSerializable(typeof(ProjectStatsDto))]
 [JsonSerializable(typeof(AvecScores))]
+[JsonSerializable(typeof(RegisterLspStreamResponse))]
+[JsonSerializable(typeof(LspStreamInfo))]
+[JsonSerializable(typeof(List<LspStreamInfo>))]
+[JsonSerializable(typeof(RegisterLspStreamParams))]
+[JsonSerializable(typeof(UnregisterLspStreamParams))]
 internal partial class ACCJsonContext : JsonSerializerContext { }

@@ -33,16 +33,15 @@ public class AccHostedService : BackgroundService
 
             // Start git watcher
             _logger.LogInformation("Starting Git watcher...");
-            var gitTask = _gitWatcher.StartAsync(stoppingToken);
+            await _gitWatcher.StartAsync(stoppingToken);
 
             // Start metrics collector
             _logger.LogInformation("Starting metrics collector...");
-            var metricsTask = _metricsCollector.StartAsync(stoppingToken);
+            await _metricsCollector.StartAsync(stoppingToken);
 
             _logger.LogInformation("ACC is running. Press Ctrl+C to stop.");
 
-            // Wait for both tasks
-            await Task.WhenAll(gitTask, metricsTask);
+          
         }
         catch (OperationCanceledException)
         {

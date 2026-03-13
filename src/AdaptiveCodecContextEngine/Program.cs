@@ -73,7 +73,7 @@ builder.Services.AddSurreal(options);
 // --- 4. Register Services ---
 // Channels
 builder.Services
-.AddSingleton(_ => Channel.CreateUnbounded<LspMessage>())
+.AddSingleton(_ => Channel.CreateUnbounded<LspMessageWithContext>())
 .AddSingleton(_ => Channel.CreateUnbounded<GitEvent>())
 .AddSingleton(_ => Channel.CreateUnbounded<NodeUpdate>())
 .AddSingleton(_ => Channel.CreateUnbounded<DependencyEdge>());
@@ -90,13 +90,15 @@ builder.Services
 .AddHostedService<JsonRpcServer>();
 
 builder.Services
-.AddSingleton(sp => new LspClient(Console.OpenStandardInput(), sp.GetRequiredService<ILogger<LspClient>>()))
-.AddSingleton(sp =>
+.AddSingleton<LspStreamManager>()
+.AddSingleton<GitWatcher>(sp =>
 {
-    var acc = sp.GetRequiredService<IOptions<AccOptions>>().Value;
+    var accOptions = builder.Configuration.GetSection("Acc").Get<AccOptions>() 
+        ?? throw new InvalidOperationException("ACC configuration missing");
     var gitChannel = sp.GetRequiredService<Channel<GitEvent>>();
     var logger = sp.GetRequiredService<ILogger<GitWatcher>>();
-    return new GitWatcher(acc.RepositoryPath, gitChannel, logger);
+    
+    return new GitWatcher(accOptions.RepositoryPath, gitChannel, logger, builder.Configuration);
 })
 .AddHostedService<AccHostedService>();
 
@@ -117,6 +119,8 @@ public class AccOptions
 {
     public string RepositoryPath { get; set; } = null!;
     public AvecTarget? Target { get; set; }
+    public string[] FileExtensions {get;set;}= [];
+    public List<LspStreamConfig> LspStreams { get; set; } = [];
 }
 
 public class AvecTarget

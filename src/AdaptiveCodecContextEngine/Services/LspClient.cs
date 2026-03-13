@@ -3,70 +3,130 @@ using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lsp;
 using Microsoft.Extensions.Logging;
 
-public class LspClient
+public class LspStreamListener
 {
-    private readonly Stream _stdin;
-    private readonly ILogger<LspClient> _logger;
-    private int _requestIdCounter = 0;
+    private readonly Channel<LspMessageWithContext> _lspChannel;
+    private readonly ILogger<LspStreamListener> _logger;
+    private readonly CancellationTokenSource _cts;
+    public string Language { get; }
+    public bool IsStopped => _cts.IsCancellationRequested;
     
-    public LspClient(Stream stdin, ILogger<LspClient> logger)
+    public LspStreamListener(
+        Channel<LspMessageWithContext> lspChannel,
+        ILogger<LspStreamListener> logger,
+        string language)
     {
-        _stdin = stdin;
+        _lspChannel = lspChannel;
         _logger = logger;
+        Language = language;
+        _cts = new CancellationTokenSource();
     }
     
-    public async Task RequestOutgoingCallsAsync(Guid requestId, string uri, Position position)
+    /// <summary>
+    /// Start listening to an LSP stdio stream (from stdin, named pipe, socket, etc.)
+    /// </summary>
+    public async Task ListenAsync(Stream inputStream, CancellationToken ct)
     {
-        var request = new LspRequest
+        var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _cts.Token);
+        
+        try
         {
-            JsonRpc = "2.0",
-            Id = requestId,
-            Method = "callHierarchy/outgoingCalls",
-            Params = new()
+            using var reader = new StreamReader(inputStream, Encoding.UTF8, leaveOpen: true);
+            
+            _logger.LogInformation($"LSP listener started for language: {Language}");
+            
+            while (!linkedCts.Token.IsCancellationRequested)
             {
-                Item = new()
+                try
                 {
-                    Uri = uri,
-                    Range = new() { Start = position, End = position },
-                    SelectionRange = new() { Start = position, End = position }
+                    var message = await ReadLspMessageAsync(reader, linkedCts.Token);
+                    
+                    if (message != null)
+                    {
+                        // Tag message with language for routing
+                        await _lspChannel.Writer.WriteAsync(
+                            new LspMessageWithContext(message, Language), 
+                            linkedCts.Token);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, $"Error reading LSP message for {Language}");
                 }
             }
-        };
-        
-        await SendRequest(request);
-    }
-    
-    public async Task RequestDefinitionAsync(Guid requestId, string uri, Position position)
-    {
-        var request = new LspRequest
+        }
+        finally
         {
-            JsonRpc = "2.0",
-            Id = requestId,
-            Method = "textDocument/definition",
-            Params = new LspRequestParams
-            {
-                TextDocument = new TextDocument { Uri =uri },
-                Position = position
-            }
-        };
-        
-        await SendRequest(request);
+            _logger.LogInformation($"LSP listener stopped for language: {Language}");
+        }
     }
     
-    private async Task SendRequest(LspRequest request)
+    private async Task<LspMessage?> ReadLspMessageAsync(StreamReader reader, CancellationToken ct)
     {
-        _logger.LogDebug("Sending LSP request: {Method} ({Id})", request.Method, request.Id);
-        var json = JsonSerializer.Serialize(request, ACCJsonContext.Default.LspRequest);
-        var content = Encoding.UTF8.GetBytes(json);
-        var header = $"Content-Length: {content.Length}\r\n\r\n";
-        var headerBytes = Encoding.UTF8.GetBytes(header);
+        // Read Content-Length header
+        string? headerLine;
+        int contentLength = 0;
         
-        await _stdin.WriteAsync(headerBytes);
-        await _stdin.WriteAsync(content);
-        await _stdin.FlushAsync();
+        while ((headerLine = await reader.ReadLineAsync(ct)) != null)
+        {
+            if (string.IsNullOrWhiteSpace(headerLine))
+            {
+                // Empty line = end of headers
+                break;
+            }
+            
+            if (headerLine.StartsWith("Content-Length:", StringComparison.OrdinalIgnoreCase))
+            {
+                var lengthStr = headerLine.Substring("Content-Length:".Length).Trim();
+                if (!int.TryParse(lengthStr, out contentLength))
+                {
+                    _logger.LogWarning($"Invalid Content-Length: {lengthStr}");
+                    return null;
+                }
+            }
+            // Ignore other headers (Content-Type, etc.)
+        }
+        
+        if (contentLength == 0)
+        {
+            return null;
+        }
+        
+        // Read content
+        var buffer = new char[contentLength];
+        var totalRead = 0;
+        
+        while (totalRead < contentLength)
+        {
+            var read = await reader.ReadAsync(buffer, totalRead, contentLength - totalRead);
+            if (read == 0)
+            {
+                _logger.LogWarning("Unexpected end of stream");
+                return null;
+            }
+            totalRead += read;
+        }
+        
+        var json = new string(buffer, 0, totalRead);
+        
+        _logger.LogDebug($"LSP[{Language}] message: {json}");
+        
+        // Parse
+        return LspMessageParser.Parse(json);
+    }
+    
+    public void Stop()
+    {
+        _cts.Cancel();
     }
 }
 
+// Wrapper to track which language/LSP a message came from
+public record LspMessageWithContext(LspMessage Message, string Language);
 public record LspRequest
 {
       public required string JsonRpc {get;init;} 

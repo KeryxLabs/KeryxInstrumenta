@@ -14,6 +14,7 @@ public class JsonRpcServer : BackgroundService
 {
     private readonly IAccQueryService _queryService;
     private readonly ILogger<JsonRpcServer> _logger;
+    private readonly LspStreamManager _lspStreamManager;
     private readonly int _port;
     
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -24,11 +25,13 @@ public class JsonRpcServer : BackgroundService
     
     public JsonRpcServer(
         IAccQueryService queryService,
+        LspStreamManager streamManager,
         ILogger<JsonRpcServer> logger,
         IConfiguration configuration)
     {
         _queryService = queryService;
         _logger = logger;
+        _lspStreamManager = streamManager;
         _port = configuration.GetValue<int>("JsonRpc:Port", 9339);
     }
     
@@ -146,6 +149,15 @@ private async Task<JsonElement> ExecuteMethodAsync(JsonRpcRequest request)
             
         "acc.getStats" => 
             JsonSerializer.SerializeToElement(await HandleGetStatsAsync(), ACCJsonContext.Default.ProjectStatsDto),
+             
+    // New LSP stream management methods
+    "acc.registerLspStream" => 
+        JsonSerializer.SerializeToElement(await HandleRegisterLspStreamAsync(request.Params), ACCJsonContext.Default.RegisterLspStreamResponse),
+    "acc.unregisterLspStream" => 
+        JsonSerializer.SerializeToElement(await HandleUnregisterLspStreamAsync(request.Params), ACCJsonContext.Default.Boolean),
+    "acc.listLspStreams" => 
+        JsonSerializer.SerializeToElement(HandleListLspStreams(), ACCJsonContext.Default.ListLspStreamInfo),
+    
             
         _ => default
     };
@@ -257,4 +269,55 @@ private async Task<JsonElement> ExecuteMethodAsync(JsonRpcRequest request)
             }
         };
     }
+    private async Task<RegisterLspStreamResponse> HandleRegisterLspStreamAsync(JsonElement? paramsElement)
+{
+    if (!paramsElement.HasValue)
+        throw new ArgumentException("Missing params");
+    
+    var @params = JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.RegisterLspStreamParams);
+    if (@params == null)
+        throw new ArgumentException("Invalid params");
+    
+    try
+    {
+        var streamType = Enum.Parse<LspStreamType>(@params.Type, ignoreCase: true);
+        var streamId = await _lspStreamManager.RegisterStreamAsync(
+            streamType, 
+            @params.Language, 
+            @params.Path, 
+            @params.Port);
+        
+        return new RegisterLspStreamResponse
+        {
+            Success = true,
+            StreamId = streamId
+        };
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Failed to register LSP stream");
+        return new RegisterLspStreamResponse
+        {
+            Success = false,
+            Error = ex.Message
+        };
+    }
+}
+
+private async Task<bool> HandleUnregisterLspStreamAsync(JsonElement? paramsElement)
+{
+    if (!paramsElement.HasValue)
+        throw new ArgumentException("Missing params");
+    
+    var @params = JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.UnregisterLspStreamParams);
+    if (@params == null)
+        throw new ArgumentException("Invalid params");
+    
+    return await _lspStreamManager.UnregisterStreamAsync(@params.StreamId);
+}
+
+private List<LspStreamInfo> HandleListLspStreams()
+{
+    return _lspStreamManager.GetRegisteredStreams();
+}
 }

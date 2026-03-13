@@ -18,6 +18,7 @@ public class LizardAnalyzer
 
     public async Task<LizardResult?> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
+        //_logger.LogInformation("Analyzing {file}", filePath);
         var processStartInfo = new ProcessStartInfo
         {
             FileName = _lizardPath,
@@ -36,9 +37,9 @@ public class LizardAnalyzer
 
             var output = await process.StandardOutput.ReadToEndAsync(ct);
             var error = await process.StandardError.ReadToEndAsync(ct);
-
+            
             await process.WaitForExitAsync(ct);
-
+            
             if (process.ExitCode != 0)
             {
                 _logger.LogError("Lizard exited with code {ExitCode}: {Error}", process.ExitCode, error);
