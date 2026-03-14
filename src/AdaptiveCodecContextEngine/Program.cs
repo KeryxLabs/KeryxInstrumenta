@@ -13,6 +13,7 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics.CodeAnalysis;
 using SurrealDb.Net.Models.Response;
 using Dahomey.Cbor.Serialization.Converters;
+using System.Text;
 
 // This forces the compiler to see the link between the List and the Interface
 [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(MemberConverter<ProjectStatsDto, int>))]
@@ -57,8 +58,8 @@ if (dbEndpoint.StartsWith("surrealkv://"))
     if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
 }
 
-
-
+// var repoPathHash =builder.Configuration.GetSection("Acc").Get<AccOptions>()?.RepositoryPath.ComputeStableHash();
+// var dbName = $"{surrealSettings.Database}_{repoPathHash}";
 var options = SurrealDbOptions.Create()
     .WithEndpoint(dbEndpoint)
     .WithNamespace(surrealSettings.Namespace)
@@ -123,3 +124,4 @@ public class AvecTarget
     public double Friction { get; set; }
     public double Autonomy { get; set; }
 }
+ 

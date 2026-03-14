@@ -1,0 +1,70 @@
+{
+  "name": "acc-vscode",
+  "displayName": "ACC - Adaptive Codec Context",
+  "description": "Dimensional code indexing and navigation powered by ACC",
+  "version": "0.1.3",
+  "engines": {
+    "vscode": "^1.110.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "acc.search",
+        "title": "ACC: Search Nodes"
+      },
+      {
+        "command": "acc.showStats",
+        "title": "ACC: Show Project Stats"
+      },
+      {
+        "command": "acc.showHighFriction",
+        "title": "ACC: Show High-Friction Nodes"
+      },
+      {
+        "command": "acc.showUnstable",
+        "title": "ACC: Show Unstable Nodes"
+      },
+      {
+        "command": "acc.findDependencies",
+        "title": "ACC: Find Dependencies"
+      }
+    ],
+    "configuration": {
+      "title": "ACC",
+      "properties": {
+        "acc.rpcHost": {
+          "type": "string",
+          "default": "localhost",
+          "description": "ACC JSON-RPC server host"
+        },
+        "acc.rpcPort": {
+          "type": "number",
+          "default": 9339,
+          "description": "ACC JSON-RPC server port"
+        },
+        "acc.enableLspForwarding": {
+          "type": "boolean",
+          "default": true,
+          "description": "Forward LSP messages to ACC"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^18.19.130",
+    "@types/vscode": "^1.110.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,3 +1,4 @@
+using System.Text;
 using AdaptiveCodecContextEngine.Models.Surreal;
 
 public static class DbHelperExtensions
@@ -46,6 +47,21 @@ public static class DbHelperExtensions
                 nodes.Add(node);
             }
             return nodes;
+        }
+    }
+}
+
+
+public static class HashExtensions
+{
+    extension(string input)
+    {
+        public string ComputeStableHash()
+        {
+            using var sha256 = System.Security.Cryptography.SHA256.Create();
+            var bytes = Encoding.UTF8.GetBytes(input);
+            var hashBytes = sha256.ComputeHash(bytes);
+            return Convert.ToHexString(hashBytes[..16]).ToLowerInvariant();
         }
     }
 }

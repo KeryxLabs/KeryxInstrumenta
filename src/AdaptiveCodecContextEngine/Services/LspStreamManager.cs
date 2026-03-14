@@ -10,7 +10,7 @@ public class LspStreamManager
     private readonly ILoggerFactory _loggerFactory;
     private readonly ConcurrentDictionary<string, LspStreamListener> _listeners = new();
     private readonly ConcurrentDictionary<string, Task> _listenerTasks = new();
-    
+
     public LspStreamManager(
         Channel<LspMessageWithContext> lspChannel,
         ILogger<LspStreamManager> logger,
@@ -20,7 +20,7 @@ public class LspStreamManager
         _logger = logger;
         _loggerFactory = loggerFactory;
     }
-    
+
     /// <summary>
     /// Register and start a new LSP stream dynamically
     /// </summary>
@@ -32,18 +32,18 @@ public class LspStreamManager
         CancellationToken ct = default)
     {
         var streamId = GenerateStreamId(type, language, path, port);
-        
+
         if (_listeners.ContainsKey(streamId))
         {
             _logger.LogWarning($"Stream already registered: {streamId}");
             return streamId;
         }
-        
+
         _logger.LogInformation($"Registering LSP stream: {streamId}");
-        
+
         var listener = new LspStreamListener(_lspChannel, _loggerFactory.CreateLogger<LspStreamListener>(), language);
         _listeners[streamId] = listener;
-        
+
         // Start listening in background
         var task = type switch
         {
@@ -52,12 +52,12 @@ public class LspStreamManager
             LspStreamType.Tcp => ListenTcpAsync(listener, port!.Value, ct),
             _ => throw new ArgumentException($"Unknown stream type: {type}")
         };
-        
+
         _listenerTasks[streamId] = task;
-        
+
         return streamId;
     }
-    
+
     /// <summary>
     /// Unregister and stop a specific stream
     /// </summary>
@@ -67,11 +67,11 @@ public class LspStreamManager
         {
             return false;
         }
-        
+
         _logger.LogInformation($"Unregistering LSP stream: {streamId}");
-        
+
         listener.Stop();
-        
+
         if (_listenerTasks.TryRemove(streamId, out var task))
         {
             try
@@ -83,10 +83,10 @@ public class LspStreamManager
                 // Expected when stopping
             }
         }
-        
+
         return true;
     }
-    
+
     /// <summary>
     /// List all registered streams
     /// </summary>
@@ -99,45 +99,83 @@ public class LspStreamManager
             IsActive = !kvp.Value.IsStopped
         }).ToList();
     }
-    
+
     private async Task ListenStdinAsync(LspStreamListener listener, CancellationToken ct)
     {
         var stdin = Console.OpenStandardInput();
         await listener.ListenAsync(stdin, ct);
     }
-    
+
     private async Task ListenNamedPipeAsync(LspStreamListener listener, string pipeName, CancellationToken ct)
     {
-        #if WINDOWS
+#if WINDOWS
         var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.In);
         await pipe.ConnectAsync(ct);
         await listener.ListenAsync(pipe, ct);
-        #else
+#else
         // Unix domain socket
         var socketPath = pipeName.StartsWith("/") ? pipeName : Path.Combine("/tmp", pipeName);
-        
+
         // Wait for socket to exist (editor might create it)
         while (!File.Exists(socketPath) && !ct.IsCancellationRequested)
         {
             _logger.LogDebug($"Waiting for socket: {socketPath}");
             await Task.Delay(100, ct);
         }
-        
+
         var socket = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
         await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), ct);
         var stream = new NetworkStream(socket, ownsSocket: true);
         await listener.ListenAsync(stream, ct);
-        #endif
+#endif
     }
+
+private async Task ListenTcpAsync(LspStreamListener listener, int port, CancellationToken ct)
+{
+    _logger.LogInformation("Creating TCP listener on port {Port}", port);
     
-    private async Task ListenTcpAsync(LspStreamListener listener, int port, CancellationToken ct)
+    var tcpListener = new TcpListener(IPAddress.Loopback, port);
+    
+    try
     {
-        var client = new TcpClient();
-        await client.ConnectAsync(IPAddress.Loopback, port, ct);
-        var stream = client.GetStream();
-        await listener.ListenAsync(stream, ct);
+        tcpListener.Start();
+        _logger.LogInformation("TCP listener STARTED on port {Port}, waiting for connections...", port);
+        
+        while (!ct.IsCancellationRequested)
+        {
+            var client = await tcpListener.AcceptTcpClientAsync(ct);
+            _logger.LogInformation("Client connected on port {Port}", port);
+            
+            // Handle each client in a separate task so we can accept more connections
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var stream = client.GetStream();
+                    await listener.ListenAsync(stream, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error handling client on port {Port}", port);
+                }
+                finally
+                {
+                    client.Close();
+                    _logger.LogInformation("Client disconnected from port {Port}", port);
+                }
+            }, ct);
+        }
     }
-    
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "TCP listener error on port {Port}", port);
+    }
+    finally
+    {
+        tcpListener.Stop();
+        _logger.LogInformation("TCP listener stopped on port {Port}", port);
+    }
+}
     private string GenerateStreamId(LspStreamType type, string language, string? path, int? port)
     {
         return type switch
@@ -148,7 +186,7 @@ public class LspStreamManager
             _ => throw new ArgumentException($"Unknown type: {type}")
         };
     }
-    
+
     public void StopAll()
     {
         foreach (var listener in _listeners.Values)

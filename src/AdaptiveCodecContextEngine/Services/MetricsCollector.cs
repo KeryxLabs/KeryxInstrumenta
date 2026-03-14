@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Git;
@@ -52,56 +53,58 @@ public class MetricsCollector
 
     private async Task ProcessLspMessages(CancellationToken ct)
     {
+        _logger.LogInformation("LSP message processor started");
+
         await foreach (var messageWithContext in _lspChannel.Reader.ReadAllAsync(ct))
         {
-            _logger.LogDebug("Processing LSP Message");
             var message = messageWithContext.Message;
             var language = messageWithContext.Language;
 
-            // We only care about LSP responses that contain data
-            if (message.Result == null) continue;
+            _logger.LogDebug("Processing LSP Message");
+            _logger.LogInformation("Received LSP message: method={Method}, hasResult={HasResult}, language={Language}",
+                message.Method, message.Result.HasValue, language);
 
-            // Try to parse as document symbols (hierarchical)
+            if (message.Result == null || !message.Result.HasValue)
+            {
+                _logger.LogDebug("Skipping message - no result field");
+                continue;
+            }
+
+            _logger.LogDebug("Attempting to parse as document symbols...");
+
             try
             {
                 var symbols = LspMessageParser.ParseDocumentSymbols(message.Result.Value);
+
+                _logger.LogDebug("ParseDocumentSymbols returned: {IsNull}, count: {Count}",
+                    symbols == null ? "null" : "not null",
+                    symbols?.Length ?? 0);
+
                 if (symbols != null && symbols.Length > 0)
                 {
+                    _logger.LogInformation("Successfully parsed {Count} document symbols", symbols.Length);
+
                     var fileUri = ExtractFileUri(message);
+                    _logger.LogInformation("Extracted fileUri: {FileUri}", fileUri);
+
                     if (fileUri != null)
                     {
                         await ProcessDocumentSymbols(symbols, fileUri, language, ct);
+                        _logger.LogInformation("Finished processing document symbols");
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Could not extract fileUri from message");
                     }
                     continue;
                 }
             }
-            catch { /* Not document symbols */ }
-
-            // Try to parse as symbol information (flat)
-            try
+            catch (Exception ex)
             {
-                var symbolInfo = LspMessageParser.ParseSymbolInformation(message.Result.Value);
-                if (symbolInfo != null && symbolInfo.Length > 0)
-                {
-                    await ProcessSymbolInformation(symbolInfo, language, ct);
-                    continue;
-                }
+                _logger.LogDebug(ex, "Failed to parse as document symbols");
             }
-            catch { /* Not symbol information */ }
 
-            // Try to parse as references (for building dependency edges)
-            try
-            {
-                var references = LspMessageParser.ParseReferences(message.Result.Value);
-                if (references != null && references.Length > 0)
-                {
-                    // We can still use reference data if the editor sends it
-                    // but we don't request it ourselves
-                    await ProcessReferences(references, language, ct);
-                    continue;
-                }
-            }
-            catch { /* Not references */ }
+            _logger.LogDebug("Message not recognized as document symbols");
         }
     }
 
@@ -152,7 +155,7 @@ public class MetricsCollector
                 Signature = symbol.Detail,
                 ReturnType = ExtractReturnType(symbol.Detail)
             };
-
+            _logger.LogDebug("Updating {nodeId}", nodeId);
             await _updateChannel.Writer.WriteAsync(update, ct);
         }
 
@@ -381,6 +384,7 @@ public class MetricsCollector
     private async Task ProcessGitEvents(CancellationToken ct)
     {
         await foreach (var gitEvent in _gitChannel.Reader.ReadAllAsync(ct))
+
         {
             // Skip deleted files
             if (gitEvent.Type == GitEventType.Deleted) continue;
@@ -452,18 +456,21 @@ public class MetricsCollector
     {
         var batch = new List<NodeUpdate>();
         var batchSize = 100;
-
+        var maxWaitMs = 50;
+        var lastBatchProcessedAt = Stopwatch.GetTimestamp();
         await foreach (var update in _updateChannel.Reader.ReadAllAsync(ct))
         {
             batch.Add(update);
 
-            if (batch.Count >= batchSize)
+            if (batch.Count >= batchSize || (batch.Count < batchSize && Stopwatch.GetElapsedTime(lastBatchProcessedAt).Milliseconds > maxWaitMs))
             {
+
                 await ProcessBatch(batch, ct);
                 batch.Clear();
 
                 // Brief delay to avoid overwhelming the connection
                 await Task.Delay(100, ct);
+                lastBatchProcessedAt = Stopwatch.GetTimestamp();
             }
         }
 
