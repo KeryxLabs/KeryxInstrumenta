@@ -306,21 +306,21 @@ public class SurrealDbRepository
                     avec_delta_friction as AvecDeltaFriction,
                     avec_delta_autonomy as AvecDeltaAutonomy
                     FROM node WHERE node_id IN $ids AND avec_needs_recalc = true;";
-        var results = await _db.RawQuery(query, new Dictionary<string, object?> { { "ids", nodeIds.Select(id => $"{id}").ToList() } } );
+        var results = await _db.RawQuery(query, new Dictionary<string, object?> { { "ids", nodeIds.Select(id => $"{id}").ToList() } });
 
         List<NodeRecord>? nodes = null;
-        
+
 
         try
         {
-           nodes = results.GetValue<List<NodeRecord>>(0) ?? new List<NodeRecord>();
+            nodes = results.GetValue<List<NodeRecord>>(0) ?? new List<NodeRecord>();
         }
         catch (CborException ex)
         {
             _logger.LogError(ex, "Unable to parse dawg");
-            
+
         }
-    
+
 
         if (results.HasErrors)
         {
@@ -347,11 +347,26 @@ public class SurrealDbRepository
         foreach (var node in nodes)
         {
             // 2. Perform the C# calculation in memory (Super Fast)
-            var metrics = new NodeMetrics { /* map from node */ };
+            var metrics = new NodeMetrics
+            {
+                LinesOfCode = node.LinesOfCode,
+                CyclomaticComplexity = node.CyclomaticComplexity,
+                Parameters = node.Parameters,
+                IncomingEdges = node.IncomingEdges,
+                OutgoingEdges = node.OutgoingEdges,
+                TotalDegree = node.TotalDegree,
+                GitTotalCommits = node.GitTotalCommits,
+                GitContributors = node.GitContributors,
+                GitAvgDaysBetweenChanges = node.GitAvgDaysBetweenChanges,
+                TestLineCoverage = node.TestLineCoverage,
+                TestBranchCoverage = node.TestBranchCoverage
+            };
             var avec = _avecCalculator.Calculate(metrics);
 
+            _logger.LogInformation(
+            "AVEC OUTPUT for {Name}: S={S:F2}, L={L:F2}, F={F:F2}, A={A:F2}",
+            node.Name, avec.Stability, avec.Logic, avec.Friction, avec.Autonomy);
 
-    
             updates.Add(new
             {
                 id = node.Id, // Ensure this is the record ID (node:hash)

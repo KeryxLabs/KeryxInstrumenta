@@ -30,7 +30,8 @@ public static class DbHelperExtensions
                     ["test_covered"] = update.TestCoverage?.Covered ?? false,
                     ["test_line_coverage"] = (double)(update.TestCoverage?.LineCoverage ?? 0),
                     ["test_branch_coverage"] = (double)(update.TestCoverage?.BranchCoverage ?? 0),
-                    ["test_count"] = update.TestCoverage?.TestCount ?? 0
+                    ["test_count"] = update.TestCoverage?.TestCount ?? 0,
+                    ["avec_needs_recalc"] = true,
                 };
 
                 if (update.Namespace is not null)
