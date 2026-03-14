@@ -2,7 +2,7 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-public class AccHostedService : BackgroundService
+public class AccHostedService : IHostedService
 {
     private readonly SurrealDbRepository _repository;
     private readonly GitWatcher _gitWatcher;
@@ -21,7 +21,8 @@ public class AccHostedService : BackgroundService
         _logger = logger;
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+
+    public async Task StartAsync(CancellationToken stoppingToken)
     {
         _logger.LogInformation("ACC starting up...");
 
@@ -41,7 +42,7 @@ public class AccHostedService : BackgroundService
 
             _logger.LogInformation("ACC is running. Press Ctrl+C to stop.");
 
-          
+
         }
         catch (OperationCanceledException)
         {
@@ -52,5 +53,13 @@ public class AccHostedService : BackgroundService
             _logger.LogError(ex, "ACC encountered an error");
             throw;
         }
+    }
+
+
+
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Stopping Service...");
+        return Task.CompletedTask;
     }
 }

@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Git;
 using AdaptiveCodecContextEngine.Models.Lsp;
@@ -53,6 +54,7 @@ public class MetricsCollector
     {
         await foreach (var messageWithContext in _lspChannel.Reader.ReadAllAsync(ct))
         {
+            _logger.LogDebug("Processing LSP Message");
             var message = messageWithContext.Message;
             var language = messageWithContext.Language;
 
@@ -308,14 +310,16 @@ public class MetricsCollector
     {
         var filePath = UriToFilePath(fileUri);
         var relativePath = Path.GetRelativePath(Environment.CurrentDirectory, filePath);
-        return $"{relativePath}:{symbol.Name}:{symbol.Range.Start.Line}";
+        var full_id = $"{relativePath}:{symbol.Name}:{symbol.Range.Start.Line}";
+        return $"node_{ComputeStableHash(full_id)}";
     }
 
     private string GenerateNodeIdFromLocation(Location location, string name)
     {
         var filePath = UriToFilePath(location.Uri);
         var relativePath = Path.GetRelativePath(Environment.CurrentDirectory, filePath);
-        return $"{relativePath}:{name}:{location.Range.Start.Line}";
+        var full_id = $"{relativePath}:{name}:{location.Range.Start.Line}";
+        return $"node_{ComputeStableHash(full_id)}";
     }
 
     private string MapSymbolKindToType(SymbolKind kind) => kind switch
@@ -392,6 +396,7 @@ public class MetricsCollector
             {
                 foreach (var function in lizardResult.FunctionList)
                 {
+                    //_logger.LogInformation("Building function");
                     // Merge with LSP data if available
                     var nodeId = GenerateNodeId(gitEvent.FilePath, function.Name, function.StartLine);
 
@@ -421,20 +426,81 @@ public class MetricsCollector
         }
     }
 
+    // private async Task ProcessNodeUpdates(CancellationToken ct)
+    // {
+    //     await foreach (var update in _updateChannel.Reader.ReadAllAsync(ct))
+    //     {
+    //         _logger.LogInformation("Upserting node {NodeId} for {FilePath}", update.NodeId, update.FilePath);
+    //         // Upsert to SurrealDB - merges LSP + Lizard + Git data
+
+    //         try
+    //         {
+
+    //             await _repository.UpsertNodeAsync(update);
+    //         }
+    //         catch (Exception ex)
+    //         {
+    //             _logger.LogError(ex, "Unable to upsert {NodeId}", update.NodeId);
+    //             throw;
+    //         }
+    //     }
+    // }
+
+
+
     private async Task ProcessNodeUpdates(CancellationToken ct)
     {
+        var batch = new List<NodeUpdate>();
+        var batchSize = 100;
+
         await foreach (var update in _updateChannel.Reader.ReadAllAsync(ct))
         {
-            _logger.LogDebug("Upserting node {NodeId}", update.NodeId);
-            // Upsert to SurrealDB - merges LSP + Lizard + Git data
-            await _repository.UpsertNodeAsync(update);
+            batch.Add(update);
+
+            if (batch.Count >= batchSize)
+            {
+                await ProcessBatch(batch, ct);
+                batch.Clear();
+
+                // Brief delay to avoid overwhelming the connection
+                await Task.Delay(100, ct);
+            }
+        }
+
+        // Process remaining
+        if (batch.Any())
+        {
+            await ProcessBatch(batch, ct);
         }
     }
 
+    private async Task ProcessBatch(List<NodeUpdate> updates, CancellationToken ct)
+    {
+
+        try
+        {
+            await _repository.UpsertNodeListAsync(updates);
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogWarning(ex, "Timeout upserting nodes, will retry");
+            // Optionally re-queue or log for manual review
+        }
+
+
+    }
     private string GenerateNodeId(string filePath, string functionName, int lineStart)
     {
-        var relativePath = Path.GetRelativePath(Environment.CurrentDirectory, filePath);
-        return $"{relativePath}:{functionName}:{lineStart}";
+        var fullId = $"{filePath}:{functionName}:{lineStart}";
+        return $"node_{ComputeStableHash(fullId)}";
+    }
+
+    private static string ComputeStableHash(string input)
+    {
+        using var sha256 = System.Security.Cryptography.SHA256.Create();
+        var bytes = Encoding.UTF8.GetBytes(input);
+        var hashBytes = sha256.ComputeHash(bytes);
+        return Convert.ToHexString(hashBytes[..16]).ToLowerInvariant();
     }
 
     private string DetectLanguage(string filePath)

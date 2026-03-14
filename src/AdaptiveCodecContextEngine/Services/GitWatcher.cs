@@ -11,42 +11,47 @@ public class GitWatcher
     private readonly FileSystemWatcher _fsWatcher;
     private readonly ILogger<GitWatcher> _logger;
     private readonly HashSet<string> _relevantExtensions;
+
     private Repository? _repo;
 
     public GitWatcher(
-        string repoPath,
         Channel<GitEvent> eventChannel,
         ILogger<GitWatcher> logger,
         IConfiguration configuration)
     {
-        _repoPath = repoPath;
+        var accOptions = configuration.GetSection("Acc").Get<AccOptions>()
+       ?? throw new InvalidOperationException("ACC configuration missing");
+        _repoPath = accOptions.RepositoryPath;
+
         _eventChannel = eventChannel;
         _logger = logger;
 
-        _fsWatcher = new FileSystemWatcher(repoPath)
+
+        _fsWatcher = new FileSystemWatcher(_repoPath)
         {
             IncludeSubdirectories = true,
             NotifyFilter = NotifyFilters.LastWrite | NotifyFilters.FileName | NotifyFilters.CreationTime
-                                    | NotifyFilters.DirectoryName // Often required for nested Linux files
-                        | NotifyFilters.Attributes 
-                        | NotifyFilters.Size
+                                            | NotifyFilters.DirectoryName // Often required for nested Linux files
+                                | NotifyFilters.Attributes
+                                | NotifyFilters.Size
         };
 
-        // Load relevant file extensions from config
         var extensions = configuration.GetSection("Acc:FileExtensions").Get<string[]>();
         _relevantExtensions = extensions != null && extensions.Any()
             ? new HashSet<string>(extensions, StringComparer.OrdinalIgnoreCase)
             : new HashSet<string>(StringComparer.OrdinalIgnoreCase)
             {
-                ".cs", ".ts", ".js", ".py", ".go", ".rs", ".java", ".cpp", ".c", ".h"
+                        ".cs", ".ts", ".js", ".py", ".go", ".rs", ".java", ".cpp", ".c", ".h"
             };
-
-        _logger.LogInformation("GitWatcher configured for extensions: {Extensions}",
-            string.Join(", ", _relevantExtensions));
     }
 
     public async Task StartAsync(CancellationToken ct)
     {
+
+        // Load relevant file extensions from config
+
+        _logger.LogInformation("GitWatcher configured for extensions: {Extensions}",
+            string.Join(", ", _relevantExtensions));
         _logger.LogInformation("GitWatcher starting for repo: {RepoPath}", _repoPath);
 
         try
@@ -64,7 +69,7 @@ public class GitWatcher
         _fsWatcher.Created += OnFileChanged;
         _fsWatcher.Deleted += OnFileChanged;
         _fsWatcher.Renamed += OnFileRenamed;
-_fsWatcher.Error += (s, e) => _logger.LogError(e.GetException(), "Watcher Error!");
+        _fsWatcher.Error += (s, e) => _logger.LogError(e.GetException(), "Watcher Error!");
         _fsWatcher.EnableRaisingEvents = true;
 
         _logger.LogInformation("FileSystemWatcher enabled for: {RepoPath}", _repoPath);
@@ -76,6 +81,7 @@ _fsWatcher.Error += (s, e) => _logger.LogError(e.GetException(), "Watcher Error!
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
+
         // Filter by language extension
         if (!IsRelevantFile(e.FullPath))
         {
@@ -254,6 +260,7 @@ _fsWatcher.Error += (s, e) => _logger.LogError(e.GetException(), "Watcher Error!
                 AvgDaysBetweenChanges = avgDays,
                 RecentFrequency = frequency
             };
+
         }
         catch (Exception ex)
         {

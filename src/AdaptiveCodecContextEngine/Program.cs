@@ -91,16 +91,9 @@ builder.Services
 
 builder.Services
 .AddSingleton<LspStreamManager>()
-.AddSingleton<GitWatcher>(sp =>
-{
-    var accOptions = builder.Configuration.GetSection("Acc").Get<AccOptions>() 
-        ?? throw new InvalidOperationException("ACC configuration missing");
-    var gitChannel = sp.GetRequiredService<Channel<GitEvent>>();
-    var logger = sp.GetRequiredService<ILogger<GitWatcher>>();
-    
-    return new GitWatcher(accOptions.RepositoryPath, gitChannel, logger, builder.Configuration);
-})
+.AddSingleton<GitWatcher>()
 .AddHostedService<AccHostedService>();
+
 
 var host = builder.Build();
 

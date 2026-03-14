@@ -18,7 +18,7 @@ public class LizardAnalyzer
 
     public async Task<LizardResult?> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
     {
-        //_logger.LogInformation("Analyzing {file}", filePath);
+        _logger.LogDebug("Analyzing {file}", filePath);
         var processStartInfo = new ProcessStartInfo
         {
             FileName = _lizardPath,
@@ -99,7 +99,7 @@ public class LizardAnalyzer
 
                 functions.Add(function);
             }
-
+            
             return new LizardResult
             {
                 FunctionList = functions
