@@ -227,24 +227,41 @@ class LspForwarder {
 }
 function showSearchResults(results) {
     if (!results || results.length === 0) {
-        vscode.window.showInformationMessage("No results found");
+        vscode.window.showInformationMessage('No results found');
         return;
     }
-    const items = results.map((node) => ({
-        label: node.name,
-        description: node.filePath,
-        detail: `${node.type} | Stability: ${node.avec?.stability.toFixed(2)} | Friction: ${node.avec?.friction.toFixed(2)}`,
-        node,
-    }));
-    vscode.window.showQuickPick(items).then((selected) => {
+    const items = results.map(node => {
+        // Format AVEC scores if available
+        const avecInfo = node.avec
+            ? `S:${node.avec.stability.toFixed(2)} L:${node.avec.logic.toFixed(2)} F:${node.avec.friction.toFixed(2)} A:${node.avec.autonomy.toFixed(2)}`
+            : 'No AVEC';
+        return {
+            label: node.name,
+            description: `${node.type} @ L${node.line_start}`,
+            detail: `${node.file_path} | ${avecInfo}`,
+            node
+        };
+    });
+    vscode.window.showQuickPick(items, {
+        placeHolder: 'Select a node to navigate to'
+    }).then(selected => {
         if (selected) {
-            // Open file at line
-            vscode.workspace.openTextDocument(selected.node.filePath).then((doc) => {
-                vscode.window.showTextDocument(doc).then((editor) => {
-                    const position = new vscode.Position(selected.node.lineStart, 0);
+            const filePath = selected.node.file_path;
+            // line_start from ACC is already 0-indexed (from LSP), no adjustment needed
+            const line = selected.node.line_start;
+            console.log('Opening file:', filePath, 'at line:', line);
+            const fileUri = vscode.Uri.file(filePath);
+            vscode.workspace.openTextDocument(fileUri).then(doc => {
+                vscode.window.showTextDocument(doc).then(editor => {
+                    const position = new vscode.Position(line, 0);
+                    const range = new vscode.Range(position, position);
                     editor.selection = new vscode.Selection(position, position);
-                    editor.revealRange(new vscode.Range(position, position));
+                    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+                    console.log('Navigated to line:', line);
                 });
+            }, err => {
+                vscode.window.showErrorMessage(`Could not open file: ${filePath} - ${err.message}`);
+                console.error('Error opening file:', err);
             });
         }
     });
@@ -254,12 +271,36 @@ function showNodeList(title, nodes) {
         vscode.window.showInformationMessage(`${title}: No results`);
         return;
     }
-    const items = nodes.map((node) => ({
-        label: node.name,
-        description: node.filePath,
-        detail: `Stability: ${node.avec?.stability.toFixed(2)} | Logic: ${node.avec?.logic.toFixed(2)} | Friction: ${node.avec?.friction.toFixed(2)}`,
-        node,
-    }));
-    vscode.window.showQuickPick(items, { title });
+    const items = nodes.map(node => {
+        const avecInfo = node.avec
+            ? `S:${node.avec.stability.toFixed(2)} L:${node.avec.logic.toFixed(2)} F:${node.avec.friction.toFixed(2)} A:${node.avec.autonomy.toFixed(2)}`
+            : 'No AVEC';
+        return {
+            label: node.name,
+            description: `${node.type} @ L${node.line_start}`,
+            detail: `${avecInfo} | ${node.file_path}`,
+            node
+        };
+    });
+    vscode.window.showQuickPick(items, {
+        title,
+        placeHolder: 'Select a node to navigate to'
+    }).then(selected => {
+        if (selected) {
+            const filePath = selected.node.file_path;
+            const line = selected.node.line_start;
+            const fileUri = vscode.Uri.file(filePath);
+            vscode.workspace.openTextDocument(fileUri).then(doc => {
+                vscode.window.showTextDocument(doc).then(editor => {
+                    const position = new vscode.Position(line, 0);
+                    const range = new vscode.Range(position, position);
+                    editor.selection = new vscode.Selection(position, position);
+                    editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+                });
+            }, err => {
+                vscode.window.showErrorMessage(`Could not open file: ${filePath}`);
+            });
+        }
+    });
 }
 //# sourceMappingURL=extension.js.map
