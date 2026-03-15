@@ -1,18 +1,15 @@
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
-WORKDIR /src
-
-COPY sttp-mcp.csproj ./
-RUN dotnet restore sttp-mcp.csproj
-
-COPY . ./
-RUN dotnet publish sttp-mcp.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o /app/publish
-
-FROM mcr.microsoft.com/dotnet/runtime-deps:10.0 AS runtime
+FROM mcr.microsoft.com/dotnet/runtime-deps:10.0
 WORKDIR /app
 
 ENV STTP_MCP_DATA_ROOT=/
 
-COPY --from=build /app/publish ./
+# Binaries are pre-built on the host by build-image.sh before docker build runs.
+COPY src/sttp-mcp/publish/ ./
+
+# App resolves config from $HOME/.sttp-mcp/appsettings.json at startup.
+RUN mkdir -p /root/.sttp-mcp
+COPY src/sttp-mcp/appsettings.json /root/.sttp-mcp/appsettings.json
+
 RUN mkdir -p /data
 
 VOLUME ["/data"]

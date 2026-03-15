@@ -1,0 +1,21 @@
+#V2
+SELECT COUNT() FROM node WHERE avec_stability IS NOT NONE GROUP ALL;
+SELECT \n    name,\n    lines_of_code,\n    cyclomatic_complexity,\n    parameters,\n    git_total_commits,\n    git_contributors,\n    git_avg_days_between_changes,\n    incoming_edges,\n    outgoing_edges,\n    avec\nFROM node \nLIMIT 10;
+SELECT \n    name,\n    lines_of_code,\n    cyclomatic_complexity,\n    parameters,\n    git_total_commits,\n    git_contributors,\n    git_avg_days_between_changes,\n    incoming_edges,\n    outgoing_edges,\n    avec\nFROM node \nWHERE avec IS NOT NONE LIMIT 10;
+SELECT * FROM node LIMIT 5;
+SELECT count() FROM node WHERE avec_needs_recalc =true;
+SELECT count() FROM node WHERE avec_needs_recalc =true GROUP ALL;
+SELECT count() FROM node WHERE avec IS NONE GROUP ALL;
+SELECT count() FROM node WHERE avec IS NOT NONE GROUP ALL;
+DELETE node
+DELETE depend
+DELETE depends
+SELECT count() FROM node WHERE avec_needs_recalc =true GROUP ALL;
+SELECT count() FROM node LIMIT 5;
+SELECT * FROM node LIMIT 5;
+SELECT * FROM node LIMIT 1;
+SELECT name, cyclomatic_complexity, avec_logic, avec_stability \nFROM node \nWHERE cyclomatic_complexity > 10 \nLIMIT 5;
+DELETE node
+DELETE depends
+DELETE node
+DELETE depends

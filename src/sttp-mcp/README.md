@@ -196,6 +196,47 @@ dotnet build
 dotnet run --project ./sttp-mcp.csproj
 ```
 
+### Runtime modes
+
+`sttp-mcp` supports two endpoint modes:
+
+- Embedded mode (default): uses `SurrealDb:Endpoints:Embedded` (or legacy `SurrealDb:Endpoint`)
+- Remote mode: pass `--remote` to use `SurrealDb:Endpoints:Remote`
+
+Examples:
+
+```bash
+# Embedded (default)
+dotnet run --project ./sttp-mcp.csproj
+
+# Remote (WebSocket)
+dotnet run --project ./sttp-mcp.csproj -- --remote
+```
+
+```bash
+# Docker remote mode (passes args to sttp-mcp entrypoint)
+docker run --rm -i -v "$PWD/data:/data" sttp-mcp:local --remote
+```
+
+Remote endpoint overrides:
+
+```bash
+# Environment variable override for remote endpoint
+export SurrealDb__Endpoints__Remote="ws://your-surreal-host:8000/rpc"
+dotnet run --project ./sttp-mcp.csproj -- --remote
+```
+
+```json
+{
+    "SurrealDb": {
+        "Endpoints": {
+            "Embedded": "surrealkv://data/sttp-mcp.db",
+            "Remote": "ws://127.0.0.1:8000/rpc"
+        }
+    }
+}
+```
+
 By default, embedded storage resolves under `STTP_MCP_DATA_ROOT` (defaults to `~/.sttp-mcp`).
 
 ---

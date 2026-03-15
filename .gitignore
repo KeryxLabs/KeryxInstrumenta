@@ -484,3 +484,7 @@ $RECYCLE.BIN/
 #VS Code Settings
 .vscode/
 src/sttp-mcp/data
+_deps/
+src/AdaptiveCodecContextEngine/data
+*.vsix
+data/
