@@ -121,14 +121,19 @@ async function startAccEngine(serverPath, context) {
         return;
     }
     const config = vscode.workspace.getConfiguration("acc");
+    const useRemote = config.get("database.remote", false);
     const args = [
         "--Acc:RepositoryPath",
         workspaceRoot,
         "--JsonRpc:Port",
         config.get("rpcPort", 9339).toString(),
         "--SurrealDb:Remote",
-        config.get("database.remote", false).toString(),
+        useRemote.toString(),
     ];
+    if (useRemote) {
+        args.push("--SurrealDb:Endpoints:Remote");
+        args.push(config.get("database.remoteEndpoint", "localhost:8000/rpc"));
+    }
     outputChannel.appendLine(`Starting ACC server: ${serverPath}`);
     outputChannel.appendLine(`Args: ${args.join(" ")}`);
     accProcess = (0, child_process_1.spawn)(serverPath, args);

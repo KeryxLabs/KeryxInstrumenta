@@ -1,13 +1,12 @@
-import * as vscode from 'vscode';
-import { AccServerDownloader } from './downloader';
-import { spawn, ChildProcess } from 'child_process';
-import * as net from 'net'; 
+import * as vscode from "vscode";
+import { AccServerDownloader } from "./downloader";
+import { spawn, ChildProcess } from "child_process";
+import * as net from "net";
 
 let accProcess: ChildProcess | undefined;
 let accClient: AccClient | undefined;
 let downloader: AccServerDownloader;
 let outputChannel: vscode.OutputChannel;
-
 
 export async function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel("ACC");
@@ -131,15 +130,22 @@ async function startAccEngine(
   }
 
   const config = vscode.workspace.getConfiguration("acc");
-
+  const useRemote = config.get<boolean>("database.remote", false);
   const args = [
     "--Acc:RepositoryPath",
     workspaceRoot,
     "--JsonRpc:Port",
     config.get<number>("rpcPort", 9339).toString(),
     "--SurrealDb:Remote",
-    config.get<boolean>("database.remote", false).toString(),
+    useRemote.toString(),
   ];
+
+  if (useRemote) {
+    args.push("--SurrealDb:Endpoints:Remote");
+    args.push(
+      config.get<string>("database.remoteEndpoint", "localhost:8000/rpc"),
+    );
+  }
 
   outputChannel.appendLine(`Starting ACC server: ${serverPath}`);
   outputChannel.appendLine(`Args: ${args.join(" ")}`);
