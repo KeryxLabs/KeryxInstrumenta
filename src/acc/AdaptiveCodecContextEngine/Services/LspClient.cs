@@ -1,4 +1,6 @@
+using System.Diagnostics;
 using System.Text;
+using AdaptiveCodecContextEngine.Diagnostics;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lsp;
 using Microsoft.Extensions.Logging;
@@ -7,6 +9,7 @@ public class LspStreamListener
 {
     private readonly Channel<LspMessageWithContext> _lspChannel;
     private readonly ILogger<LspStreamListener> _logger;
+    private readonly AdaptiveContextInstrumentation _instrumentation;
     private readonly CancellationTokenSource _cts;
     public string Language { get; }
     public bool IsStopped => _cts.IsCancellationRequested;
@@ -14,10 +17,13 @@ public class LspStreamListener
     public LspStreamListener(
         Channel<LspMessageWithContext> lspChannel,
         ILogger<LspStreamListener> logger,
-        string language)
+        AdaptiveContextInstrumentation instrumentation,
+        string language
+    )
     {
         _lspChannel = lspChannel;
         _logger = logger;
+        _instrumentation = instrumentation;
         Language = language;
         _cts = new CancellationTokenSource();
     }
@@ -44,9 +50,7 @@ public class LspStreamListener
                     if (message != null)
                     {
                         // Tag message with language for routing
-                        await _lspChannel.Writer.WriteAsync(
-                            new LspMessageWithContext(message, Language),
-                            linkedCts.Token);
+                        await _lspChannel.Writer.WriteAsync(message, linkedCts.Token);
                     }
                 }
                 catch (OperationCanceledException)
@@ -65,8 +69,15 @@ public class LspStreamListener
         }
     }
 
-    private async Task<LspMessage?> ReadLspMessageAsync(StreamReader reader, CancellationToken ct)
+    private async Task<LspMessageWithContext?> ReadLspMessageAsync(
+        StreamReader reader,
+        CancellationToken ct
+    )
     {
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(ReadLspMessageAsync)
+        );
+
         // Read Content-Length header
         string? headerLine;
         int contentLength = 0;
@@ -115,8 +126,11 @@ public class LspStreamListener
 
         _logger.LogDebug($"LSP[{Language}] message received: {json}");
 
-        return LspMessageParser.Parse(json);
+        return LspMessageParser.Parse(json) is LspMessage message
+            ? new(message, Language, activity?.Context)
+            : null;
     }
+
     // }
     //     private async Task<LspMessage?> ReadLspMessageAsync(StreamReader reader, CancellationToken ct)
     //     {
@@ -179,7 +193,12 @@ public class LspStreamListener
 }
 
 // Wrapper to track which language/LSP a message came from
-public record LspMessageWithContext(LspMessage Message, string Language);
+public record LspMessageWithContext(
+    LspMessage Message,
+    string Language,
+    ActivityContext? ParentContext
+);
+
 public record LspRequest
 {
     public required string JsonRpc { get; init; }
@@ -195,11 +214,11 @@ public record LspRequestParams
     public LspItem? Item { get; init; }
 }
 
-
 public record TextDocument
 {
     public required string Uri { get; init; }
 }
+
 // {
 //             jsonrpc = "2.0",
 //             id = requestId,

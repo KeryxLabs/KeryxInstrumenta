@@ -1,8 +1,8 @@
+using AdaptiveCodecContextEngine.Diagnostics;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lsp;
 using AdaptiveCodecContextEngine.Models.Surreal;
 using Dahomey.Cbor;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using SurrealDb.Net;
@@ -16,14 +16,21 @@ public class SurrealDbRepository
     private bool _schemaInitialized = false;
     private SurrealDbSettings _settings;
 
-    public SurrealDbRepository(ISurrealDbClient client, IConfiguration configuration, ILogger<SurrealDbRepository> logger)
+    public SurrealDbRepository(
+        ISurrealDbClient client,
+        IConfiguration configuration,
+        ILogger<SurrealDbRepository> logger
+    )
     {
         _db = client;
-        _avecCalculator = new AvecCalculator(configuration.Get<AvecWeights>()
-                         ?? throw new InvalidOperationException("Avec configuration missing"));
+        _avecCalculator = new AvecCalculator(
+            configuration.Get<AvecWeights>()
+                ?? throw new InvalidOperationException("Avec configuration missing")
+        );
         _logger = logger;
-        _settings = configuration.GetSection("SurrealDb").Get<SurrealDbSettings>()
-                    ?? throw new InvalidOperationException("SurrealDb configuration missing");
+        _settings =
+            configuration.GetSection("SurrealDb").Get<SurrealDbSettings>()
+            ?? throw new InvalidOperationException("SurrealDb configuration missing");
     }
 
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
@@ -42,7 +49,8 @@ public class SurrealDbRepository
 
     private async Task CreateSchema(CancellationToken cancellationToken = default)
     {
-        var response = await _db.RawQuery(@"
+        var response = await _db.RawQuery(
+            @"
             DEFINE TABLE IF NOT EXISTS node SCHEMAFULL;
             
             -- Core fields
@@ -106,48 +114,44 @@ public class SurrealDbRepository
             
             DEFINE INDEX IF NOT EXISTS node_file_path ON node FIELDS file_path;
             DEFINE INDEX IF NOT EXISTS node_type ON node FIELDS type;
-        ");
+        "
+        );
 
+        _logger.LogPossibleDbWriteError(response);
 
-        if (response.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
-            _logger.LogError($"SurrealDB Error: {error?.Details}");
-        }
-        response = await _db.RawQuery(@"
+        response = await _db.RawQuery(
+            @"
             DEFINE TABLE IF NOT EXISTS depends SCHEMAFULL TYPE RELATION IN node OUT node;
             DEFINE FIELD IF NOT EXISTS relationship_type ON depends TYPE string ASSERT $value != NONE;
             DEFINE FIELD IF NOT EXISTS weight ON depends TYPE float DEFAULT 0.5;
             DEFINE FIELD IF NOT EXISTS created_at ON depends TYPE datetime DEFAULT time::now();
             
             DEFINE INDEX IF NOT EXISTS depends_in_out ON depends FIELDS in, out, relationship_type UNIQUE;
-        ", cancellationToken: cancellationToken);
+        ",
+            cancellationToken: cancellationToken
+        );
 
-        if (response.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
-            _logger.LogError($"SurrealDB Error: {error?.Details}");
-        }
+        _logger.LogPossibleDbWriteError(response);
     }
 
     private async Task CreateEvents(CancellationToken cancellationToken = default)
     {
         // Event: Auto-update timestamp on node update
-        var response = await _db.RawQuery(@"
+        var response = await _db.RawQuery(
+            @"
             DEFINE EVENT IF NOT EXISTS update_timestamp ON TABLE node WHEN $event = 'UPDATE' THEN {
                     IF $before.updated_at == $after.updated_at THEN
                         UPDATE $after SET updated_at = time::now()
                     END
             };
-        ", cancellationToken: cancellationToken);
+        ",
+            cancellationToken: cancellationToken
+        );
 
-        if (response.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
-            _logger.LogError($"SurrealDB Error: {error?.Details}");
-        }
+        _logger.LogPossibleDbWriteError(response);
         // Event: Recalculate AVEC when metrics change
-        response = await _db.RawQuery(@"
+        response = await _db.RawQuery(
+            @"
             DEFINE EVENT IF NOT EXISTS recalculate_avec ON TABLE node 
             WHEN $event IN ['CREATE', 'UPDATE'] 
             AND (
@@ -162,14 +166,14 @@ public class SurrealDbRepository
             THEN {
                 UPDATE $after.id SET avec_needs_recalc = true
             };
-        ", cancellationToken: cancellationToken);
-        if (response.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
-            _logger.LogError($"SurrealDB Error: {error?.Details}");
-        }
+        ",
+            cancellationToken: cancellationToken
+        );
+
+        _logger.LogPossibleDbWriteError(response);
         // Event: Update edge counts when dependency created/deleted
-        response = await _db.RawQuery(@"
+        response = await _db.RawQuery(
+            @"
             DEFINE EVENT IF NOT EXISTS update_edge_counts_on_create ON TABLE depends 
             WHEN $event = 'CREATE' THEN {
                 UPDATE $after.in SET 
@@ -180,13 +184,13 @@ public class SurrealDbRepository
                     incoming_edges = (SELECT count() FROM depends WHERE out = $parent.id)[0].count ?? 0,
                     total_degree = incoming_edges + outgoing_edges;
             };
-        ", cancellationToken: cancellationToken);
-        if (response.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
-            _logger.LogError($"SurrealDB Error: {error?.Details}");
-        }
-        response = await _db.RawQuery(@"
+        ",
+            cancellationToken: cancellationToken
+        );
+
+        _logger.LogPossibleDbWriteError(response);
+        response = await _db.RawQuery(
+            @"
             DEFINE EVENT IF NOT EXISTS update_edge_counts_on_delete ON TABLE depends 
             WHEN $event = 'DELETE' THEN {
                 UPDATE $before.in SET 
@@ -197,14 +201,14 @@ public class SurrealDbRepository
                     incoming_edges = (SELECT count() FROM depends WHERE out = $parent.id)[0].count ?? 0,
                     total_degree = incoming_edges + outgoing_edges;
             };
-        ", cancellationToken: cancellationToken);
-        if (response.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
-            _logger.LogError($"SurrealDB Error: {error?.Details}");
-        }
+        ",
+            cancellationToken: cancellationToken
+        );
+
+        _logger.LogPossibleDbWriteError(response);
         // Event: Calculate delta when avec_learned changes
-        response = await _db.RawQuery(@"
+        response = await _db.RawQuery(
+            @"
             DEFINE EVENT IF NOT EXISTS calculate_delta ON TABLE node 
             WHEN $event = 'UPDATE' AND $after.avec_learned_stability IS NOT NONE AND $after.avec_stability IS NOT NONE
             THEN {
@@ -214,59 +218,53 @@ public class SurrealDbRepository
                     avec_delta_friction = $after.avec_learned_friction - $after.avec_friction,
                     avec_delta_autonomy = $after.avec_learned_autonomy - $after.avec_autonomy
             };
-        ", cancellationToken: cancellationToken);
-        if (response.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
-            _logger.LogError($"SurrealDB Error: {error?.Details}");
-            throw new Exception("Yo it fucked up");
-        }
+        ",
+            cancellationToken: cancellationToken
+        );
 
+        _logger.LogPossibleDbWriteError(response);
     }
 
-
-    public async Task<List<NodeDto>> UpsertNodeListAsync(IEnumerable<NodeUpdate> updates, CancellationToken cancellationToken = default)
+    public async Task<List<NodeDto>> UpsertNodeListAsync(
+        IEnumerable<NodeUpdate> updates,
+        CancellationToken cancellationToken = default
+    )
     {
-
-
         var data = updates.AsInsertable();
 
         var parameters = new Dictionary<string, object?> { { "data", data } };
 
-
         var result = await _db.RawQuery(
             "INSERT INTO node $data ON DUPLICATE KEY UPDATE updated_at = time::now() RETURN AFTER;",
-            parameters, cancellationToken:cancellationToken);
+            parameters,
+            cancellationToken: cancellationToken
+        );
 
-
-        if (result.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)result.Errors.FirstOrDefault();
-            _logger.LogError($"SurrealDB Error: {error?.Details}");
-        }
+        _logger.LogPossibleDbWriteError(result);
 
         var records = result.GetValue<List<NodeRecord>>(0);
         var rawRecords = result.GetValue<List<object?>>(0);
         _logger.LogInformation("Raw JSON: {Json}", JsonSerializer.Serialize(rawRecords));
         if (records?.Count > 0)
         {
-            await BatchRecalculateAsync(updates.Select(u => u.NodeId), cancellationToken:cancellationToken);
-            // foreach (var node in records)
-            // {
-            //     _logger.LogInformation("Upserted node {NodeId}", node.NodeId);
-            //     await RecalculateAvecIfNeededAsync(node.NodeId);
-            // }
+            await BatchRecalculateAsync(
+                updates.Select(u => u.NodeId),
+                cancellationToken: cancellationToken
+            );
         }
 
         return records is not null ? [.. records!.Select(MapToDto)] : [];
-
     }
 
-    public async Task BatchRecalculateAsync(IEnumerable<string> nodeIds, CancellationToken cancellationToken = default)
+    public async Task BatchRecalculateAsync(
+        IEnumerable<string> nodeIds,
+        CancellationToken cancellationToken = default
+    )
     {
         _logger.LogInformation("Batching calculation for {nodeIds}", string.Join(',', nodeIds));
         // Use 'IN' to get every node in one round trip
-        var query = @"SELECT id as Id,
+        var query =
+            @"SELECT id as Id,
                     node_id as NodeId,
                     type as Type,
                     language as Language,
@@ -308,10 +306,13 @@ public class SurrealDbRepository
                     avec_delta_friction as AvecDeltaFriction,
                     avec_delta_autonomy as AvecDeltaAutonomy
                     FROM node WHERE node_id IN $ids AND avec_needs_recalc = true;";
-        var results = await _db.RawQuery(query, new Dictionary<string, object?> { { "ids", nodeIds.Select(id => $"{id}").ToList() } }, cancellationToken:cancellationToken);
+        var results = await _db.RawQuery(
+            query,
+            new Dictionary<string, object?> { { "ids", nodeIds.Select(id => $"{id}").ToList() } },
+            cancellationToken: cancellationToken
+        );
 
         List<NodeRecord>? nodes = null;
-
 
         try
         {
@@ -320,15 +321,9 @@ public class SurrealDbRepository
         catch (CborException ex)
         {
             _logger.LogError(ex, "Unable to parse dawg");
-
         }
 
-
-        if (results.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)results.FirstError;
-            _logger.LogError("Db Error: {error}", error?.Details);
-        }
+        _logger.LogPossibleDbReadError(results);
 
         if (nodes is null)
         {
@@ -339,7 +334,6 @@ public class SurrealDbRepository
         if (!nodes.Any())
         {
             _logger.LogInformation("No nodes returned from query.");
-
 
             return;
         }
@@ -361,28 +355,35 @@ public class SurrealDbRepository
                 GitContributors = node.GitContributors,
                 GitAvgDaysBetweenChanges = node.GitAvgDaysBetweenChanges,
                 TestLineCoverage = node.TestLineCoverage,
-                TestBranchCoverage = node.TestBranchCoverage
+                TestBranchCoverage = node.TestBranchCoverage,
             };
             var avec = _avecCalculator.Calculate(metrics);
 
-            _logger.LogInformation(
-            "AVEC OUTPUT for {Name}: S={S:F2}, L={L:F2}, F={F:F2}, A={A:F2}",
-            node.Name, avec.Stability, avec.Logic, avec.Friction, avec.Autonomy);
+            _logger.LogAvecCalculation(
+                node.Name,
+                avec.Stability,
+                avec.Logic,
+                avec.Friction,
+                avec.Autonomy
+            );
 
-            updates.Add(new
-            {
-                id = node.Id, // Ensure this is the record ID (node:hash)
-                avec_stability = avec.Stability,
-                avec_logic = avec.Logic,
-                avec_friction = avec.Friction,
-                avec_autonomy = avec.Autonomy,
-                avec_computed_at = DateTime.UtcNow,
-                avec_needs_recalc = false
-            });
+            updates.Add(
+                new
+                {
+                    id = node.Id, // Ensure this is the record ID (node:hash)
+                    avec_stability = avec.Stability,
+                    avec_logic = avec.Logic,
+                    avec_friction = avec.Friction,
+                    avec_autonomy = avec.Autonomy,
+                    avec_computed_at = DateTime.UtcNow,
+                    avec_needs_recalc = false,
+                }
+            );
         }
 
         // Use INSERT with the array, which SurrealDB optimizes as a bulk-patch
-        var avecQuery = @"
+        var avecQuery =
+            @"
                         FOR $u IN $updates {
                             UPDATE $u.id MERGE {
                                 avec_stability: $u.avec_stability,
@@ -394,16 +395,21 @@ public class SurrealDbRepository
                             };
                         };";
 
-        results = await _db.RawQuery(avecQuery, new Dictionary<string, object?> { { "updates", updates } }, cancellationToken:cancellationToken);
+        results = await _db.RawQuery(
+            avecQuery,
+            new Dictionary<string, object?> { { "updates", updates } },
+            cancellationToken: cancellationToken
+        );
 
-
-        if (results.HasErrors)
-        {
-            var error = (SurrealDbErrorResult?)results.FirstError;
-            _logger.LogError("Db Error: {error}", error?.Details);
-        }
+        _logger.LogPossibleDbWriteError(results);
     }
-    public async Task<DependencyDto?> UpsertDependencyAsync(string fromNodeId, string toNodeId, string relationshipType, CancellationToken cancellationToken = default)
+
+    public async Task<DependencyDto?> UpsertDependencyAsync(
+        string fromNodeId,
+        string toNodeId,
+        string relationshipType,
+        CancellationToken cancellationToken = default
+    )
     {
         var weight = relationshipType switch
         {
@@ -412,11 +418,12 @@ public class SurrealDbRepository
             "calls" => 0.7,
             "imports" => 0.5,
             "references" => 0.3,
-            _ => 0.5
+            _ => 0.5,
         };
 
         // Idempotent: use UNIQUE index on (in, out, relationship_type)
-        var query = @"
+        var query =
+            @"
             RELATE node:⟨$from⟩->depends->node:⟨$to⟩
             SET relationship_type = $type,
                 weight = $weight
@@ -428,30 +435,35 @@ public class SurrealDbRepository
             ["from"] = fromNodeId,
             ["to"] = toNodeId,
             ["type"] = relationshipType,
-            ["weight"] = weight
+            ["weight"] = weight,
         };
-        var result = await _db.RawQuery(query, depParams, cancellationToken:cancellationToken);
+        var result = await _db.RawQuery(query, depParams, cancellationToken: cancellationToken);
+        _logger.LogPossibleDbWriteError(result);
 
         var records = result.GetValue<List<DependencyDto>>(0);
         return records?.FirstOrDefault();
     }
 
-    public async Task<NodeDto?> QueryRelationsAsync(string nodeId, bool includeScores = false, CancellationToken cancellationToken = default)
+    public async Task<NodeDto?> QueryRelationsAsync(
+        string nodeId,
+        bool includeScores = false,
+        CancellationToken cancellationToken = default
+    )
     {
         var fields = includeScores ? "*" : "node_id, name, type, file_path";
 
-        var query = $@"
+        var query =
+            $@"
             SELECT {fields},
                    (SELECT out.* FROM ->depends) as outgoing,
                    (SELECT in.* FROM <-depends) as incoming
             FROM node:⟨$node_id⟩;
         ";
 
-        var relParams = new Dictionary<string, object?>
-        {
-            ["node_id"] = nodeId
-        };
-        var result = await _db.RawQuery(query, relParams, cancellationToken:cancellationToken);
+        var relParams = new Dictionary<string, object?> { ["node_id"] = nodeId };
+        var result = await _db.RawQuery(query, relParams, cancellationToken: cancellationToken);
+        _logger.LogPossibleDbReadError(result);
+
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).FirstOrDefault();
     }
@@ -461,29 +473,32 @@ public class SurrealDbRepository
         DependencyDirection direction = DependencyDirection.Both,
         int maxDepth = -1,
         bool includeScores = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
         var traversal = direction switch
         {
             DependencyDirection.Incoming => "<-depends<-",
             DependencyDirection.Outgoing => "->depends->",
             DependencyDirection.Both => "<->depends<->",
-            _ => "<->depends<->"
+            _ => "<->depends<->",
         };
 
         var depthClause = maxDepth > 0 ? $"..{maxDepth}" : "..";
         var fields = includeScores ? "*" : "node_id, name, type, file_path";
 
-        var query = $@"
+        var query =
+            $@"
             SELECT {fields}
             FROM node:⟨$node_id⟩{traversal}node{depthClause};
         ";
 
-        var depQueryParams = new Dictionary<string, object?>
-        {
-            ["node_id"] = nodeId
-        };
-        var result = await _db.RawQuery(query, depQueryParams, cancellationToken:cancellationToken);
+        var depQueryParams = new Dictionary<string, object?> { ["node_id"] = nodeId };
+        var result = await _db.RawQuery(
+            query,
+            depQueryParams,
+            cancellationToken: cancellationToken
+        );
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
@@ -491,9 +506,11 @@ public class SurrealDbRepository
     public async Task<List<NodeDto>> QueryPatternsAsync(
         AvecScores targetProfile,
         double threshold = 0.8,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default
+    )
     {
-        var query = @"
+        var query =
+            @"
             SELECT id as Id,
                     node_id as NodeId,
                     type as Type,
@@ -555,17 +572,23 @@ public class SurrealDbRepository
             ["logic"] = targetProfile.Logic,
             ["friction"] = targetProfile.Friction,
             ["autonomy"] = targetProfile.Autonomy,
-            ["max_distance"] = maxDistance
+            ["max_distance"] = maxDistance,
         };
-        var result = await _db.RawQuery(query, patternParams, cancellationToken:cancellationToken);
+        var result = await _db.RawQuery(query, patternParams, cancellationToken: cancellationToken);
+        _logger.LogPossibleDbReadError(result);
 
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
-    public async Task<string?> FindNodeAtLocationAsync(string filePath, int line, CancellationToken cancellationToken = default)
+    public async Task<string?> FindNodeAtLocationAsync(
+        string filePath,
+        int line,
+        CancellationToken cancellationToken = default
+    )
     {
-        var query = @"
+        var query =
+            @"
             SELECT node_id FROM node
             WHERE file_path = $path
               AND line_start <= $line
@@ -573,30 +596,36 @@ public class SurrealDbRepository
             LIMIT 1;
         ";
 
-        var locParams = new Dictionary<string, object?>
-        {
-            ["path"] = filePath,
-            ["line"] = line
-        };
+        var locParams = new Dictionary<string, object?> { ["path"] = filePath, ["line"] = line };
         var result = await _db.RawQuery(query, locParams);
+        _logger.LogPossibleDbReadError(result);
+
         var records = result.GetValue<List<NodeIdDto>>(0);
         return records?.FirstOrDefault()?.NodeId;
     }
 
-    public async Task<string?> FindNodeByNameAsync(string name, CancellationToken cancellationToken = default)
+    public async Task<string?> FindNodeByNameAsync(
+        string name,
+        CancellationToken cancellationToken = default
+    )
     {
         var query = "SELECT node_id FROM node WHERE name = $name LIMIT 1;";
-        var nameParams = new Dictionary<string, object?>
-        {
-            ["name"] = name
-        };
-        var result = await _db.RawQuery(query, nameParams, cancellationToken:cancellationToken);
+        var nameParams = new Dictionary<string, object?> { ["name"] = name };
+        var result = await _db.RawQuery(query, nameParams, cancellationToken: cancellationToken);
+        _logger.LogPossibleDbReadError(result);
+
         var records = result.GetValue<List<NodeIdDto>>(0);
         return records?.FirstOrDefault()?.NodeId;
     }
-    public async Task<List<NodeDto>> SearchByNameAsync(string name, int limit = 10, CancellationToken cancellationToken = default)
+
+    public async Task<List<NodeDto>> SearchByNameAsync(
+        string name,
+        int limit = 10,
+        CancellationToken cancellationToken = default
+    )
     {
-        var query = @"
+        var query =
+            @"
         SELECT id as Id,
                     node_id as NodeId,
                     type as Type,
@@ -642,14 +671,25 @@ public class SurrealDbRepository
         LIMIT $limit;
     ";
 
-        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["name"] = name, ["limit"] = limit }, cancellationToken:cancellationToken);
+        var result = await _db.RawQuery(
+            query,
+            new Dictionary<string, object?> { ["name"] = name, ["limit"] = limit },
+            cancellationToken: cancellationToken
+        );
+        _logger.LogPossibleDbReadError(result);
+
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
-    public async Task<List<NodeDto>> GetNodesWithHighFrictionAsync(double minFriction = 0.7, int limit = 20, CancellationToken cancellationToken = default)
+    public async Task<List<NodeDto>> GetNodesWithHighFrictionAsync(
+        double minFriction = 0.7,
+        int limit = 20,
+        CancellationToken cancellationToken = default
+    )
     {
-        var query = @"
+        var query =
+            @"
         SELECT id as Id,
                     node_id as NodeId,
                     type as Type,
@@ -696,14 +736,25 @@ public class SurrealDbRepository
         LIMIT $limit;
     ";
 
-        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["min_friction"] = minFriction, ["limit"] = limit }, cancellationToken:cancellationToken);
+        var result = await _db.RawQuery(
+            query,
+            new Dictionary<string, object?> { ["min_friction"] = minFriction, ["limit"] = limit },
+            cancellationToken: cancellationToken
+        );
+        _logger.LogPossibleDbReadError(result);
+
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
-    public async Task<List<NodeDto>> GetUnstableNodesAsync(double maxStability = 0.4, int limit = 20, CancellationToken cancellationToken = default)
+    public async Task<List<NodeDto>> GetUnstableNodesAsync(
+        double maxStability = 0.4,
+        int limit = 20,
+        CancellationToken cancellationToken = default
+    )
     {
-        var query = @"
+        var query =
+            @"
         SELECT id as Id,
                     node_id as NodeId,
                     type as Type,
@@ -751,14 +802,23 @@ public class SurrealDbRepository
         LIMIT $limit;
     ";
 
-        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["max_stability"] = maxStability, ["limit"] = limit }, cancellationToken:cancellationToken);
+        var result = await _db.RawQuery(
+            query,
+            new Dictionary<string, object?> { ["max_stability"] = maxStability, ["limit"] = limit },
+            cancellationToken: cancellationToken
+        );
+        _logger.LogPossibleDbReadError(result);
+
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
-    public async Task<ProjectStatsDto> GetProjectStatsAsync(CancellationToken cancellationToken = default)
+    public async Task<ProjectStatsDto> GetProjectStatsAsync(
+        CancellationToken cancellationToken = default
+    )
     {
-        var query = @"
+        var query =
+            @"
         SELECT 
             count() as total_nodes,
             math::mean(avec_stability) as avg_stability,
@@ -770,60 +830,69 @@ public class SurrealDbRepository
         GROUP ALL;
     ";
 
-        var result = await _db.RawQuery(query, null, cancellationToken:cancellationToken);
+        var result = await _db.RawQuery(query, null, cancellationToken: cancellationToken);
+        _logger.LogPossibleDbReadError(result);
+
         var records = result.GetValue<List<ProjectStatsDto>>(0);
         return records?.FirstOrDefault() ?? new ProjectStatsDto();
     }
 
-    private static NodeDto MapToDto(NodeRecord r) => new()
-    {
-        NodeId = r.NodeId,
-        Type = r.Type,
-        Language = r.Language,
-        Namespace = r.Namespace,
-        Name = r.Name,
-        Signature = r.Signature,
-        FilePath = r.FilePath,
-        LineStart = r.LineStart,
-        LineEnd = r.LineEnd,
-        ReturnType = r.ReturnType,
-        LinesOfCode = r.LinesOfCode,
-        CyclomaticComplexity = r.CyclomaticComplexity,
-        Parameters = r.Parameters,
-        GitCreated = r.GitCreated,
-        GitLastModified = r.GitLastModified,
-        GitTotalCommits = r.GitTotalCommits,
-        GitContributors = r.GitContributors,
-        GitAvgDaysBetweenChanges = r.GitAvgDaysBetweenChanges,
-        GitRecentFrequency = r.GitRecentFrequency,
-        TestCovered = r.TestCovered,
-        TestLineCoverage = r.TestLineCoverage,
-        TestBranchCoverage = r.TestBranchCoverage,
-        TestCount = r.TestCount,
-        IncomingEdges = r.IncomingEdges,
-        OutgoingEdges = r.OutgoingEdges,
-        TotalDegree = r.TotalDegree,
-        Avec = r.AvecStability.HasValue ? new AvecDto
+    private static NodeDto MapToDto(NodeRecord r) =>
+        new()
         {
-            Stability = r.AvecStability.Value,
-            Logic = r.AvecLogic ?? 0,
-            Friction = r.AvecFriction ?? 0,
-            Autonomy = r.AvecAutonomy ?? 0,
-            ComputedAt = r.AvecComputedAt
-        } : null,
-        AvecLearned = r.AvecLearnedStability.HasValue ? new AvecDto
-        {
-            Stability = r.AvecLearnedStability.Value,
-            Logic = r.AvecLearnedLogic ?? 0,
-            Friction = r.AvecLearnedFriction ?? 0,
-            Autonomy = r.AvecLearnedAutonomy ?? 0
-        } : null,
-        AvecDelta = r.AvecDeltaStability.HasValue ? new AvecDto
-        {
-            Stability = r.AvecDeltaStability.Value,
-            Logic = r.AvecDeltaLogic ?? 0,
-            Friction = r.AvecDeltaFriction ?? 0,
-            Autonomy = r.AvecDeltaAutonomy ?? 0
-        } : null
-    };
+            NodeId = r.NodeId,
+            Type = r.Type,
+            Language = r.Language,
+            Namespace = r.Namespace,
+            Name = r.Name,
+            Signature = r.Signature,
+            FilePath = r.FilePath,
+            LineStart = r.LineStart,
+            LineEnd = r.LineEnd,
+            ReturnType = r.ReturnType,
+            LinesOfCode = r.LinesOfCode,
+            CyclomaticComplexity = r.CyclomaticComplexity,
+            Parameters = r.Parameters,
+            GitCreated = r.GitCreated,
+            GitLastModified = r.GitLastModified,
+            GitTotalCommits = r.GitTotalCommits,
+            GitContributors = r.GitContributors,
+            GitAvgDaysBetweenChanges = r.GitAvgDaysBetweenChanges,
+            GitRecentFrequency = r.GitRecentFrequency,
+            TestCovered = r.TestCovered,
+            TestLineCoverage = r.TestLineCoverage,
+            TestBranchCoverage = r.TestBranchCoverage,
+            TestCount = r.TestCount,
+            IncomingEdges = r.IncomingEdges,
+            OutgoingEdges = r.OutgoingEdges,
+            TotalDegree = r.TotalDegree,
+            Avec = r.AvecStability.HasValue
+                ? new AvecDto
+                {
+                    Stability = r.AvecStability.Value,
+                    Logic = r.AvecLogic ?? 0,
+                    Friction = r.AvecFriction ?? 0,
+                    Autonomy = r.AvecAutonomy ?? 0,
+                    ComputedAt = r.AvecComputedAt,
+                }
+                : null,
+            AvecLearned = r.AvecLearnedStability.HasValue
+                ? new AvecDto
+                {
+                    Stability = r.AvecLearnedStability.Value,
+                    Logic = r.AvecLearnedLogic ?? 0,
+                    Friction = r.AvecLearnedFriction ?? 0,
+                    Autonomy = r.AvecLearnedAutonomy ?? 0,
+                }
+                : null,
+            AvecDelta = r.AvecDeltaStability.HasValue
+                ? new AvecDto
+                {
+                    Stability = r.AvecDeltaStability.Value,
+                    Logic = r.AvecDeltaLogic ?? 0,
+                    Friction = r.AvecDeltaFriction ?? 0,
+                    Autonomy = r.AvecDeltaAutonomy ?? 0,
+                }
+                : null,
+        };
 }

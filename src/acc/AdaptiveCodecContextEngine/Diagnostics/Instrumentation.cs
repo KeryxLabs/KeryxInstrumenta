@@ -6,7 +6,6 @@ namespace AdaptiveCodecContextEngine.Diagnostics;
 
 public class AdaptiveContextInstrumentation : IDisposable
 {
-    // The "Source" name users will plug into .AddSource()
     public const string ActivitySourceName = "AdaptiveCodecContext.Engine";
     public const string MeterName = "AdaptiveCodecContext";
 
