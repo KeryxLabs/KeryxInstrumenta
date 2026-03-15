@@ -1,20 +1,29 @@
 {
   "name": "acc-vscode",
   "displayName": "ACC - Adaptive Codec Context",
-  "description": "Dimensional code indexing and navigation powered by ACC",
-  "version": "0.1.5",
+  "version": "0.1.0",
+  "publisher": "KeryxLabs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/KeryxLabs/KeryxInstrumenta"
+  },
   "engines": {
     "vscode": "^1.110.0"
   },
-  "categories": [
-    "Other"
-  ],
   "activationEvents": [
     "onStartupFinished"
   ],
   "main": "./out/extension.js",
   "contributes": {
     "commands": [
+      {
+        "command": "acc.downloadServer",
+        "title": "ACC: Download Server Binary"
+      },
+      {
+        "command": "acc.buildGraph",
+        "title": "ACC: Build Dependency Graph"
+      },
       {
         "command": "acc.search",
         "title": "ACC: Search Nodes"
@@ -30,32 +39,37 @@
       {
         "command": "acc.showUnstable",
         "title": "ACC: Show Unstable Nodes"
-      },
-      {
-        "command": "acc.findDependencies",
-        "title": "ACC: Find Dependencies"
       }
     ],
     "configuration": {
       "title": "ACC",
       "properties": {
-        "acc.rpcHost": {
+        "acc.serverPath": {
           "type": "string",
-          "default": "localhost",
-          "description": "ACC JSON-RPC server host"
+          "description": "Custom path to ACC server binary (leave empty for auto-download)"
         },
         "acc.rpcPort": {
           "type": "number",
-          "default": 9339,
-          "description": "ACC JSON-RPC server port"
+          "default": 9339
         },
-        "acc.enableLspForwarding": {
+        "acc.lspPort": {
+          "type": "number",
+          "default": 9340
+        },
+        "acc.database.remote": {
           "type": "boolean",
-          "default": true,
-          "description": "Forward LSP messages to ACC"
+          "default": false
+        },
+        "acc.database.remoteEndpoint": {
+          "type": "string",
+          "default": "ws://localhost:8000/rpc"
         }
       }
     }
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.10",
+    "tar": "^7.5.11"
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

@@ -22,6 +22,7 @@ public class SurrealDbSettings
     public string Database { get; set; } = "acc-engine";
     public string? User { get; set; } = "root";
     public string? Password { get; set; } = "root";
+    public bool Remote {get;set;} = false;
 
     public static SurrealDbSettings Default => new();
 }

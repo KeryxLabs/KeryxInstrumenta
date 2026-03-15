@@ -1,5 +1,3 @@
-// Add this to your existing ACC hosted service or create a new one
-
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Rpc;
 using Microsoft.Extensions.Configuration;
@@ -8,11 +6,6 @@ using Microsoft.Extensions.Logging;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
-
-
-
-
-
 
 public class JsonRpcServer : BackgroundService
 {
@@ -36,7 +29,7 @@ public class JsonRpcServer : BackgroundService
         _queryService = queryService;
         _logger = logger;
         _lspStreamManager = streamManager;
-        _port = configuration.GetValue<int>("JsonRpc:Port", 9339);
+        _port = configuration.GetValue<int>("Acc:JsonRpc:Port", 9339);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)

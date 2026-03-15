@@ -487,3 +487,4 @@ src/sttp-mcp/data
 _deps/
 src/AdaptiveCodecContextEngine/data
 *.vsix
+data/

@@ -19,9 +19,11 @@ public class SurrealDbRepository
     public SurrealDbRepository(ISurrealDbClient client, IConfiguration configuration, ILogger<SurrealDbRepository> logger)
     {
         _db = client;
-        _avecCalculator = new AvecCalculator(configuration.Get<AvecWeights>()!);
+        _avecCalculator = new AvecCalculator(configuration.Get<AvecWeights>()
+                         ?? throw new InvalidOperationException("Avec configuration missing"));
         _logger = logger;
-        _settings = configuration.GetSection("SurrealDB").Get<SurrealDbSettings>()!;
+        _settings = configuration.GetSection("SurrealDb").Get<SurrealDbSettings>()
+                    ?? throw new InvalidOperationException("SurrealDb configuration missing");
     }
 
     public async Task InitializeAsync()

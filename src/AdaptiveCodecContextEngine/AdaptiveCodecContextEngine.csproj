@@ -7,11 +7,19 @@
     <Nullable>enable</Nullable>
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
+    <AssemblyName>acc</AssemblyName>
     <!-- <PublishAot>true</PublishAot> -->
     <!-- <InvariantGlobalization>true</InvariantGlobalization> -->
     <!-- <IsAotCompatible>true</IsAotCompatible> -->
   </PropertyGroup>
 
+<PropertyGroup>
+  <!-- Forces native .so/.dll files to extract to a temp folder at runtime -->
+  <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+  
+  <!-- Ensures the runtime looks for those extracted files -->
+  <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+</PropertyGroup>
 
   <PropertyGroup>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
@@ -34,7 +42,16 @@
     <ProjectReference
       Include="../../_deps/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
   </ItemGroup>
-
+<ItemGroup>
+  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-x64/native/libsurreal_surrealkv.so"
+           Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == ''"
+           CopyToOutputDirectory="PreserveNewest"
+           Link="libsurreal_surrealkv.so" />
+  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-arm64/native/libsurreal_surrealkv.so"
+           Condition="'$(RuntimeIdentifier)' == 'linux-arm64'"
+           CopyToOutputDirectory="PreserveNewest"
+           Link="libsurreal_surrealkv.so" />
+</ItemGroup>
   <ItemGroup>
   <None Update="appsettings.json">
     <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

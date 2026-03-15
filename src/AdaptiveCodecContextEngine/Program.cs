@@ -21,7 +21,8 @@ using System.Text;
 [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(ObjectConverter<ProjectStatsDto>))]
 [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(List<ISurrealDbResult>))]
 [DynamicDependency(DynamicallyAccessedMemberTypes.All, typeof(ISurrealDbResult))]
-static void PreserveSurrealInternalTypes() {}
+static void PreserveSurrealInternalTypes()
+{ }
 
 PreserveSurrealInternalTypes();
 
@@ -36,20 +37,23 @@ builder.Configuration
     .AddEnvironmentVariables()
     .AddCommandLine(args);
 
-// --- 2. Bind Configuration (AOT Safe) ---
-builder.Services.Configure<SurrealDbSettings>(builder.Configuration.GetSection("SurrealDB"));
-builder.Services.Configure<AccOptions>(builder.Configuration.GetSection("Acc"));
-builder.Services.Configure<AvecWeights>(builder.Configuration.GetSection("AvecWeights"));
 
 // Extract values needed for DB setup immediately
 var surrealSettings = new SurrealDbSettings();
-builder.Configuration.GetSection("SurrealDB").Bind(surrealSettings);
+builder.Configuration.GetSection("SurrealDb").Bind(surrealSettings);
+
+// --- 2. Bind Configuration (AOT Safe) ---
+builder.Services.Configure<SurrealDbSettings>(builder.Configuration.GetSection("SurrealDb"));
+builder.Services.Configure<AccOptions>(builder.Configuration.GetSection("Acc"));
+builder.Services.Configure<AvecWeights>(builder.Configuration.GetSection("AvecWeights"));
+
+
 
 if (string.IsNullOrEmpty(surrealSettings.Endpoint()))
     throw new Exception("SurrealDb settings missing or invalid.");
 
 // --- 3. Database & Directory Setup ---
-var dbEndpoint = surrealSettings.Endpoint();
+var dbEndpoint = surrealSettings.Endpoint(surrealSettings.Remote);
 if (dbEndpoint.StartsWith("surrealkv://"))
 {
     var path = dbEndpoint["surrealkv://".Length..];
@@ -67,9 +71,12 @@ var options = SurrealDbOptions.Create()
     .WithUsername(surrealSettings.User)
     .WithPassword(surrealSettings.Password)
     .Build();
-    
-builder.Services.AddSurreal(options);
-   //.AddSurrealKvProvider();
+
+
+if (surrealSettings.Remote)
+    builder.Services.AddSurreal(options);
+else
+    builder.Services.AddSurreal(options).AddSurrealKvProvider();
 
 // --- 4. Register Services ---
 // Channels
@@ -87,7 +94,7 @@ builder.Services
 .AddSingleton<LspReferenceTracker>()
 .AddSingleton<LizardAnalyzer>()
 .AddSingleton<MetricsCollector>()
-.AddSingleton<IAccQueryService,AccQueryService>()
+.AddSingleton<IAccQueryService, AccQueryService>()
 .AddHostedService<JsonRpcServer>();
 
 builder.Services
@@ -113,7 +120,7 @@ public class AccOptions
 {
     public string RepositoryPath { get; set; } = null!;
     public AvecTarget? Target { get; set; }
-    public string[] FileExtensions {get;set;}= [];
+    public string[] FileExtensions { get; set; } = [];
     public List<LspStreamConfig> LspStreams { get; set; } = [];
 }
 
@@ -124,4 +131,3 @@ public class AvecTarget
     public double Friction { get; set; }
     public double Autonomy { get; set; }
 }
- 

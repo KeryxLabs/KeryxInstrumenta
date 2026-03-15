@@ -1,31 +1,79 @@
-import * as vscode from "vscode";
-import * as net from "net";
+import * as vscode from 'vscode';
+import { AccServerDownloader } from './downloader';
+import { spawn, ChildProcess } from 'child_process';
+import * as net from 'net'; 
 
+let accProcess: ChildProcess | undefined;
 let accClient: AccClient | undefined;
-let lspForwarder: LspForwarder | undefined;
+let downloader: AccServerDownloader;
+let outputChannel: vscode.OutputChannel;
 
-export function activate(context: vscode.ExtensionContext) {
-  console.log("ACC extension activating...");
 
-  const config = vscode.workspace.getConfiguration("acc");
-  const host = config.get<string>("rpcHost", "localhost");
-  const port = config.get<number>("rpcPort", 9339);
+export async function activate(context: vscode.ExtensionContext) {
+  outputChannel = vscode.window.createOutputChannel("ACC");
+  downloader = new AccServerDownloader(context, outputChannel);
 
-  // Initialize ACC client
-  accClient = new AccClient(host, port);
+  // Check if server is installed
+  const serverPath = await downloader.ensureServerInstalled();
 
-  // Register LSP stream with ACC
-  const language =
-    vscode.window.activeTextEditor?.document.languageId || "typescript";
-  accClient.registerLspStream(language, 9340);
+  if (!serverPath) {
+    vscode.window.showWarningMessage(
+      'ACC: Server not installed. Run "ACC: Download Server Binary" to install.',
+    );
 
-  // Start LSP forwarder if enabled
-  if (config.get<boolean>("enableLspForwarding", true)) {
-    lspForwarder = new LspForwarder(9340);
-    lspForwarder.start();
+    // Register download command
+    context.subscriptions.push(
+      vscode.commands.registerCommand("acc.downloadServer", async () => {
+        const path = await downloader.downloadServer();
+        if (path) {
+          // Restart activation after download
+          await startAccEngine(path, context);
+        }
+      }),
+    );
+    return;
   }
 
+  await startAccEngine(serverPath, context);
+
+  // Give engine time to start
+  setTimeout(() => {
+    accClient = new AccClient("localhost", 9339);
+
+    // Register LSP stream
+    const language =
+      vscode.window.activeTextEditor?.document.languageId || "csharp";
+    accClient.registerLspStream(language, 9340);
+
+    // Initial crawl on activation (optional)
+    vscode.window.showInformationMessage(
+      'ACC: Ready! Run "ACC: Build Dependency Graph" to index your codebase.',
+    );
+  }, 5000);
+
+  // Hook into file saves to tap LSP data
+  context.subscriptions.push(
+    vscode.workspace.onDidSaveTextDocument(async (doc) => {
+      await tapAndForwardSymbols(doc.uri);
+    }),
+  );
+
+  // Hook into active editor changes (for real-time updates)
+  context.subscriptions.push(
+    vscode.window.onDidChangeActiveTextEditor(async (editor) => {
+      if (editor) {
+        await tapAndForwardSymbols(editor.document.uri);
+      }
+    }),
+  );
+
   // Register commands
+  context.subscriptions.push(
+    vscode.commands.registerCommand("acc.buildGraph", async () => {
+      await buildDependencyGraph();
+    }),
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand("acc.search", async () => {
       const query = await vscode.window.showInputBox({
@@ -41,48 +89,25 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand("acc.showStats", async () => {
       const stats = await accClient?.getStats();
-      vscode.window.showInformationMessage(
-        `ACC Stats: ${stats?.totalNodes} nodes | ` +
-          `Avg Stability: ${stats?.averageStability.toFixed(2)} | ` +
-          `Avg Friction: ${stats?.averageFriction.toFixed(2)}`,
-      );
+      if (stats) {
+        vscode.window.showInformationMessage(
+          `ACC Stats: ${stats.totalNodes} nodes indexed`,
+        );
+      }
     }),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("acc.showHighFriction", async () => {
       const nodes = await accClient?.getHighFriction(0.7, 20);
-      showNodeList("High-Friction Nodes", nodes);
+      showNodeList("High-Friction Nodes (Bottlenecks)", nodes);
     }),
   );
 
   context.subscriptions.push(
     vscode.commands.registerCommand("acc.showUnstable", async () => {
       const nodes = await accClient?.getUnstable(0.4, 20);
-      showNodeList("Unstable Nodes", nodes);
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand("acc.findDependencies", async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) return;
-
-      const position = editor.selection.active;
-      const filePath = editor.document.uri.fsPath;
-
-      // Find node at current position
-      const results = await accClient?.search(filePath);
-      // TODO: Filter by line number
-
-      if (results && results.length > 0) {
-        const deps = await accClient?.queryDependencies(
-          results[0].nodeId,
-          "Both",
-          3,
-        );
-        showNodeList("Dependencies", deps);
-      }
+      showNodeList("Unstable Nodes (High Churn)", nodes);
     }),
   );
 
@@ -90,7 +115,227 @@ export function activate(context: vscode.ExtensionContext) {
 }
 
 export function deactivate() {
-  lspForwarder?.stop();
+  if (accProcess) {
+    accProcess.kill();
+  }
+}
+
+async function startAccEngine(
+  serverPath: string,
+  context: vscode.ExtensionContext,
+) {
+  const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (!workspaceRoot) {
+    vscode.window.showWarningMessage("ACC: No workspace folder open");
+    return;
+  }
+
+  const config = vscode.workspace.getConfiguration("acc");
+
+  const args = [
+    "--Acc:RepositoryPath",
+    workspaceRoot,
+    "--JsonRpc:Port",
+    config.get<number>("rpcPort", 9339).toString(),
+    "--SurrealDb:Remote",
+    config.get<boolean>("database.remote", false).toString(),
+  ];
+
+  outputChannel.appendLine(`Starting ACC server: ${serverPath}`);
+  outputChannel.appendLine(`Args: ${args.join(" ")}`);
+
+  accProcess = spawn(serverPath, args);
+
+  accProcess.stdout?.on("data", (data) => {
+    outputChannel.appendLine(`[ACC] ${data}`);
+  });
+
+  accProcess.stderr?.on("data", (data) => {
+    outputChannel.appendLine(`[ACC ERROR] ${data}`);
+  });
+
+  accProcess.on("error", (err) => {
+    vscode.window.showErrorMessage(`ACC failed to start: ${err.message}`);
+    outputChannel.appendLine(`Failed to start: ${err}`);
+  });
+
+  accProcess.on("close", (code) => {
+    outputChannel.appendLine(`ACC exited with code ${code}`);
+  });
+
+  // Give it time to start
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  // Initialize client
+  accClient = new AccClient("localhost", config.get<number>("rpcPort", 9339));
+
+  vscode.window.showInformationMessage("ACC server started successfully!");
+}
+async function tapAndForwardSymbols(uri: vscode.Uri) {
+  try {
+    // 1. Get document symbols from VSCode's LSP
+    const symbols = await vscode.commands.executeCommand<
+      vscode.DocumentSymbol[]
+    >("vscode.executeDocumentSymbolProvider", uri);
+
+    if (!symbols || symbols.length === 0) {
+      console.log("No symbols found for", uri.fsPath);
+      return;
+    }
+
+    console.log(`Tapped ${symbols.length} symbols from ${uri.fsPath}`);
+
+    // 2. Convert to LSP message format
+    const lspMessage = {
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "textDocument/documentSymbol",
+      params: {
+        textDocument: {
+          uri: uri.toString(),
+        },
+      },
+      result: symbols.map(convertSymbol),
+    };
+
+    // 3. Forward to ACC
+    await forwardToAcc(lspMessage);
+
+    // 4. Get references for each symbol to build edges
+    for (const symbol of symbols) {
+      await tapAndForwardReferences(uri, symbol);
+    }
+  } catch (err) {
+    console.error("Error tapping symbols:", err);
+  }
+}
+
+async function tapAndForwardReferences(
+  uri: vscode.Uri,
+  symbol: vscode.DocumentSymbol,
+) {
+  try {
+    const refs = await vscode.commands.executeCommand<vscode.Location[]>(
+      "vscode.executeReferenceProvider",
+      uri,
+      symbol.range.start,
+    );
+
+    if (!refs || refs.length === 0) return;
+
+    console.log(`Found ${refs.length} references for ${symbol.name}`);
+
+    // Forward reference data to ACC for edge building
+    const edgeMessage = {
+      jsonrpc: "2.0",
+      id: Date.now(),
+      method: "textDocument/references",
+      params: {
+        textDocument: { uri: uri.toString() },
+        position: {
+          line: symbol.range.start.line,
+          character: symbol.range.start.character,
+        },
+        context: { includeDeclaration: false },
+      },
+      result: refs.map((loc) => ({
+        uri: loc.uri.toString(),
+        range: {
+          start: {
+            line: loc.range.start.line,
+            character: loc.range.start.character,
+          },
+          end: { line: loc.range.end.line, character: loc.range.end.character },
+        },
+      })),
+    };
+
+    await forwardToAcc(edgeMessage);
+  } catch (err) {
+    console.error("Error tapping references:", err);
+  }
+}
+
+function convertSymbol(symbol: vscode.DocumentSymbol): any {
+  return {
+    name: symbol.name,
+    kind: symbol.kind,
+    range: {
+      start: {
+        line: symbol.range.start.line,
+        character: symbol.range.start.character,
+      },
+      end: {
+        line: symbol.range.end.line,
+        character: symbol.range.end.character,
+      },
+    },
+    selectionRange: {
+      start: {
+        line: symbol.selectionRange.start.line,
+        character: symbol.selectionRange.start.character,
+      },
+      end: {
+        line: symbol.selectionRange.end.line,
+        character: symbol.selectionRange.end.character,
+      },
+    },
+    detail: symbol.detail,
+    children: symbol.children?.map(convertSymbol),
+  };
+}
+
+async function forwardToAcc(message: any) {
+  return new Promise<void>((resolve, reject) => {
+    const socket = net.connect(9340, "localhost");
+
+    const content = JSON.stringify(message);
+    const header = `Content-Length: ${content.length}\r\n\r\n`;
+    const fullMessage = header + content;
+
+    socket.on("connect", () => {
+      socket.write(fullMessage);
+      socket.end();
+      resolve();
+    });
+
+    socket.on("error", (err) => {
+      console.error("Error forwarding to ACC:", err);
+      reject(err);
+    });
+  });
+}
+
+async function buildDependencyGraph() {
+  await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "Building dependency graph...",
+      cancellable: false,
+    },
+    async (progress) => {
+      // Find all relevant files
+      const files = await vscode.workspace.findFiles(
+        "**/*.{cs,ts,js,py,go,rs}",
+        "**/node_modules/**",
+      );
+
+      let processed = 0;
+      for (const file of files) {
+        await tapAndForwardSymbols(file);
+
+        processed++;
+        progress.report({
+          message: `${processed}/${files.length} files`,
+          increment: (1 / files.length) * 100,
+        });
+      }
+
+      vscode.window.showInformationMessage(
+        `ACC: Indexed ${files.length} files!`,
+      );
+    },
+  );
 }
 
 class AccClient {
@@ -246,100 +491,106 @@ class LspForwarder {
   }
 }
 function showSearchResults(results: any[] | undefined) {
-    if (!results || results.length === 0) {
-        vscode.window.showInformationMessage('No results found');
-        return;
-    }
+  if (!results || results.length === 0) {
+    vscode.window.showInformationMessage("No results found");
+    return;
+  }
 
-    const items = results.map(node => {
-        // Format AVEC scores if available
-        const avecInfo = node.avec 
-            ? `S:${node.avec.stability.toFixed(2)} L:${node.avec.logic.toFixed(2)} F:${node.avec.friction.toFixed(2)} A:${node.avec.autonomy.toFixed(2)}`
-            : 'No AVEC';
-        
-        return {
-            label: node.name,
-            description: `${node.type} @ L${node.line_start}`,
-            detail: `${node.file_path} | ${avecInfo}`,
-            node
-        };
-    });
+  const items = results.map((node) => {
+    // Format AVEC scores if available
+    const avecInfo = node.avec
+      ? `S:${node.avec.stability.toFixed(2)} L:${node.avec.logic.toFixed(2)} F:${node.avec.friction.toFixed(2)} A:${node.avec.autonomy.toFixed(2)}`
+      : "No AVEC";
 
-    vscode.window.showQuickPick(items, {
-        placeHolder: 'Select a node to navigate to'
-    }).then(selected => {
-        if (selected) {
-            const filePath = selected.node.file_path;
-            // line_start from ACC is already 0-indexed (from LSP), no adjustment needed
-            const line = selected.node.line_start;
-            
-            console.log('Opening file:', filePath, 'at line:', line);
-            
-            const fileUri = vscode.Uri.file(filePath);
-            
-            vscode.workspace.openTextDocument(fileUri).then(
-                doc => {
-                    vscode.window.showTextDocument(doc).then(editor => {
-                        const position = new vscode.Position(line, 0);
-                        const range = new vscode.Range(position, position);
-                        
-                        editor.selection = new vscode.Selection(position, position);
-                        editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
-                        
-                        console.log('Navigated to line:', line);
-                    });
-                },
-                err => {
-                    vscode.window.showErrorMessage(`Could not open file: ${filePath} - ${err.message}`);
-                    console.error('Error opening file:', err);
-                }
+    return {
+      label: node.name,
+      description: `${node.type} @ L${node.line_start}`,
+      detail: `${node.file_path} | ${avecInfo}`,
+      node,
+    };
+  });
+
+  vscode.window
+    .showQuickPick(items, {
+      placeHolder: "Select a node to navigate to",
+    })
+    .then((selected) => {
+      if (selected) {
+        const filePath = selected.node.file_path;
+        // line_start from ACC is already 0-indexed (from LSP), no adjustment needed
+        const line = selected.node.line_start;
+
+        console.log("Opening file:", filePath, "at line:", line);
+
+        const fileUri = vscode.Uri.file(filePath);
+
+        vscode.workspace.openTextDocument(fileUri).then(
+          (doc) => {
+            vscode.window.showTextDocument(doc).then((editor) => {
+              const position = new vscode.Position(line, 0);
+              const range = new vscode.Range(position, position);
+
+              editor.selection = new vscode.Selection(position, position);
+              editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+
+              console.log("Navigated to line:", line);
+            });
+          },
+          (err) => {
+            vscode.window.showErrorMessage(
+              `Could not open file: ${filePath} - ${err.message}`,
             );
-        }
+            console.error("Error opening file:", err);
+          },
+        );
+      }
     });
 }
 
 function showNodeList(title: string, nodes: any[] | undefined) {
-    if (!nodes || nodes.length === 0) {
-        vscode.window.showInformationMessage(`${title}: No results`);
-        return;
-    }
+  if (!nodes || nodes.length === 0) {
+    vscode.window.showInformationMessage(`${title}: No results`);
+    return;
+  }
 
-    const items = nodes.map(node => {
-        const avecInfo = node.avec
-            ? `S:${node.avec.stability.toFixed(2)} L:${node.avec.logic.toFixed(2)} F:${node.avec.friction.toFixed(2)} A:${node.avec.autonomy.toFixed(2)}`
-            : 'No AVEC';
-        
-        return {
-            label: node.name,
-            description: `${node.type} @ L${node.line_start}`,
-            detail: `${avecInfo} | ${node.file_path}`,
-            node
-        };
-    });
+  const items = nodes.map((node) => {
+    const avecInfo = node.avec
+      ? `S:${node.avec.stability.toFixed(2)} L:${node.avec.logic.toFixed(2)} F:${node.avec.friction.toFixed(2)} A:${node.avec.autonomy.toFixed(2)}`
+      : "No AVEC";
 
-    vscode.window.showQuickPick(items, { 
-        title,
-        placeHolder: 'Select a node to navigate to'
-    }).then(selected => {
-        if (selected) {
-            const filePath = selected.node.file_path;
-            const line = selected.node.line_start;
-            const fileUri = vscode.Uri.file(filePath);
-            
-            vscode.workspace.openTextDocument(fileUri).then(
-                doc => {
-                    vscode.window.showTextDocument(doc).then(editor => {
-                        const position = new vscode.Position(line, 0);
-                        const range = new vscode.Range(position, position);
-                        
-                        editor.selection = new vscode.Selection(position, position);
-                        editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
-                    });
-                },
-                err => {
-                    vscode.window.showErrorMessage(`Could not open file: ${filePath}`);
-                }
-            );
-        }
+    return {
+      label: node.name,
+      description: `${node.type} @ L${node.line_start}`,
+      detail: `${avecInfo} | ${node.file_path}`,
+      node,
+    };
+  });
+
+  vscode.window
+    .showQuickPick(items, {
+      title,
+      placeHolder: "Select a node to navigate to",
+    })
+    .then((selected) => {
+      if (selected) {
+        const filePath = selected.node.file_path;
+        const line = selected.node.line_start;
+        const fileUri = vscode.Uri.file(filePath);
+
+        vscode.workspace.openTextDocument(fileUri).then(
+          (doc) => {
+            vscode.window.showTextDocument(doc).then((editor) => {
+              const position = new vscode.Position(line, 0);
+              const range = new vscode.Range(position, position);
+
+              editor.selection = new vscode.Selection(position, position);
+              editor.revealRange(range, vscode.TextEditorRevealType.InCenter);
+            });
+          },
+          (err) => {
+            vscode.window.showErrorMessage(`Could not open file: ${filePath}`);
+          },
+        );
+      }
     });
 }
