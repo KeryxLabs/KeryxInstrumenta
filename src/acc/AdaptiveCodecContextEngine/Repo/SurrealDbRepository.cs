@@ -26,21 +26,21 @@ public class SurrealDbRepository
                     ?? throw new InvalidOperationException("SurrealDb configuration missing");
     }
 
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Initializing SurrealDB schema...");
-        await _db.Use(_settings.Namespace, _settings.Database);
+        await _db.Use(_settings.Namespace, _settings.Database, cancellationToken);
 
         if (!_schemaInitialized)
         {
-            await CreateSchema();
-            await CreateEvents();
+            await CreateSchema(cancellationToken);
+            await CreateEvents(cancellationToken);
             _schemaInitialized = true;
             _logger.LogInformation("SurrealDB schema initialized.");
         }
     }
 
-    private async Task CreateSchema()
+    private async Task CreateSchema(CancellationToken cancellationToken = default)
     {
         var response = await _db.RawQuery(@"
             DEFINE TABLE IF NOT EXISTS node SCHEMAFULL;
@@ -121,7 +121,7 @@ public class SurrealDbRepository
             DEFINE FIELD IF NOT EXISTS created_at ON depends TYPE datetime DEFAULT time::now();
             
             DEFINE INDEX IF NOT EXISTS depends_in_out ON depends FIELDS in, out, relationship_type UNIQUE;
-        ");
+        ", cancellationToken: cancellationToken);
 
         if (response.HasErrors)
         {
@@ -130,7 +130,7 @@ public class SurrealDbRepository
         }
     }
 
-    private async Task CreateEvents()
+    private async Task CreateEvents(CancellationToken cancellationToken = default)
     {
         // Event: Auto-update timestamp on node update
         var response = await _db.RawQuery(@"
@@ -139,7 +139,7 @@ public class SurrealDbRepository
                         UPDATE $after SET updated_at = time::now()
                     END
             };
-        ");
+        ", cancellationToken: cancellationToken);
 
         if (response.HasErrors)
         {
@@ -162,7 +162,7 @@ public class SurrealDbRepository
             THEN {
                 UPDATE $after.id SET avec_needs_recalc = true
             };
-        ");
+        ", cancellationToken: cancellationToken);
         if (response.HasErrors)
         {
             var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
@@ -180,7 +180,7 @@ public class SurrealDbRepository
                     incoming_edges = (SELECT count() FROM depends WHERE out = $parent.id)[0].count ?? 0,
                     total_degree = incoming_edges + outgoing_edges;
             };
-        ");
+        ", cancellationToken: cancellationToken);
         if (response.HasErrors)
         {
             var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
@@ -197,7 +197,7 @@ public class SurrealDbRepository
                     incoming_edges = (SELECT count() FROM depends WHERE out = $parent.id)[0].count ?? 0,
                     total_degree = incoming_edges + outgoing_edges;
             };
-        ");
+        ", cancellationToken: cancellationToken);
         if (response.HasErrors)
         {
             var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
@@ -214,7 +214,7 @@ public class SurrealDbRepository
                     avec_delta_friction = $after.avec_learned_friction - $after.avec_friction,
                     avec_delta_autonomy = $after.avec_learned_autonomy - $after.avec_autonomy
             };
-        ");
+        ", cancellationToken: cancellationToken);
         if (response.HasErrors)
         {
             var error = (SurrealDbErrorResult?)response.Errors.FirstOrDefault();
@@ -225,7 +225,7 @@ public class SurrealDbRepository
     }
 
 
-    public async Task<List<NodeDto>> UpsertNodeListAsync(IEnumerable<NodeUpdate> updates)
+    public async Task<List<NodeDto>> UpsertNodeListAsync(IEnumerable<NodeUpdate> updates, CancellationToken cancellationToken = default)
     {
 
 
@@ -236,7 +236,7 @@ public class SurrealDbRepository
 
         var result = await _db.RawQuery(
             "INSERT INTO node $data ON DUPLICATE KEY UPDATE updated_at = time::now() RETURN AFTER;",
-            parameters);
+            parameters, cancellationToken:cancellationToken);
 
 
         if (result.HasErrors)
@@ -250,7 +250,7 @@ public class SurrealDbRepository
         _logger.LogInformation("Raw JSON: {Json}", JsonSerializer.Serialize(rawRecords));
         if (records?.Count > 0)
         {
-            await BatchRecalculateAsync(updates.Select(u => u.NodeId));
+            await BatchRecalculateAsync(updates.Select(u => u.NodeId), cancellationToken:cancellationToken);
             // foreach (var node in records)
             // {
             //     _logger.LogInformation("Upserted node {NodeId}", node.NodeId);
@@ -262,7 +262,7 @@ public class SurrealDbRepository
 
     }
 
-    public async Task BatchRecalculateAsync(IEnumerable<string> nodeIds)
+    public async Task BatchRecalculateAsync(IEnumerable<string> nodeIds, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Batching calculation for {nodeIds}", string.Join(',', nodeIds));
         // Use 'IN' to get every node in one round trip
@@ -308,7 +308,7 @@ public class SurrealDbRepository
                     avec_delta_friction as AvecDeltaFriction,
                     avec_delta_autonomy as AvecDeltaAutonomy
                     FROM node WHERE node_id IN $ids AND avec_needs_recalc = true;";
-        var results = await _db.RawQuery(query, new Dictionary<string, object?> { { "ids", nodeIds.Select(id => $"{id}").ToList() } });
+        var results = await _db.RawQuery(query, new Dictionary<string, object?> { { "ids", nodeIds.Select(id => $"{id}").ToList() } }, cancellationToken:cancellationToken);
 
         List<NodeRecord>? nodes = null;
 
@@ -394,7 +394,7 @@ public class SurrealDbRepository
                             };
                         };";
 
-        results = await _db.RawQuery(avecQuery, new Dictionary<string, object?> { { "updates", updates } });
+        results = await _db.RawQuery(avecQuery, new Dictionary<string, object?> { { "updates", updates } }, cancellationToken:cancellationToken);
 
 
         if (results.HasErrors)
@@ -403,68 +403,7 @@ public class SurrealDbRepository
             _logger.LogError("Db Error: {error}", error?.Details);
         }
     }
-
-    private async Task RecalculateAvecIfNeededAsync(string nodeId)
-    {
-        var checkQuery = "SELECT avec_needs_recalc AS needs_recalc FROM node:$node_id";
-        var checkParams = new Dictionary<string, object?> { ["node_id"] = nodeId };
-        var checkResult = await _db.RawQuery(checkQuery, checkParams);
-        var checkRecords = checkResult.GetValue<List<AvecStatusDto>>(0);
-        var needsRecalc = checkRecords?.FirstOrDefault()?.NeedsRecalc ?? false;
-
-        if (!needsRecalc) return;
-
-        _logger.LogDebug("Recalculating AVEC for node {NodeId}", nodeId);
-
-        var nodeQuery = "SELECT * FROM node:$node_id";
-        var nodeParams = new Dictionary<string, object?> { ["node_id"] = nodeId };
-        var nodeResult = await _db.RawQuery(nodeQuery, nodeParams);
-        var nodeRecords = nodeResult.GetValue<List<NodeRecord>>(0);
-        var node = nodeRecords?.FirstOrDefault();
-
-        if (node == null) return;
-
-        var metrics = new NodeMetrics
-        {
-            LinesOfCode = node.LinesOfCode,
-            CyclomaticComplexity = node.CyclomaticComplexity,
-            Parameters = node.Parameters,
-            IncomingEdges = node.IncomingEdges,
-            OutgoingEdges = node.OutgoingEdges,
-            TotalDegree = node.TotalDegree,
-            GitTotalCommits = node.GitTotalCommits,
-            GitContributors = node.GitContributors,
-            GitAvgDaysBetweenChanges = node.GitAvgDaysBetweenChanges,
-            TestLineCoverage = node.TestLineCoverage,
-            TestBranchCoverage = node.TestBranchCoverage
-        };
-
-        var avec = _avecCalculator.Calculate(metrics);
-
-        var updateQuery = @"
-            UPDATE node:⟨$node_id⟩ SET
-                avec_stability = $avec_stability,
-                avec_logic = $avec_logic,
-                avec_friction = $avec_friction,
-                avec_autonomy = $avec_autonomy,
-                avec_computed_at = $avec_computed_at,
-                avec_needs_recalc = false
-            RETURN AFTER;
-        ";
-
-        var updateParams = new Dictionary<string, object?>
-        {
-            ["node_id"] = nodeId,
-            ["avec_stability"] = avec.Stability,
-            ["avec_logic"] = avec.Logic,
-            ["avec_friction"] = avec.Friction,
-            ["avec_autonomy"] = avec.Autonomy,
-            ["avec_computed_at"] = DateTime.UtcNow
-        };
-        await _db.RawQuery(updateQuery, updateParams);
-    }
-
-    public async Task<DependencyDto?> UpsertDependencyAsync(string fromNodeId, string toNodeId, string relationshipType)
+    public async Task<DependencyDto?> UpsertDependencyAsync(string fromNodeId, string toNodeId, string relationshipType, CancellationToken cancellationToken = default)
     {
         var weight = relationshipType switch
         {
@@ -491,13 +430,13 @@ public class SurrealDbRepository
             ["type"] = relationshipType,
             ["weight"] = weight
         };
-        var result = await _db.RawQuery(query, depParams);
+        var result = await _db.RawQuery(query, depParams, cancellationToken:cancellationToken);
 
         var records = result.GetValue<List<DependencyDto>>(0);
         return records?.FirstOrDefault();
     }
 
-    public async Task<NodeDto?> QueryRelationsAsync(string nodeId, bool includeScores = false)
+    public async Task<NodeDto?> QueryRelationsAsync(string nodeId, bool includeScores = false, CancellationToken cancellationToken = default)
     {
         var fields = includeScores ? "*" : "node_id, name, type, file_path";
 
@@ -512,7 +451,7 @@ public class SurrealDbRepository
         {
             ["node_id"] = nodeId
         };
-        var result = await _db.RawQuery(query, relParams);
+        var result = await _db.RawQuery(query, relParams, cancellationToken:cancellationToken);
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).FirstOrDefault();
     }
@@ -521,7 +460,8 @@ public class SurrealDbRepository
         string nodeId,
         DependencyDirection direction = DependencyDirection.Both,
         int maxDepth = -1,
-        bool includeScores = false)
+        bool includeScores = false,
+        CancellationToken cancellationToken = default)
     {
         var traversal = direction switch
         {
@@ -543,14 +483,15 @@ public class SurrealDbRepository
         {
             ["node_id"] = nodeId
         };
-        var result = await _db.RawQuery(query, depQueryParams);
+        var result = await _db.RawQuery(query, depQueryParams, cancellationToken:cancellationToken);
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
     public async Task<List<NodeDto>> QueryPatternsAsync(
         AvecScores targetProfile,
-        double threshold = 0.8)
+        double threshold = 0.8,
+        CancellationToken cancellationToken = default)
     {
         var query = @"
             SELECT id as Id,
@@ -616,13 +557,13 @@ public class SurrealDbRepository
             ["autonomy"] = targetProfile.Autonomy,
             ["max_distance"] = maxDistance
         };
-        var result = await _db.RawQuery(query, patternParams);
+        var result = await _db.RawQuery(query, patternParams, cancellationToken:cancellationToken);
 
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
-    public async Task<string?> FindNodeAtLocationAsync(string filePath, int line)
+    public async Task<string?> FindNodeAtLocationAsync(string filePath, int line, CancellationToken cancellationToken = default)
     {
         var query = @"
             SELECT node_id FROM node
@@ -642,18 +583,18 @@ public class SurrealDbRepository
         return records?.FirstOrDefault()?.NodeId;
     }
 
-    public async Task<string?> FindNodeByNameAsync(string name)
+    public async Task<string?> FindNodeByNameAsync(string name, CancellationToken cancellationToken = default)
     {
         var query = "SELECT node_id FROM node WHERE name = $name LIMIT 1;";
         var nameParams = new Dictionary<string, object?>
         {
             ["name"] = name
         };
-        var result = await _db.RawQuery(query, nameParams);
+        var result = await _db.RawQuery(query, nameParams, cancellationToken:cancellationToken);
         var records = result.GetValue<List<NodeIdDto>>(0);
         return records?.FirstOrDefault()?.NodeId;
     }
-    public async Task<List<NodeDto>> SearchByNameAsync(string name, int limit = 10)
+    public async Task<List<NodeDto>> SearchByNameAsync(string name, int limit = 10, CancellationToken cancellationToken = default)
     {
         var query = @"
         SELECT id as Id,
@@ -701,12 +642,12 @@ public class SurrealDbRepository
         LIMIT $limit;
     ";
 
-        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["name"] = name, ["limit"] = limit });
+        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["name"] = name, ["limit"] = limit }, cancellationToken:cancellationToken);
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
-    public async Task<List<NodeDto>> GetNodesWithHighFrictionAsync(double minFriction = 0.7, int limit = 20)
+    public async Task<List<NodeDto>> GetNodesWithHighFrictionAsync(double minFriction = 0.7, int limit = 20, CancellationToken cancellationToken = default)
     {
         var query = @"
         SELECT id as Id,
@@ -755,12 +696,12 @@ public class SurrealDbRepository
         LIMIT $limit;
     ";
 
-        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["min_friction"] = minFriction, ["limit"] = limit });
+        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["min_friction"] = minFriction, ["limit"] = limit }, cancellationToken:cancellationToken);
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
-    public async Task<List<NodeDto>> GetUnstableNodesAsync(double maxStability = 0.4, int limit = 20)
+    public async Task<List<NodeDto>> GetUnstableNodesAsync(double maxStability = 0.4, int limit = 20, CancellationToken cancellationToken = default)
     {
         var query = @"
         SELECT id as Id,
@@ -810,12 +751,12 @@ public class SurrealDbRepository
         LIMIT $limit;
     ";
 
-        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["max_stability"] = maxStability, ["limit"] = limit });
+        var result = await _db.RawQuery(query, new Dictionary<string, object?> { ["max_stability"] = maxStability, ["limit"] = limit }, cancellationToken:cancellationToken);
         var records = result.GetValue<List<NodeRecord>>(0);
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
-    public async Task<ProjectStatsDto> GetProjectStatsAsync()
+    public async Task<ProjectStatsDto> GetProjectStatsAsync(CancellationToken cancellationToken = default)
     {
         var query = @"
         SELECT 
@@ -829,7 +770,7 @@ public class SurrealDbRepository
         GROUP ALL;
     ";
 
-        var result = await _db.RawQuery(query, null);
+        var result = await _db.RawQuery(query, null, cancellationToken:cancellationToken);
         var records = result.GetValue<List<ProjectStatsDto>>(0);
         return records?.FirstOrDefault() ?? new ProjectStatsDto();
     }

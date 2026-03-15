@@ -30,6 +30,10 @@
   <ItemGroup>
     <PackageReference Include="LibGit2Sharp" Version="0.31.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.4" />
+    <PackageReference Include="OpenTelemetry" Version="1.15.0" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.15.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" Version="1.15.0" />
   </ItemGroup>
 
   <!-- <ItemGroup>
@@ -38,19 +42,12 @@
   </ItemGroup> -->
 
   <ItemGroup>
-    <ProjectReference Include="../../_deps/surrealdb.net/SurrealDb.Net/SurrealDb.Net.csproj " />
-    <ProjectReference
-      Include="../../_deps/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
+    <ProjectReference Include="../../../_deps/surrealdb.net/SurrealDb.Net/SurrealDb.Net.csproj " />
+    <ProjectReference Include="../../../_deps/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
   </ItemGroup>
 <ItemGroup>
-  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-x64/native/libsurreal_surrealkv.so"
-           Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == ''"
-           CopyToOutputDirectory="PreserveNewest"
-           Link="libsurreal_surrealkv.so" />
-  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-arm64/native/libsurreal_surrealkv.so"
-           Condition="'$(RuntimeIdentifier)' == 'linux-arm64'"
-           CopyToOutputDirectory="PreserveNewest"
-           Link="libsurreal_surrealkv.so" />
+  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-x64/native/libsurreal_surrealkv.so" Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == ''" CopyToOutputDirectory="PreserveNewest" Link="libsurreal_surrealkv.so" />
+  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-arm64/native/libsurreal_surrealkv.so" Condition="'$(RuntimeIdentifier)' == 'linux-arm64'" CopyToOutputDirectory="PreserveNewest" Link="libsurreal_surrealkv.so" />
 </ItemGroup>
   <ItemGroup>
   <None Update="appsettings.json">
