@@ -1,4 +1,5 @@
 namespace AdaptiveCodecContextEngine.Models.Git;
+
 public record GitEvent
 {
     public GitEventType Type { get; init; }
@@ -6,3 +7,5 @@ public record GitEvent
     public string? OldPath { get; init; }
     public DateTime Timestamp { get; init; }
 }
+
+public record GitEventWithContext(GitEvent Event, ActivityContext? Context);

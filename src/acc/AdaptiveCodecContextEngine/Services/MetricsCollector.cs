@@ -11,9 +11,9 @@ using Microsoft.Extensions.Logging;
 public class MetricsCollector
 {
     private readonly Channel<LspMessageWithContext> _lspChannel;
-    private readonly Channel<GitEvent> _gitChannel;
-    private readonly Channel<NodeUpdate> _updateChannel;
-    private readonly Channel<DependencyEdge> _dependencyChannel;
+    private readonly Channel<GitEventWithContext> _gitChannel;
+    private readonly Channel<NodeUpdateWithContext> _updateChannel;
+    private readonly Channel<DependencyEdgeWithContext> _dependencyChannel;
     private readonly LizardAnalyzer _lizard;
     private readonly GitWatcher _gitWatcher;
     private readonly SurrealDbRepository _repository;
@@ -25,9 +25,9 @@ public class MetricsCollector
 
     public MetricsCollector(
         Channel<LspMessageWithContext> lspChannel,
-        Channel<GitEvent> gitChannel,
-        Channel<NodeUpdate> updateChannel,
-        Channel<DependencyEdge> dependencyChannel,
+        Channel<GitEventWithContext> gitChannel,
+        Channel<NodeUpdateWithContext> updateChannel,
+        Channel<DependencyEdgeWithContext> dependencyChannel,
         GitWatcher gitWatcher,
         SurrealDbRepository repository,
         LizardAnalyzer analyzer,
@@ -48,38 +48,21 @@ public class MetricsCollector
 
     public async Task StartAsync(CancellationToken ct)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(StartAsync));
-        activity?.SetTag("metricscollector.start", true);
-
         var lspTask = ProcessLspMessages(ct);
         var gitTask = ProcessGitEvents(ct);
         var updateTask = ProcessNodeUpdates(ct);
         var dependencyTask = ProcessDependencies(ct);
 
-        await Task.WhenAll(lspTask, gitTask, updateTask, dependencyTask);
-
-        activity?.AddEvent(new("All processors completed"));
-
-        await Task.WhenAll(lspTask, gitTask, updateTask, dependencyTask);
+        _ = Task.WhenAll(lspTask, gitTask, updateTask, dependencyTask);
     }
 
     private async Task ProcessLspMessages(CancellationToken ct)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(
-            nameof(ProcessLspMessages)
-        );
-
         await foreach (var messageWithContext in _lspChannel.Reader.ReadAllAsync(ct))
         {
             try
             {
-                activity?.AddEvent(
-                    new(
-                        "LSP message received",
-                        tags: new() { ["lsp.stream.message.id"] = messageWithContext.Message.Id }
-                    )
-                );
-
+             
                 await ProcessLspMessage(messageWithContext, ct);
             }
             catch (Exception ex)
@@ -88,9 +71,6 @@ public class MetricsCollector
                     ex,
                     "Error processing lsp message {Id}",
                     messageWithContext.Message.Id
-                );
-                activity?.AddEvent(
-                    new("LSP message processing error", tags: new() { ["exception"] = ex.Message })
                 );
             }
         }
@@ -219,9 +199,12 @@ public class MetricsCollector
                 Signature = symbol.Detail,
                 ReturnType = ExtractReturnType(symbol.Detail),
             };
-            _logger.LogDebug("Updating {nodeId}", nodeId);
+
             activity?.SetTag("node.id", nodeId);
-            await _updateChannel.Writer.WriteAsync(update, ct);
+            await _updateChannel.Writer.WriteAsync(
+                new NodeUpdateWithContext(update, activity?.Context),
+                ct
+            );
         }
 
         // Handle inheritance relationships from symbol detail
@@ -248,10 +231,16 @@ public class MetricsCollector
     {
         foreach (var symbol in symbols)
         {
+            using var activity = _instrumentation.ActivitySource.StartActivity(
+                nameof(ProcessSymbolInformation)
+            );
+
             if (symbol.Kind is SymbolKind.Class or SymbolKind.Method or SymbolKind.Function)
             {
                 var nodeId = GenerateNodeIdFromLocation(symbol.Location, symbol.Name);
-
+                activity?.SetTag("node.id", nodeId);
+                activity?.SetTag("symbol.kind", symbol.Kind);
+                activity?.SetTag("symbol.name", symbol.Name);
                 var update = new NodeUpdate
                 {
                     NodeId = nodeId,
@@ -264,7 +253,10 @@ public class MetricsCollector
                     Namespace = symbol.ContainerName,
                 };
 
-                await _updateChannel.Writer.WriteAsync(update, ct);
+                await _updateChannel.Writer.WriteAsync(new(update, activity?.Context), ct);
+                activity?.AddEvent(
+                    new("Updated Node From Symbol", tags: new() { ["node.id"] = nodeId })
+                );
             }
         }
     }
@@ -316,7 +308,7 @@ public class MetricsCollector
         activity?.SetTag("inheritance.source", symbol.Name);
 
         var fromNodeId = GenerateNodeIdFromSymbol(fileUri, symbol);
-
+        activity?.SetTag("from_node.id", fromNodeId);
         // Parse detail string for base types
         // Example: "class UserService : BaseService, IUserService"
         var parts = symbol.Detail.Split(':', StringSplitOptions.TrimEntries);
@@ -353,7 +345,10 @@ public class MetricsCollector
                 )
             );
 
-            await _dependencyChannel.Writer.WriteAsync(edge, ct);
+            await _dependencyChannel.Writer.WriteAsync(
+                new DependencyEdgeWithContext(edge, activity?.Context),
+                ct
+            );
         }
     }
 
@@ -376,11 +371,15 @@ public class MetricsCollector
 
     private async Task ProcessDependencies(CancellationToken ct)
     {
-        await foreach (var edge in _dependencyChannel.Reader.ReadAllAsync(ct))
+        await foreach (var edgeWithContext in _dependencyChannel.Reader.ReadAllAsync(ct))
         {
             using var activity = _instrumentation.ActivitySource.StartActivity(
-                nameof(ProcessDependencies)
+                nameof(ProcessDependencies),
+                ActivityKind.Consumer,
+                parentContext: edgeWithContext.Context ?? new ActivityContext()
             );
+            var edge = edgeWithContext.Edge;
+
             activity?.SetTag("dependency.from", edge.FromNodeId);
             activity?.SetTag("dependency.type", edge.RelationshipType);
             // Resolve the "to" node
@@ -402,19 +401,21 @@ public class MetricsCollector
 
             if (toNodeId != null)
             {
-                _logger.LogDebug(
-                    "Creating dependency {From} -{Type}-> {To}",
-                    edge.FromNodeId,
-                    edge.RelationshipType,
-                    toNodeId
-                );
                 await _repository.UpsertDependencyAsync(
                     edge.FromNodeId,
                     toNodeId,
                     edge.RelationshipType
                 );
                 activity?.AddEvent(
-                    new("Dependency upserted", tags: new() { ["to.node"] = toNodeId })
+                    new(
+                        "Dependency upserted",
+                        tags: new()
+                        {
+                            ["to.node"] = toNodeId,
+                            ["from.node"] = edge.FromNodeId,
+                            ["relationship.type"] = edge.RelationshipType,
+                        }
+                    )
                 );
             }
         }
@@ -495,11 +496,16 @@ public class MetricsCollector
 
     private async Task ProcessGitEvents(CancellationToken ct)
     {
-        await foreach (var gitEvent in _gitChannel.Reader.ReadAllAsync(ct))
+        await foreach (var gitEventWithContext in _gitChannel.Reader.ReadAllAsync(ct))
         {
             using var activity = _instrumentation.ActivitySource.StartActivity(
-                nameof(ProcessGitEvents)
+                nameof(ProcessGitEvents),
+                ActivityKind.Consumer,
+                gitEventWithContext.Context ?? new()
             );
+
+            var gitEvent = gitEventWithContext.Event;
+
             activity?.SetTag("git.file", gitEvent.FilePath);
             activity?.SetTag("git.event", gitEvent.Type.ToString());
 
@@ -554,17 +560,21 @@ public class MetricsCollector
                         GitHistory = history,
                     };
 
-                    activity?.SetTag("code.nloc", update.LinesOfCode);
-                    activity?.SetTag("code.cyclomatic_complexity", update.CyclomaticComplexity);
-                    activity?.SetTag("code.parameter_count", update.Parameters);
-                    activity?.SetTag("code.signature", update.Signature);
-
-                    await _updateChannel.Writer.WriteAsync(update, ct);
+                    await _updateChannel.Writer.WriteAsync(new(update, activity?.Context), ct);
                     activity?.AddEvent(
                         new(
                             "Lizard function update queued",
                             tags: new() { ["function.name"] = function.Name }
                         )
+                    );
+                    activity?.SetTag("code.nloc", update.LinesOfCode);
+                    activity?.SetTag("code.cyclomatic_complexity", update.CyclomaticComplexity);
+                    activity?.SetTag("code.parameter_count", update.Parameters);
+                    activity?.SetTag("code.signature", update.Signature);
+
+                    _instrumentation.ComplexityHistogram.Record(
+                        update.CyclomaticComplexity ?? 0,
+                        new KeyValuePair<string, object?>("code.language", update.Language)
                     );
                 }
             }
@@ -597,7 +607,7 @@ public class MetricsCollector
         var batchSize = 100;
         var maxWaitMs = 50;
         var lastBatchProcessedAt = Stopwatch.GetTimestamp();
-        await foreach (var update in _updateChannel.Reader.ReadAllAsync(ct))
+        await foreach (var updateWithContext in _updateChannel.Reader.ReadAllAsync(ct))
         {
             // instrument per-update batching
             using var activity = _instrumentation.ActivitySource.StartActivity(
@@ -605,7 +615,7 @@ public class MetricsCollector
             );
             activity?.SetTag("batch.current.size", batch.Count);
 
-            batch.Add(update);
+            batch.Add(updateWithContext.Update);
 
             if (
                 batch.Count >= batchSize

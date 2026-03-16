@@ -1,24 +1,37 @@
 using System.Diagnostics;
+using System.Globalization;
+using System.Text;
+using AdaptiveCodecContextEngine.Diagnostics;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Lizard;
 using Microsoft.Extensions.Logging;
-using System.Globalization;
-using System.Text;
 
 public class LizardAnalyzer
 {
     private readonly string _lizardPath;
     private readonly ILogger<LizardAnalyzer> _logger;
+    private readonly AdaptiveContextInstrumentation _instrumentation;
 
-    public LizardAnalyzer(ILogger<LizardAnalyzer> logger)
+    public LizardAnalyzer(
+        ILogger<LizardAnalyzer> logger,
+        AdaptiveContextInstrumentation instrumentation
+    )
     {
         _lizardPath = "lizard";
         _logger = logger;
+        _instrumentation = instrumentation;
     }
 
-    public async Task<LizardResult?> AnalyzeFileAsync(string filePath, CancellationToken ct = default)
+    public async Task<LizardResult?> AnalyzeFileAsync(
+        string filePath,
+        CancellationToken ct = default
+    )
     {
-        _logger.LogDebug("Analyzing {file}", filePath);
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(AnalyzeFileAsync)
+        );
+        activity?.SetTag("lizard.file", filePath);
+        
         var processStartInfo = new ProcessStartInfo
         {
             FileName = _lizardPath,
@@ -26,7 +39,7 @@ public class LizardAnalyzer
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
         };
 
         using var process = new Process { StartInfo = processStartInfo };
@@ -37,31 +50,40 @@ public class LizardAnalyzer
 
             var output = await process.StandardOutput.ReadToEndAsync(ct);
             var error = await process.StandardError.ReadToEndAsync(ct);
-            
+
             await process.WaitForExitAsync(ct);
-            
+
             if (process.ExitCode != 0)
             {
-                _logger.LogError("Lizard exited with code {ExitCode}: {Error}", process.ExitCode, error);
+                _logger.LogError(
+                    "Lizard exited with code {ExitCode}: {Error}",
+                    process.ExitCode,
+                    error
+                );
                 return null;
             }
 
-            return ParseLizardCsv(output);
+            var result = ParseLizardCsv(output);
+            activity?.SetTag("lizard.functions.count", result?.FunctionList?.Count ?? 0);
+            activity?.AddEvent(new("lizard.completed"));
+            return result;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to run lizard on {FilePath}", filePath);
+            activity?.AddEvent(new("lizard.exception", tags: new() { ["exception"] = ex.Message }));
             return null;
         }
     }
 
     private LizardResult? ParseLizardCsv(string csv)
     {
+        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(ParseLizardCsv));
         try
         {
             var lines = csv.Split('\n', StringSplitOptions.RemoveEmptyEntries);
 
-            if (lines.Length < 1) 
+            if (lines.Length < 1)
                 return null;
 
             var nllocIndex = (int)Headers.NLOC;
@@ -78,7 +100,8 @@ public class LizardAnalyzer
             for (int i = 0; i < lines.Length; i++)
             {
                 var line = lines[i];
-                if (string.IsNullOrWhiteSpace(line)) continue;
+                if (string.IsNullOrWhiteSpace(line))
+                    continue;
 
                 var columns = ParseCsvLine(line);
 
@@ -88,26 +111,29 @@ public class LizardAnalyzer
                 var function = new LizardFunction
                 {
                     Name = GetColumn(columns, nameIndex) ?? "unknown",
-                    LongName = GetColumn(columns, longNameIndex) ?? GetColumn(columns, nameIndex) ?? "unknown",
+                    LongName =
+                        GetColumn(columns, longNameIndex)
+                        ?? GetColumn(columns, nameIndex)
+                        ?? "unknown",
                     Nloc = ParseInt(GetColumn(columns, nllocIndex)),
                     CyclomaticComplexity = ParseInt(GetColumn(columns, ccnIndex)),
                     TokenCount = ParseInt(GetColumn(columns, tokenIndex)),
                     ParameterCount = ParseInt(GetColumn(columns, paramIndex)),
                     StartLine = ParseInt(GetColumn(columns, startIndex)),
-                    EndLine = ParseInt(GetColumn(columns, endIndex))
+                    EndLine = ParseInt(GetColumn(columns, endIndex)),
                 };
 
                 functions.Add(function);
             }
-            
-            return new LizardResult
-            {
-                FunctionList = functions
-            };
+
+            return new LizardResult { FunctionList = functions };
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to parse lizard CSV output.");
+            activity?.AddEvent(
+                new("lizard.parse.error", tags: new() { ["exception"] = ex.Message })
+            );
             return null;
         }
     }
@@ -156,7 +182,12 @@ public class LizardAnalyzer
         if (string.IsNullOrEmpty(value))
             return 0;
 
-        return int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var result)
+        return int.TryParse(
+            value,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out var result
+        )
             ? result
             : 0;
     }
@@ -173,8 +204,6 @@ public class LizardAnalyzer
         Name = 7,
         LongName = 8,
         StartLine = 9,
-        EndLine = 10
+        EndLine = 10,
     }
 }
-
-

@@ -18,7 +18,7 @@ public class AvecCalculator
             Stability = CalculateStability(metrics),
             Logic = CalculateLogic(metrics),
             Friction = CalculateFriction(metrics),
-            Autonomy = CalculateAutonomy(metrics)
+            Autonomy = CalculateAutonomy(metrics),
         };
     }
 
@@ -30,15 +30,19 @@ public class AvecCalculator
         var churnPenalty = Math.Min(churnFactor / _weights.Stability.ChurnNormalize, 1.0);
 
         // Contributor penalty: more people = more instability
-        var contributorPenalty = Math.Min(m.GitContributors / (double)_weights.Stability.ContributorCap, 1.0);
+        var contributorPenalty = Math.Min(
+            m.GitContributors / (double)_weights.Stability.ContributorCap,
+            1.0
+        );
 
         // Test bonus: average of line and branch coverage
         var testBonus = (m.TestLineCoverage / 100.0) * 0.5 + (m.TestBranchCoverage / 100.0) * 0.5;
 
         // Combine weighted factors
-        var stability = (1 - churnPenalty * _weights.Stability.ChurnWeight)
-                      * (1 - contributorPenalty * _weights.Stability.ContributorWeight)
-                      * (0.5 + testBonus * _weights.Stability.TestWeight);
+        var stability =
+            (1 - churnPenalty * _weights.Stability.ChurnWeight)
+            * (1 - contributorPenalty * _weights.Stability.ContributorWeight)
+            * (0.5 + testBonus * _weights.Stability.TestWeight);
 
         return Clamp(stability, 0, 1);
     }
@@ -53,8 +57,9 @@ public class AvecCalculator
         var parameterWeight = Math.Min(m.Parameters / (double)_weights.Logic.ParameterCap, 1.0);
 
         // Combine with weights
-        var logic = complexityDensity * _weights.Logic.ComplexityWeight
-                  + parameterWeight * _weights.Logic.ParameterWeight;
+        var logic =
+            complexityDensity * _weights.Logic.ComplexityWeight
+            + parameterWeight * _weights.Logic.ParameterWeight;
 
         return Clamp(logic, 0, 1);
     }
@@ -69,8 +74,9 @@ public class AvecCalculator
         var dependencyLoad = Math.Min(m.IncomingEdges / (double)_weights.Friction.IncomingCap, 1.0);
 
         // Combine with weights
-        var friction = centrality * _weights.Friction.CentralityWeight
-                     + dependencyLoad * _weights.Friction.DependencyWeight;
+        var friction =
+            centrality * _weights.Friction.CentralityWeight
+            + dependencyLoad * _weights.Friction.DependencyWeight;
 
         return Clamp(friction, 0, 1);
     }
@@ -88,8 +94,10 @@ public class AvecCalculator
 
     private static double Clamp(double value, double min, double max)
     {
-        if (value < min) return min;
-        if (value > max) return max;
+        if (value < min)
+            return min;
+        if (value > max)
+            return max;
         return value;
     }
 }
