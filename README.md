@@ -18,6 +18,8 @@ Not a summary. Not a transcript. A mathematical representation of a conversation
 
 **The first instrument is `sttp-mcp`** — an MCP server that lets models compress, store, and retrieve STTP nodes. The model calling the tools *is* the compression model. The server validates structure, persists nodes, and retrieves on resonance.
 
+Alongside STTP, ACC adds robust capabilities for dimensional indexing and analysis within interconnected protocols.
+
 ---
 
 ## Quick Start
@@ -215,6 +217,7 @@ Context survived the transfer. No cloud dependency. No lock-in.
 | Instrument | Status | Description |
 |---|---|---|
 | [sttp-mcp](./src/sttp-mcp) | `0.1.0-beta` | MCP server for STTP context persistence, retrieval, and session calibration |
+| [ACC (Adaptive Codec Context)](./src/acc/README.md) | `alpha` | Provides a dimensional indexing system for codebases, enabling adaptive agent workflows and queryable compressed perceptions of code environments |
 
 *More instruments coming as the ecosystem grows.*
 
