@@ -66,29 +66,45 @@ public class AvecCalculator
 
     private double CalculateFriction(NodeMetrics m)
     {
-        // Centrality: what portion of total degree is incoming?
+        // 1. Structural Friction (LSP) - How "Central" is this?
         var totalDegree = Math.Max(m.TotalDegree, 1);
         var centrality = m.IncomingEdges / (double)totalDegree;
-
-        // Dependency load: how many things call this (normalized)
         var dependencyLoad = Math.Min(m.IncomingEdges / (double)_weights.Friction.IncomingCap, 1.0);
 
-        // Combine with weights
+        var structuralFriction = (centrality * 0.4) + (dependencyLoad * 0.6);
+
+        // 2. Process Friction (Git) - Is this a "Hotspot"?
+        // High commits + Many contributors = High coordination friction.
+        var churn = Math.Min(m.GitTotalCommits / 50.0, 1.0);
+        var collaborationDensity = Math.Min(m.GitContributors / 10.0, 1.0);
+
+        var processFriction = (churn * 0.7) + (collaborationDensity * 0.3);
+
+        // 3. Cognitive Friction (Lizard/Metrics) - Is it a "Brain Drain"?
+        // High complexity per line makes it harder to reason about.
+        var density = m.LinesOfCode > 0 ? (double)m.CyclomaticComplexity / m.LinesOfCode : 0;
+        var cognitiveFriction = Math.Min(m.CyclomaticComplexity / 20.0, 1.0);
+
+        // 4. Final Weighted Friction
+        // 40% Architecture, 30% Team/History, 30% Code Quality
         var friction =
-            centrality * _weights.Friction.CentralityWeight
-            + dependencyLoad * _weights.Friction.DependencyWeight;
+            (structuralFriction * 0.4) + (processFriction * 0.3) + (cognitiveFriction * 0.3);
 
         return Clamp(friction, 0, 1);
     }
 
     private double CalculateAutonomy(NodeMetrics m)
     {
-        // Autonomy is inverse of dependency ratio
         var totalDegree = Math.Max(m.TotalDegree, 1);
         var dependencyRatio = m.OutgoingEdges / (double)totalDegree;
 
-        var autonomy = 1 - dependencyRatio;
+        // 2. The "Blast Radius" Penalty
+        // If a file has 30 outgoing edges, even if the ratio is okay,
+        // it's still "Fragile" because any of those 30 files could break it.
+        var blastRadius = Math.Min(m.OutgoingEdges / 30.0, 1.0);
 
+        // Weighted Autonomy: 80% Ratio, 20% Absolute Count
+        var autonomy = (1 - dependencyRatio) * 0.8 + (1 - blastRadius) * 0.2;
         return Clamp(autonomy, 0, 1);
     }
 

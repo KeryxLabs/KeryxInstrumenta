@@ -604,21 +604,13 @@ public class MetricsCollector
 
     private async Task ProcessNodeUpdates(CancellationToken ct)
     {
-        var batch = new List<NodeUpdate>();
+        var batch = new List<NodeUpdateWithContext>();
         var batchSize = 100;
         var maxWaitMs = 50;
         var lastBatchProcessedAt = Stopwatch.GetTimestamp();
         await foreach (var updateWithContext in _updateChannel.Reader.ReadAllAsync(ct))
         {
-            // instrument per-update batching
-            using var activity = _instrumentation.ActivitySource.StartActivity(
-                nameof(ProcessNodeUpdates),
-                ActivityKind.Consumer,
-                parentContext: updateWithContext.Context ?? new()
-            );
-            activity?.SetTag("batch.current.size", batch.Count);
-
-            batch.Add(updateWithContext.Update);
+            batch.Add(updateWithContext);
 
             if (
                 batch.Count >= batchSize
@@ -631,8 +623,6 @@ public class MetricsCollector
                 await ProcessBatch(batch, ct);
                 batch.Clear();
 
-                // Brief delay to avoid overwhelming the connection
-                await Task.Delay(100, ct);
                 lastBatchProcessedAt = Stopwatch.GetTimestamp();
             }
         }
@@ -644,14 +634,25 @@ public class MetricsCollector
         }
     }
 
-    private async Task ProcessBatch(List<NodeUpdate> updates, CancellationToken ct)
+    private async Task ProcessBatch(
+        List<NodeUpdateWithContext> updatesWithContext,
+        CancellationToken ct
+    )
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(ProcessBatch));
-        activity?.SetTag("batch.size", updates.Count);
+        var batchContext = new ActivityContext();
+
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(ProcessBatch),
+            ActivityKind.Internal,
+            parentContext: batchContext,
+            links: updatesWithContext.Select(u => new ActivityLink(u.Context ?? batchContext))
+        );
+
+        activity?.SetTag("batch.size", updatesWithContext.Count);
 
         try
         {
-            await _repository.UpsertNodeListAsync(updates);
+            await _repository.UpsertNodeListAsync(updatesWithContext.Select(u => u.Update));
             activity?.AddEvent(new("Batch upsert successful"));
         }
         catch (TimeoutException ex)
