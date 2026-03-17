@@ -1,6 +1,7 @@
 # ACC - Adaptive Codec Context
 
-> A dimensional indexing system for codebases that provides agents with compressed, queryable perception of code environments.
+> A continous dimensional indexing system for codebases that provides agents with compressed, queryable perception of code environments.
+
 
 ## What is ACC?
 
@@ -12,6 +13,9 @@ ACC (Adaptive Codec Context) transforms codebases into a **dimensional semantic 
 - **Autonomy** - How self-directed is this code? (outgoing dependencies inverse)
 
 These dimensions form **AVEC** (Attractor Vector Encoding Configuration) - coordinates in a 4D space that describe a node's architectural characteristics.
+
+## Grafana Dashboard - Real Time Tracking Of Codebase Health
+<img width="1884" height="1005" alt="image" src="https://github.com/user-attachments/assets/91705932-94bf-44ab-8a55-6bbf95c5d877" />
 
 ## Why ACC?
 
@@ -28,25 +32,25 @@ Current agent tools dump raw filesystem content and LSP output - a firehose of t
 ┌─────────────────────────────────────────────────────────────┐
 │                         ACC Core                            │
 │                                                             │
-│  ┌──────────┐    ┌──────────┐    ┌─────────────────────┐  │
-│  │   LSP    │───▶│  Metrics │───▶│   SurrealDB Graph   │  │
-│  │  Watcher │    │Collector │    │  (nodes + edges)     │  │
-│  └──────────┘    └──────────┘    └─────────────────────┘  │
-│                        │                    │               │
-│  ┌──────────┐         │                    │               │
-│  │   Git    │─────────┘                    │               │
-│  │  Watcher │                              │               │
-│  └──────────┘                              │               │
-│                                             │               │
-│  ┌──────────┐                              │               │
-│  │  Lizard  │──────────────────────────────┘               │
-│  │ Analyzer │                                              │
-│  └──────────┘                                              │
+│  ┌──────────┐    ┌──────────┐    ┌─────────────────────┐    │
+│  │   LSP    │───▶│  Metrics │───▶│   SurrealDB Graph   │    │
+│  │  Watcher │    │Collector │    │  (nodes + edges)    │    │
+│  └──────────┘    └──────────┘    └─────────────────────┘    │
+│                       │                    │                │
+│  ┌──────────┐         │                    │                │
+│  │   Git    │─────────┘                    │                │
+│  │  Watcher │                              │                │
+│  └──────────┘                              │                │
+│                                            │                │
+│  ┌──────────┐                              │                │
+│  │  Lizard  │──────────────────────────────┘                │
+│  │ Analyzer │                                               │
+│  └──────────┘                                               │
 │                                                             │
-│                    ┌─────────────┐                         │
-│                    │ AVEC Formula│                         │
-│                    │  Calculator │                         │
-│                    └─────────────┘                         │
+│                    ┌─────────────┐                          │
+│                    │ AVEC Formula│                          │
+│                    │  Calculator │                          │ 
+│                    └─────────────┘                          │
 └─────────────────────────────────────────────────────────────┘
                               │
                               ▼
@@ -131,7 +135,7 @@ Different project types get different defaults:
 
 ### Prerequisites
 
-- .NET 8.0 SDK
+- .NET 10.0 SDK
 - SurrealDB (`brew install surrealdb/tap/surreal` or [download](https://surrealdb.com/install))
 - Lizard (`pip install lizard`)
 - LSP for your language (e.g., OmniSharp for C#)
@@ -139,7 +143,7 @@ Different project types get different defaults:
 ### Build
 ```bash
 # Clone
-git clone https://github.com/yourusername/acc.git
+git clone https://github.com/KeryxLabs/KeryxInstrumenta.git
 cd acc
 
 # Build
@@ -334,5 +338,3 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 ACC provides **exoskeleton architecture** - amplifying developer ability to reason about complex systems rather than automating them away. The codebase becomes queryable, navigable, and measurable through dimensional lenses that compress complexity without losing signal.
 
 ---
-
-Built with ☕ by the team at KeryxLabs
