@@ -31,7 +31,7 @@ public class LizardAnalyzer
             nameof(AnalyzeFileAsync)
         );
         activity?.SetTag("lizard.file", filePath);
-        
+
         var processStartInfo = new ProcessStartInfo
         {
             FileName = _lizardPath,

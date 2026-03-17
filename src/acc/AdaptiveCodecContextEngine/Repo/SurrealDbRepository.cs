@@ -12,6 +12,7 @@ public class SurrealDbRepository
 {
     private readonly ISurrealDbClient _db;
     private readonly AvecCalculator _avecCalculator;
+    private readonly AdaptiveContextInstrumentation _instrumentation;
     private readonly ILogger<SurrealDbRepository> _logger;
     private bool _schemaInitialized = false;
     private SurrealDbSettings _settings;
@@ -19,7 +20,8 @@ public class SurrealDbRepository
     public SurrealDbRepository(
         ISurrealDbClient client,
         IConfiguration configuration,
-        ILogger<SurrealDbRepository> logger
+        ILogger<SurrealDbRepository> logger,
+        AdaptiveContextInstrumentation instrumentation
     )
     {
         _db = client;
@@ -28,6 +30,7 @@ public class SurrealDbRepository
                 ?? throw new InvalidOperationException("Avec configuration missing")
         );
         _logger = logger;
+        _instrumentation = instrumentation;
         _settings =
             configuration.GetSection("SurrealDb").Get<SurrealDbSettings>()
             ?? throw new InvalidOperationException("SurrealDb configuration missing");
@@ -230,6 +233,9 @@ public class SurrealDbRepository
         CancellationToken cancellationToken = default
     )
     {
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(UpsertNodeListAsync)
+        );
         var data = updates.AsInsertable();
 
         var parameters = new Dictionary<string, object?> { { "data", data } };
@@ -261,7 +267,20 @@ public class SurrealDbRepository
         CancellationToken cancellationToken = default
     )
     {
-        _logger.LogInformation("Batching calculation for {nodeIds}", string.Join(',', nodeIds));
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(BatchRecalculateAsync)
+        );
+
+        activity?.AddEvent(
+            new ActivityEvent(
+                "batch.started",
+                tags: new ActivityTagsCollection
+                {
+                    { "node.count", nodeIds.Count() },
+                    { "node.ids", string.Join(',', nodeIds) },
+                }
+            )
+        );
         // Use 'IN' to get every node in one round trip
         var query =
             @"SELECT id as Id,
@@ -327,19 +346,20 @@ public class SurrealDbRepository
 
         if (nodes is null)
         {
-            _logger.LogInformation("Nothing returned from query.");
+            activity?.AddEvent(new ActivityEvent("query.result.null"));
+
             return;
         }
 
         if (!nodes.Any())
         {
-            _logger.LogInformation("No nodes returned from query.");
+            activity?.AddEvent(new ActivityEvent("query.result.empty"));
 
             return;
         }
 
         var updates = new List<object>();
-        _logger.LogInformation("We got something...");
+
         foreach (var node in nodes)
         {
             // 2. Perform the C# calculation in memory (Super Fast)
@@ -358,6 +378,23 @@ public class SurrealDbRepository
                 TestBranchCoverage = node.TestBranchCoverage,
             };
             var avec = _avecCalculator.Calculate(metrics);
+
+            activity?.SetTag("code.node.name", node.Name);
+            activity?.SetTag("avec.stability", avec.Stability);
+            activity?.SetTag("avec.logic", avec.Logic);
+            activity?.SetTag("avec.friction", avec.Friction);
+            activity?.SetTag("avec.autonomy", avec.Autonomy);
+
+            activity?.AddEvent(
+                new ActivityEvent(
+                    "CalculationComplete",
+                    tags: new ActivityTagsCollection
+                    {
+                        { "total.loc", node.LinesOfCode },
+                        { "complexity", node.CyclomaticComplexity },
+                    }
+                )
+            );
 
             _logger.LogAvecCalculation(
                 node.Name,
@@ -400,7 +437,7 @@ public class SurrealDbRepository
             new Dictionary<string, object?> { { "updates", updates } },
             cancellationToken: cancellationToken
         );
-
+        activity?.AddEvent(new ActivityEvent("CalculationUpdateComplete"));
         _logger.LogPossibleDbWriteError(results);
     }
 

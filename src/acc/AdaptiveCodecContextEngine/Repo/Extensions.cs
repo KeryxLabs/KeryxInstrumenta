@@ -25,13 +25,14 @@ public static class DbHelperExtensions
                     ["parameters"] = update.Parameters ?? 0,
                     ["git_total_commits"] = update.GitHistory?.TotalCommits ?? 0,
                     ["git_contributors"] = update.GitHistory?.Contributors ?? 0,
-                    ["git_avg_days_between_changes"] = (double)(update.GitHistory?.AvgDaysBetweenChanges ?? 0),
+                    ["git_avg_days_between_changes"] = (double)(
+                        update.GitHistory?.AvgDaysBetweenChanges ?? 0
+                    ),
                     ["git_recent_frequency"] = update.GitHistory?.RecentFrequency ?? "low",
                     ["test_covered"] = update.TestCoverage?.Covered ?? false,
                     ["test_line_coverage"] = (double)(update.TestCoverage?.LineCoverage ?? 0),
                     ["test_branch_coverage"] = (double)(update.TestCoverage?.BranchCoverage ?? 0),
                     ["test_count"] = update.TestCoverage?.TestCount ?? 0,
-                    ["avec_needs_recalc"] = true,
                 };
 
                 if (update.Namespace is not null)
@@ -51,7 +52,6 @@ public static class DbHelperExtensions
         }
     }
 }
-
 
 public static class HashExtensions
 {

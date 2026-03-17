@@ -85,10 +85,26 @@ else
 // --- 4. Register Services ---
 // Channels
 builder
-    .Services.AddSingleton(_ => Channel.CreateUnbounded<LspMessageWithContext>())
-    .AddSingleton(_ => Channel.CreateUnbounded<GitEventWithContext>())
-    .AddSingleton(_ => Channel.CreateUnbounded<NodeUpdateWithContext>())
-    .AddSingleton(_ => Channel.CreateUnbounded<DependencyEdgeWithContext>());
+    .Services.AddSingleton(_ =>
+        Channel.CreateBounded<LspMessageWithContext>(
+            new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait }
+        )
+    )
+    .AddSingleton(_ =>
+        Channel.CreateBounded<GitEventWithContext>(
+            new BoundedChannelOptions(500) { FullMode = BoundedChannelFullMode.Wait }
+        )
+    )
+    .AddSingleton(_ =>
+        Channel.CreateBounded<NodeUpdateWithContext>(
+            new BoundedChannelOptions(2000) { FullMode = BoundedChannelFullMode.Wait }
+        )
+    )
+    .AddSingleton(_ =>
+        Channel.CreateBounded<DependencyEdgeWithContext>(
+            new BoundedChannelOptions(2000) { FullMode = BoundedChannelFullMode.Wait }
+        )
+    );
 
 // Logic Services (Using IOptions for AOT safety)
 builder
@@ -106,8 +122,6 @@ builder
     .AddHostedService<AccHostedService>();
 
 builder.Services.AddTelemetry(builder.Configuration);
-
-
 
 var host = builder.Build();
 

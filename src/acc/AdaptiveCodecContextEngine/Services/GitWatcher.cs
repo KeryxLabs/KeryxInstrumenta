@@ -65,10 +65,6 @@ public class GitWatcher
 
     public async Task StartAsync(CancellationToken ct)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(StartAsync));
-        activity?.SetTag("gitwatcher.repo", _repoPath);
-        activity?.SetTag("gitwatcher.extensions.count", _relevantExtensions.Count);
-
         try
         {
             _repo = new Repository(_repoPath);
@@ -76,7 +72,6 @@ public class GitWatcher
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to open git repository at {RepoPath}", _repoPath);
-            activity?.AddEvent(new("repo.open.failed", tags: new() { ["exception"] = ex.Message }));
             throw;
         }
 
@@ -88,7 +83,7 @@ public class GitWatcher
         _fsWatcher.Error += (s, e) => _logger.LogError(e.GetException(), "Watcher Error!");
         _fsWatcher.EnableRaisingEvents = true;
 
-        activity?.AddEvent(new("Git Watcher Enabled", tags: new() { ["git.repo"] = _repoPath }));
+        _logger.LogTrace("Git Watcher Enabled");
 
         // Initial index of entire repo (runs async, doesn't block)
         _ = Task.Run(async () => await IndexRepository(ct), ct);
@@ -153,7 +148,14 @@ public class GitWatcher
 
     private async Task IndexRepository(CancellationToken ct)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(IndexRepository));
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(IndexRepository),
+            ActivityKind.Producer,
+            parentContext: new()
+        );
+        activity?.SetTag("gitwatcher.repo", _repoPath);
+        activity?.SetTag("gitwatcher.extensions.count", _relevantExtensions.Count);
+
         _logger.LogInformation("Starting initial repository index...");
 
         var fileCount = 0;
@@ -190,14 +192,7 @@ public class GitWatcher
 
                 fileCount++;
 
-                // Yield to avoid blocking
-                if (fileCount % 100 == 0)
-                {
-                    activity?.AddEvent(
-                        new("index.progress", tags: new() { ["count"] = fileCount })
-                    );
-                    await Task.Delay(10, ct);
-                }
+                activity?.AddEvent(new("index.progress", tags: new() { ["count"] = fileCount }));
             }
 
             activity?.SetTag("index.total", fileCount);

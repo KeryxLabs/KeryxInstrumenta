@@ -35,7 +35,7 @@ public static class TelemetryRegistration
 
         var resourceBuilder = ResourceBuilder
             .CreateDefault()
-            .AddService("AdaptiveCodecContext")
+            .AddService("AdaptiveCodecContext", serviceInstanceId: Environment.MachineName)
             .AddAttributes(
                 new Dictionary<string, object>
                 {
@@ -51,6 +51,8 @@ public static class TelemetryRegistration
         {
             // Configure OpenTelemetry exporters when telemetry is enabled
             var otlpEndpoint = telemetryOptions.Endpoint;
+            Console.WriteLine($"Endpoint: {otlpEndpoint}");
+            services.AddLogging(b => b.ClearProviders());
             services
                 .AddOpenTelemetry()
                 .ConfigureResource(resource =>
@@ -91,6 +93,7 @@ public static class TelemetryRegistration
                 )
                 .WithLogging(builder =>
                 {
+                    
                     builder.AddOtlpExporter(exporterOptions =>
                     {
                         exporterOptions.Endpoint = new Uri(otlpEndpoint!);
@@ -108,9 +111,11 @@ public static class TelemetryRegistration
             //             rb = resourceBuilder;
             //         }
             //     )
+
             //     .WithTracing(tracing =>
             //     {
             //         tracing.AddSource(AdaptiveContextInstrumentation.ActivitySourceName);
+            //         tracing.SetResourceBuilder(resourceBuilder);
             //         tracing.AddOtlpExporter(opts =>
             //         {
             //             if (!string.IsNullOrWhiteSpace(otlpEndpoint))
@@ -121,6 +126,7 @@ public static class TelemetryRegistration
             //     .WithMetrics(metrics =>
             //     {
             //         metrics
+            //             .SetResourceBuilder(resourceBuilder)
             //             .AddMeter(AdaptiveContextInstrumentation.MeterName)
             //             .AddRuntimeInstrumentation();
             //         metrics.AddOtlpExporter(opts =>

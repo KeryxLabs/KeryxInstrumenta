@@ -62,7 +62,6 @@ public class MetricsCollector
         {
             try
             {
-             
                 await ProcessLspMessage(messageWithContext, ct);
             }
             catch (Exception ex)
@@ -82,7 +81,9 @@ public class MetricsCollector
     )
     {
         using var activity = _instrumentation.ActivitySource.StartActivity(
-            nameof(ProcessLspMessage)
+            nameof(ProcessLspMessage),
+            ActivityKind.Consumer,
+            parentContext: messageWithContext.ParentContext ?? new()
         );
         var message = messageWithContext.Message;
         var language = messageWithContext.Language;
@@ -611,7 +612,9 @@ public class MetricsCollector
         {
             // instrument per-update batching
             using var activity = _instrumentation.ActivitySource.StartActivity(
-                nameof(ProcessNodeUpdates)
+                nameof(ProcessNodeUpdates),
+                ActivityKind.Consumer,
+                parentContext: updateWithContext.Context ?? new()
             );
             activity?.SetTag("batch.current.size", batch.Count);
 
