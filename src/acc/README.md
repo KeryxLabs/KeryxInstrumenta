@@ -2,10 +2,6 @@
 
 > A continous dimensional indexing system for codebases that provides agents with compressed, queryable perception of code environments.
 
-# Grafana Dashboard - Real Time Tracking Of Codebase Health
-<img width="1884" height="1005" alt="image" src="https://github.com/user-attachments/assets/91705932-94bf-44ab-8a55-6bbf95c5d877" />
-
-
 
 ## What is ACC?
 
@@ -17,6 +13,9 @@ ACC (Adaptive Codec Context) transforms codebases into a **dimensional semantic 
 - **Autonomy** - How self-directed is this code? (outgoing dependencies inverse)
 
 These dimensions form **AVEC** (Attractor Vector Encoding Configuration) - coordinates in a 4D space that describe a node's architectural characteristics.
+
+## Grafana Dashboard - Real Time Tracking Of Codebase Health
+<img width="1884" height="1005" alt="image" src="https://github.com/user-attachments/assets/91705932-94bf-44ab-8a55-6bbf95c5d877" />
 
 ## Why ACC?
 
