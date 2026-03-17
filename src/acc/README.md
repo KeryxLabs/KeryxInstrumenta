@@ -1,6 +1,11 @@
 # ACC - Adaptive Codec Context
 
-> A dimensional indexing system for codebases that provides agents with compressed, queryable perception of code environments.
+> A continous dimensional indexing system for codebases that provides agents with compressed, queryable perception of code environments.
+
+# Grafana Dashboard - Real Time Tracking Of Codebase Health
+<img width="1884" height="1005" alt="image" src="https://github.com/user-attachments/assets/91705932-94bf-44ab-8a55-6bbf95c5d877" />
+
+
 
 ## What is ACC?
 
