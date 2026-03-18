@@ -1,6 +1,6 @@
 # KeryxInstrumenta
 
-> *Protocol-first infrastructure for persistent AI memory.*
+> *Protocol-first infrastructure for persistent AI memory and adaptive code intelligence.*
 
 Language models are stateless. Every session starts cold. KeryxInstrumenta gives conversational state somewhere to go — and a way to get it back.
 
@@ -16,13 +16,22 @@ Licensed under Apache-2.0. See [LICENSE](./LICENSE).
 
 Not a summary. Not a transcript. A mathematical representation of a conversational state.
 
-**The first instrument is `sttp-mcp`** — an MCP server that lets models compress, store, and retrieve STTP nodes. The model calling the tools *is* the compression model. The server validates structure, persists nodes, and retrieves on resonance.
+**Instrument 1: `sttp-mcp`** — an MCP server that lets models compress, store, and retrieve STTP nodes. The model calling the tools *is* the compression model. The server validates structure, persists nodes, and retrieves on resonance.
+
+**Instrument 2: `acc` (Adaptive Codec Context)** — a dimensional code-intelligence instrument that indexes repositories into AVEC-space (stability, logic, friction, autonomy) so agents can query architecture, dependencies, and high-impact patterns without token-heavy raw dumps.
 
 ---
 
 ## Quick Start
 
+KeryxInstrumenta currently ships two independent instruments:
+
+- `sttp-mcp` for session memory persistence and transfer
+- `acc` for dimensional repository indexing and agent-facing codebase queries
+
 ### Run with Docker (recommended)
+
+This quick start is for `sttp-mcp`.
 
 ```bash
 # Clone and build
@@ -89,9 +98,22 @@ docker run --rm -i -v "$PWD/data:/data" ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta
 
 Full protocol docs: [sttp-mcp README](./src/sttp-mcp/README.md)
 
+ACC docs: [ACC README](./src/acc/README.md)
+
+### ACC Quick Start (local)
+
+```bash
+# From repo root
+cd src/acc
+dotnet build
+dotnet run
+```
+
+ACC indexes repository entities into AVEC-space and exposes query patterns for relations, dependencies, and structural pattern matching. Recent ACC work includes adaptive LSP telemetry instrumentation across stream and metric services.
+
 ---
 
-## How to Use It
+## How to Use STTP-MCP
 
 Once the server is running and connected to your MCP client, here's the typical workflow:
 
@@ -157,6 +179,30 @@ Need to switch reasoning posture? Pull AVEC mood presets:
 
 The model calls `get_moods`, presents options (focused, creative, defensive, analytical, etc.), applies the swap, then recalibrates to measure the shift.
 
+## How to Use ACC
+
+Use ACC when an agent needs compressed architectural perception of a codebase instead of raw file dumps.
+
+### 1. Index and observe repository shape
+
+Point ACC at your repository and language server so entities can be measured and persisted in the graph.
+
+### 2. Query relations and dependencies
+
+Use ACC relation/dependency queries to answer:
+
+- What calls this node?
+- What breaks if this changes?
+- Where are the highest-friction chokepoints?
+
+### 3. Query dimensional patterns
+
+Use AVEC pattern matching to find similarly fragile, complex, or high-impact nodes for planning and refactoring.
+
+### 4. Feed results back into your agent loop
+
+Use ACC output as structured context for planning, review, and change impact analysis, then pair with `sttp-mcp` for long-horizon session continuity.
+
 ---
 
 ### Cross-Model Continuity Demo
@@ -215,6 +261,7 @@ Context survived the transfer. No cloud dependency. No lock-in.
 | Instrument | Status | Description |
 |---|---|---|
 | [sttp-mcp](./src/sttp-mcp) | `0.1.0-beta` | MCP server for STTP context persistence, retrieval, and session calibration |
+| [acc](./src/acc) | `0.1.0-beta` | Adaptive Codec Context: AVEC-based repository indexing, dependency analysis, and pattern queries for agents |
 
 *More instruments coming as the ecosystem grows.*
 

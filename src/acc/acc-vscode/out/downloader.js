@@ -40,7 +40,7 @@ const http = __importStar(require("http"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const tar = __importStar(require("tar"));
-const ACC_VERSION = '0.1.0'; // Update this with releases
+const ACC_VERSION = '0.2.0'; // Update this with releases
 const GITHUB_RELEASES_URL = `https://github.com/KeryxLabs/KeryxInstrumenta/releases/download`;
 class AccServerDownloader {
     constructor(context, outputChannel) {

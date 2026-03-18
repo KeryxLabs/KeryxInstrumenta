@@ -5,7 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as tar from 'tar';
 
-const ACC_VERSION = '0.1.0'; // Update this with releases
+const ACC_VERSION = '0.2.0'; // Update this with releases
 const GITHUB_RELEASES_URL = `https://github.com/KeryxLabs/KeryxInstrumenta/releases/download`;
 
 interface PlatformInfo {
