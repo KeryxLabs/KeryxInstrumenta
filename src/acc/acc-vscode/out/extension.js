@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.activate = activate;
 exports.deactivate = deactivate;
 const vscode = __importStar(require("vscode"));
+const path = __importStar(require("path"));
 const downloader_1 = require("./downloader");
 const child_process_1 = require("child_process");
 const net = __importStar(require("net"));
@@ -122,6 +123,7 @@ async function startAccEngine(serverPath, context) {
     }
     const config = vscode.workspace.getConfiguration("acc");
     const useRemote = config.get("database.remote", false);
+    const useTelemetry = config.get("telemetry.use", false);
     const args = [
         "--Acc:RepositoryPath",
         workspaceRoot,
@@ -134,15 +136,33 @@ async function startAccEngine(serverPath, context) {
         args.push("--SurrealDb:Endpoints:Remote");
         args.push(config.get("database.remoteEndpoint", "localhost:8000/rpc"));
     }
+    if (useTelemetry) {
+        args.push("--Acc:Telemetry:Enabled");
+        args.push("true");
+        args.push("--Acc:Telemetry:Endpoint");
+        args.push(config.get("telemetry.endpoint", "localhost:4317"));
+    }
     outputChannel.appendLine(`Starting ACC server: ${serverPath}`);
     outputChannel.appendLine(`Args: ${args.join(" ")}`);
-    accProcess = (0, child_process_1.spawn)(serverPath, args);
-    accProcess.stdout?.on("data", (data) => {
-        outputChannel.appendLine(`[ACC] ${data}`);
-    });
-    accProcess.stderr?.on("data", (data) => {
-        outputChannel.appendLine(`[ACC ERROR] ${data}`);
-    });
+    var opts = {
+        cwd: workspaceRoot || path.dirname(serverPath),
+        detached: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        env: {
+            ...process.env,
+            ELECTRON_RUN_AS_NODE: undefined,
+            VSCODE_AMD_ENTRYPOINT: undefined,
+            VSCODE_IPC_HOOK: undefined
+        }
+    };
+    accProcess = (0, child_process_1.spawn)(serverPath, args, opts);
+    accProcess.unref();
+    // accProcess.stdout?.on("data", (data) => {
+    //   outputChannel.appendLine(`[ACC] ${data}`);
+    // });
+    // accProcess.stderr?.on("data", (data) => {
+    //   outputChannel.appendLine(`[ACC ERROR] ${data}`);
+    // });
     accProcess.on("error", (err) => {
         vscode.window.showErrorMessage(`ACC failed to start: ${err.message}`);
         outputChannel.appendLine(`Failed to start: ${err}`);

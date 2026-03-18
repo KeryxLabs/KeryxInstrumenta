@@ -1,6 +1,7 @@
 import * as vscode from "vscode";
+import * as path from "path";
 import { AccServerDownloader } from "./downloader";
-import { spawn, ChildProcess } from "child_process";
+import { spawn, ChildProcess, SpawnOptions } from "child_process";
 import * as net from "net";
 
 let accProcess: ChildProcess | undefined;
@@ -131,6 +132,8 @@ async function startAccEngine(
 
   const config = vscode.workspace.getConfiguration("acc");
   const useRemote = config.get<boolean>("database.remote", false);
+  const useTelemetry = config.get<boolean>("telemetry.use", false);
+
   const args = [
     "--Acc:RepositoryPath",
     workspaceRoot,
@@ -147,18 +150,39 @@ async function startAccEngine(
     );
   }
 
+  if (useTelemetry) {
+    args.push("--Acc:Telemetry:Enabled");
+    args.push("true");
+
+    args.push("--Acc:Telemetry:Endpoint");
+    args.push(config.get<string>("telemetry.endpoint", "localhost:4317"));
+  }
+
   outputChannel.appendLine(`Starting ACC server: ${serverPath}`);
   outputChannel.appendLine(`Args: ${args.join(" ")}`);
 
-  accProcess = spawn(serverPath, args);
+  var opts  = {
+    cwd: workspaceRoot || path.dirname(serverPath),
+    detached: true,
+      stdio: ['ignore', 'pipe', 'pipe'] as any, 
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: undefined,
+      VSCODE_AMD_ENTRYPOINT: undefined,
+      VSCODE_IPC_HOOK: undefined
+    }
+  };
 
-  accProcess.stdout?.on("data", (data) => {
-    outputChannel.appendLine(`[ACC] ${data}`);
-  });
+  accProcess = spawn(serverPath, args, opts);
+  accProcess.unref();
 
-  accProcess.stderr?.on("data", (data) => {
-    outputChannel.appendLine(`[ACC ERROR] ${data}`);
-  });
+  // accProcess.stdout?.on("data", (data) => {
+  //   outputChannel.appendLine(`[ACC] ${data}`);
+  // });
+
+  // accProcess.stderr?.on("data", (data) => {
+  //   outputChannel.appendLine(`[ACC ERROR] ${data}`);
+  // });
 
   accProcess.on("error", (err) => {
     vscode.window.showErrorMessage(`ACC failed to start: ${err.message}`);

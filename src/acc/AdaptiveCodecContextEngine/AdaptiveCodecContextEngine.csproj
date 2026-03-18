@@ -1,5 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
@@ -13,13 +12,13 @@
     <!-- <IsAotCompatible>true</IsAotCompatible> -->
   </PropertyGroup>
 
-<PropertyGroup>
-  <!-- Forces native .so/.dll files to extract to a temp folder at runtime -->
-  <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-  
-  <!-- Ensures the runtime looks for those extracted files -->
-  <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
-</PropertyGroup>
+  <PropertyGroup>
+    <!-- Forces native .so/.dll files to extract to a temp folder at runtime -->
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+
+    <!-- Ensures the runtime looks for those extracted files -->
+    <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
+  </PropertyGroup>
 
   <PropertyGroup>
     <RuntimeIdentifier>linux-x64</RuntimeIdentifier>
@@ -42,17 +41,28 @@
     <PackageReference Include="SurrealDb.Net" Version="0.9.0" />
   </ItemGroup> -->
 
+  <!-- These are here until surreal sdk gets an update with the null string issue  -->
   <ItemGroup>
     <ProjectReference Include="../../../_deps/surrealdb.net/SurrealDb.Net/SurrealDb.Net.csproj " />
     <ProjectReference Include="../../../_deps/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
   </ItemGroup>
-<ItemGroup>
-  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-x64/native/libsurreal_surrealkv.so" Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == ''" CopyToOutputDirectory="PreserveNewest" Link="libsurreal_surrealkv.so" />
-  <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-arm64/native/libsurreal_surrealkv.so" Condition="'$(RuntimeIdentifier)' == 'linux-arm64'" CopyToOutputDirectory="PreserveNewest" Link="libsurreal_surrealkv.so" />
-</ItemGroup>
   <ItemGroup>
-  <None Update="appsettings.json">
-    <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-  </None>
-</ItemGroup>
+    <Content
+      Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-x64/native/libsurreal_surrealkv.so"
+      Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == ''"
+      CopyToOutputDirectory="PreserveNewest"
+      Link="libsurreal_surrealkv.so"
+    />
+    <Content
+      Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-arm64/native/libsurreal_surrealkv.so"
+      Condition="'$(RuntimeIdentifier)' == 'linux-arm64'"
+      CopyToOutputDirectory="PreserveNewest"
+      Link="libsurreal_surrealkv.so"
+    />
+  </ItemGroup>
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
 </Project>

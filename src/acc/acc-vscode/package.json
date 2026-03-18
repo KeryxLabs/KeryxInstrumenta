@@ -1,7 +1,7 @@
 {
   "name": "acc-vscode",
   "displayName": "ACC - Adaptive Codec Context",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "KeryxLabs",
   "repository": {
     "type": "git",
@@ -50,19 +50,33 @@
         },
         "acc.rpcPort": {
           "type": "number",
+          "description": "The location for querying via JSON rpc.",
           "default": 9339
         },
         "acc.lspPort": {
           "type": "number",
+          "description": "The TCP port where the LSP will be communicating to the engine.",
           "default": 9340
         },
         "acc.database.remote": {
           "type": "boolean",
+          "description": "Enable the ability to sink your indexing and metrics to a remote SurrealDb instance.",
           "default": false
         },
         "acc.database.remoteEndpoint": {
           "type": "string",
+          "description": "The surrealdb remote location. Only used when set up for remote.",
           "default": "ws://localhost:8000/rpc"
+        }, 
+        "acc.telemetry.use":{
+          "type": "boolean",
+          "description": "Enable the usage of telemetry. This allows for observability as the code indexing happens. Gathers same metrics as database store. See Grafana Dashboards examples for more info.",
+          "default": false
+        },
+        "acc.telemetry.endpoint":{
+          "type":"string",
+          "description": "The endpoint for collecting OTEL telemetry. Usually an otel collector or a sink",
+          "default":"localhost:4317"
         }
       }
     }
