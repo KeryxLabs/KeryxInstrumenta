@@ -161,10 +161,11 @@ async function startAccEngine(
   outputChannel.appendLine(`Starting ACC server: ${serverPath}`);
   outputChannel.appendLine(`Args: ${args.join(" ")}`);
 
-  var opts  = {
+  var opts = {
     cwd: workspaceRoot || path.dirname(serverPath),
+    shell: true,
     detached: true,
-      stdio: ['ignore', 'pipe', 'pipe'] as any, 
+    stdio: ['ignore', 'pipe', 'pipe'] as any,
     env: {
       ...process.env,
       ELECTRON_RUN_AS_NODE: undefined,

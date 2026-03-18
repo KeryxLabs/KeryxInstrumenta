@@ -146,6 +146,7 @@ async function startAccEngine(serverPath, context) {
     outputChannel.appendLine(`Args: ${args.join(" ")}`);
     var opts = {
         cwd: workspaceRoot || path.dirname(serverPath),
+        shell: true,
         detached: true,
         stdio: ['ignore', 'pipe', 'pipe'],
         env: {
