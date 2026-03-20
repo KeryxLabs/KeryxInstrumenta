@@ -8,6 +8,7 @@ It is designed to reduce "search by grep + memory" workflows by providing dimens
 
 - Auto-checks for an ACC server binary on startup
 - Offers one-click binary download when missing
+- Auto-checks for `lizard` (Python package) on startup and installs it via `pip` if missing
 - Auto-starts ACC engine for the current workspace
 - Builds dependency graph by tapping symbols/references from VS Code providers
 - Supports quick lookups and navigation to matching nodes
@@ -28,9 +29,10 @@ Open the command palette and run:
 
 1. Install the extension.
 2. Open a workspace folder.
-3. If ACC binary is missing, approve `ACC: Download Server Binary`.
-4. Run `ACC: Build Dependency Graph` once to index the workspace.
-5. Use `ACC: Search Nodes` to verify lookups and jump to source.
+3. If the ACC binary is missing, approve the **Download** prompt.
+4. If `lizard` is not installed, approve the **Install via pip** prompt (requires Python in PATH).
+5. Run `ACC: Build Dependency Graph` once to index the workspace.
+6. Use `ACC: Search Nodes` to verify lookups and jump to source.
 
 ## Configuration
 
@@ -39,6 +41,10 @@ Settings are available under `ACC` in VS Code settings.
 - `acc.serverPath`
   - Optional explicit path to an ACC binary.
   - Leave empty to use auto-download.
+
+- `acc.lizardPath`
+  - Optional explicit path to the `lizard` executable.
+  - Leave empty to use the globally installed `lizard` (or trigger pip install prompt).
 
 - `acc.rpcPort` (default `9339`)
   - JSON-RPC port used for ACC query calls.
@@ -73,6 +79,7 @@ Search and analysis commands then query ACC over JSON-RPC and present navigable 
 - VS Code `^1.110.0`
 - A supported project language with symbol/reference support via VS Code providers
 - Network access for first-time binary download (unless `acc.serverPath` is set)
+- Python with `pip` for `lizard` installation (unless `lizard` is already in PATH or `acc.lizardPath` is set)
 
 ## Troubleshooting
 
