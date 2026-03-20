@@ -223,8 +223,8 @@ Use ACC output as structured context for planning, review, and change impact ana
 
 | Instrument | Status | Description |
 |---|---|---|
-| [sttp-mcp](./src/sttp-mcp) | `0.1.0-beta` | MCP server for STTP context persistence, retrieval, and session calibration |
-| [acc](./src/acc) | `0.1.0-beta` | Adaptive Codec Context: AVEC-based repository indexing, dependency analysis, and pattern queries for agents |
+| [sttp-mcp](./src/sttp-mcp) | `0.1.2-beta` | MCP server for STTP context persistence, retrieval, and session calibration |
+| [acc](./src/acc) | `0.3.0` | Adaptive Codec Context: AVEC-based repository indexing, dependency analysis, and pattern queries for agents |
 
 *More instruments coming as the ecosystem grows.*
 
