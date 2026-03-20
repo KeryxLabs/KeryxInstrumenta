@@ -16,6 +16,7 @@ Download now from our release tags!!
 - Supports quick lookups and navigation to matching nodes
 - Surfaces high-friction and unstable nodes for architectural triage
 
+
 ## Commands
 
 Open the command palette and run:
@@ -26,6 +27,12 @@ Open the command palette and run:
 - `ACC: Show Project Stats`
 - `ACC: Show High-Friction Nodes`
 - `ACC: Show Unstable Nodes`
+
+![Search](https://github.com/user-attachments/assets/b3814667-6aa0-495f-8a2a-e1c88348f17f)
+
+
+![Unstable](https://github.com/user-attachments/assets/3390e3d6-95be-402f-bc78-e0346f306bc6)
+
 
 ## First Run
 
