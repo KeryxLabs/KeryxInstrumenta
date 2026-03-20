@@ -174,8 +174,8 @@ EOF
 # Run ACC
 dotnet run
 
-# Or use the AOT binary
-./bin/Release/net8.0/linux-x64/publish/ACC
+# Or use the download the binary from our release tags 
+./acc 
 ```
 
 ## Configuration
