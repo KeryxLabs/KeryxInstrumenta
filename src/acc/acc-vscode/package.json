@@ -58,6 +58,11 @@
           "description": "The TCP port where the LSP will be communicating to the engine.",
           "default": 9340
         },
+        "acc.useGitBranchNaming": {
+          "type": "boolean",
+          "description": "Create a branch-specific SurrealDB database name instead of a generic one.",
+          "default": true
+        },
         "acc.database.remote": {
           "type": "boolean",
           "description": "Enable the ability to sink your indexing and metrics to a remote SurrealDb instance.",

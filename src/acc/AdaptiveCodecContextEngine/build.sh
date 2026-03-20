@@ -3,7 +3,7 @@
 # Usage: ./build.sh [--publish]
 set -e
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 RELEASE="v$VERSION"
 NAME="acc"
 RIDS=(osx-arm64 osx-x64 linux-x64 linux-arm64 win-x64)

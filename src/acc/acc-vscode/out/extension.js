@@ -67,6 +67,20 @@ async function activate(context) {
         }));
         return;
     }
+    // Ensure lizard (Python package) is installed via pip. Non-blocking for server start.
+    try {
+        const lizardPath = await downloader.ensureLizardInstalled();
+        if (!lizardPath) {
+            outputChannel.appendLine('Lizard not available; some features may be limited.');
+            vscode.window.showWarningMessage('ACC: `lizard` not found. Install with `pip install lizard` for full functionality.');
+        }
+        else {
+            outputChannel.appendLine(`Lizard available: ${lizardPath}`);
+        }
+    }
+    catch (err) {
+        outputChannel.appendLine(`Error ensuring lizard: ${err}`);
+    }
     await startAccEngine(serverPath, context);
     // Give engine time to start
     setTimeout(() => {
@@ -103,7 +117,12 @@ async function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand("acc.showStats", async () => {
         const stats = await accClient?.getStats();
         if (stats) {
-            vscode.window.showInformationMessage(`ACC Stats: ${stats.totalNodes} nodes indexed`);
+            vscode.window.showInformationMessage(`ACC Stats: ${stats.total_nodes} nodes indexed. Logic:${stats.avg_logic.toFixed(2)} Stability:${stats.avg_stability.toFixed(2)} Friction:${stats.avg_friction.toFixed(2)} Autonomy:${stats.avg_autonomy.toFixed(2)} `);
+            updateStatusBar({
+                stability: stats.avg_stability.toFixed(2),
+                friction: stats.avg_friction.toFixed(2),
+                logic: stats.avg_logic.toFixed(2)
+            });
         }
     }));
     context.subscriptions.push(vscode.commands.registerCommand("acc.showHighFriction", async () => {
@@ -114,12 +133,27 @@ async function activate(context) {
         const nodes = await accClient?.getUnstable(0.4, 20);
         showNodeList("Unstable Nodes (High Churn)", nodes);
     }));
+    // 1. Register the item so it cleans up automatically
+    context.subscriptions.push(healthStatus);
+    // 2. Set an initial state (optional but recommended)
+    healthStatus.text = "$(sync~spin) Loading 4D...";
+    healthStatus.show();
     console.log("ACC extension activated");
 }
 function deactivate() {
     if (accProcess) {
         accProcess.kill();
     }
+}
+// 1. Create the status bar item
+const healthStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+// 2. Update it when the engine sends a 4D update
+function updateStatusBar(metrics) {
+    const icon = metrics.friction > 0.7 ? "$(warning)" : "$(check)";
+    healthStatus.text = `${icon} S:${(metrics.stability * 100).toFixed(0)}% | F:${(metrics.friction * 100).toFixed(0)}%`;
+    healthStatus.tooltip = `Logic Density: ${metrics.logic}`;
+    healthStatus.backgroundColor = metrics.friction > 0.8 ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
+    healthStatus.show();
 }
 async function startAccEngine(serverPath, context) {
     const workspaceRoot = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -129,6 +163,7 @@ async function startAccEngine(serverPath, context) {
     }
     const config = vscode.workspace.getConfiguration("acc");
     const useRemote = config.get("database.remote", false);
+    const useGitBranchNaming = config.get("useGitBranchNaming", true);
     const useTelemetry = config.get("telemetry.use", false);
     const args = [
         "--Acc:RepositoryPath",
@@ -138,6 +173,9 @@ async function startAccEngine(serverPath, context) {
         "--SurrealDb:Remote",
         useRemote.toString(),
     ];
+    // Pass UseGitBranchNaming setting to engine
+    args.push("--Acc:UseGitBranchNaming");
+    args.push(useGitBranchNaming.toString());
     if (useRemote) {
         args.push("--SurrealDb:Endpoints:Remote");
         args.push(config.get("database.remoteEndpoint", "localhost:8000/rpc"));

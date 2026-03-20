@@ -1,6 +1,3 @@
-
-using Dahomey.Cbor.Attributes;
-
 public record ProjectStatsDto
 {
     [JsonPropertyName("total_nodes")]

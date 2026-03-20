@@ -150,6 +150,18 @@ public class SurrealDbRepository
         ",
             cancellationToken: cancellationToken
         );
+        // Index state table to track last indexing timestamps per repository
+        response = await _db.RawQuery(
+            @"
+                        DEFINE TABLE IF NOT EXISTS index_state SCHEMAFULL;
+                        DEFINE FIELD IF NOT EXISTS repo_path ON index_state TYPE string ASSERT $value != NONE;
+                        DEFINE FIELD IF NOT EXISTS last_indexed_at ON index_state TYPE option<datetime>;
+                        DEFINE INDEX IF NOT EXISTS index_state_repo ON index_state FIELDS repo_path UNIQUE;
+                    ",
+            cancellationToken: cancellationToken
+        );
+
+        _logger.LogPossibleDbWriteError(response);
 
         _logger.LogPossibleDbWriteError(response);
         // Event: Recalculate AVEC when metrics change
@@ -850,6 +862,48 @@ public class SurrealDbRepository
         return records?.Select(MapToDto).ToList() ?? new List<NodeDto>();
     }
 
+    private record IndexStateRecord
+    {
+        public DateTime? LastIndexedAt { get; set; }
+    }
+
+    public async Task<DateTime?> GetLastIndexedAtAsync(
+        string repoPath,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var query =
+            "SELECT last_indexed_at AS LastIndexedAt FROM index_state WHERE repo_path = $path LIMIT 1;";
+        var result = await _db.RawQuery(
+            query,
+            new Dictionary<string, object?> { ["path"] = repoPath },
+            cancellationToken: cancellationToken
+        );
+
+        _logger.LogPossibleDbReadError(result);
+
+        var records = result.GetValue<List<IndexStateRecord>>(0);
+        return records?.FirstOrDefault()?.LastIndexedAt;
+    }
+
+    public async Task SetLastIndexedAtAsync(
+        string repoPath,
+        DateTime timestamp,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var query =
+            @"INSERT INTO index_state (repo_path, last_indexed_at) VALUES ($path, $ts) ON DUPLICATE KEY UPDATE last_indexed_at = $ts;";
+
+        var parameters = new Dictionary<string, object?>
+        {
+            ["path"] = repoPath,
+            ["ts"] = timestamp,
+        };
+        var result = await _db.RawQuery(query, parameters, cancellationToken: cancellationToken);
+        _logger.LogPossibleDbWriteError(result);
+    }
+
     public async Task<ProjectStatsDto> GetProjectStatsAsync(
         CancellationToken cancellationToken = default
     )
@@ -857,11 +911,11 @@ public class SurrealDbRepository
         var query =
             @"
         SELECT 
-            count() as total_nodes,
-            math::mean(avec_stability) as avg_stability,
-            math::mean(avec_logic) as avg_logic,
-            math::mean(avec_friction) as avg_friction,
-            math::mean(avec_autonomy) as avg_autonomy
+            count() as TotalNodes,
+            math::mean(avec_stability) as AverageStability,
+            math::mean(avec_logic) as AverageLogic,
+            math::mean(avec_friction) as AverageFriction,
+            math::mean(avec_autonomy) as AverageAutonomy
         FROM node
         WHERE avec_stability IS NOT NONE
         GROUP ALL;

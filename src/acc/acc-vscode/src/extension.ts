@@ -41,6 +41,19 @@ export async function activate(context: vscode.ExtensionContext) {
     return;
   }
 
+  // Ensure lizard (Python package) is installed via pip. Non-blocking for server start.
+  try {
+    const lizardPath = await downloader.ensureLizardInstalled();
+    if (!lizardPath) {
+      outputChannel.appendLine('Lizard not available; some features may be limited.');
+      vscode.window.showWarningMessage('ACC: `lizard` not found. Install with `pip install lizard` for full functionality.');
+    } else {
+      outputChannel.appendLine(`Lizard available: ${lizardPath}`);
+    }
+  } catch (err) {
+    outputChannel.appendLine(`Error ensuring lizard: ${err}`);
+  }
+
   await startAccEngine(serverPath, context);
 
   // Give engine time to start
@@ -97,9 +110,16 @@ export async function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand("acc.showStats", async () => {
       const stats = await accClient?.getStats();
       if (stats) {
+
         vscode.window.showInformationMessage(
-          `ACC Stats: ${stats.totalNodes} nodes indexed`,
+          `ACC Stats: ${stats.total_nodes} nodes indexed. Logic:${stats.avg_logic.toFixed(2)} Stability:${stats.avg_stability.toFixed(2)} Friction:${stats.avg_friction.toFixed(2)} Autonomy:${stats.avg_autonomy.toFixed(2)} `,
         );
+
+        updateStatusBar({
+          stability: stats.avg_stability.toFixed(2),
+          friction: stats.avg_friction.toFixed(2),
+          logic: stats.avg_logic.toFixed(2)
+        })
       }
     }),
   );
@@ -118,6 +138,13 @@ export async function activate(context: vscode.ExtensionContext) {
     }),
   );
 
+  // 1. Register the item so it cleans up automatically
+  context.subscriptions.push(healthStatus);
+
+  // 2. Set an initial state (optional but recommended)
+  healthStatus.text = "$(sync~spin) Loading 4D...";
+  healthStatus.show();
+
   console.log("ACC extension activated");
 }
 
@@ -126,6 +153,19 @@ export function deactivate() {
     accProcess.kill();
   }
 }
+
+// 1. Create the status bar item
+const healthStatus = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+
+// 2. Update it when the engine sends a 4D update
+function updateStatusBar(metrics: { stability: number, friction: number, logic: number }) {
+  const icon = metrics.friction > 0.7 ? "$(warning)" : "$(check)";
+  healthStatus.text = `${icon} S:${(metrics.stability * 100).toFixed(0)}% | F:${(metrics.friction * 100).toFixed(0)}%`;
+  healthStatus.tooltip = `Logic Density: ${metrics.logic}`;
+  healthStatus.backgroundColor = metrics.friction > 0.8 ? new vscode.ThemeColor('statusBarItem.errorBackground') : undefined;
+  healthStatus.show();
+}
+
 
 async function startAccEngine(
   serverPath: string,
@@ -139,6 +179,7 @@ async function startAccEngine(
 
   const config = vscode.workspace.getConfiguration("acc");
   const useRemote = config.get<boolean>("database.remote", false);
+  const useGitBranchNaming = config.get<boolean>("useGitBranchNaming", true);
   const useTelemetry = config.get<boolean>("telemetry.use", false);
 
   const args = [
@@ -149,6 +190,10 @@ async function startAccEngine(
     "--SurrealDb:Remote",
     useRemote.toString(),
   ];
+
+  // Pass UseGitBranchNaming setting to engine
+  args.push("--Acc:UseGitBranchNaming");
+  args.push(useGitBranchNaming.toString());
 
   if (useRemote) {
     args.push("--SurrealDb:Endpoints:Remote");
@@ -169,93 +214,93 @@ async function startAccEngine(
   const overrideAvec = config.get<boolean>("avecWeights.override", false);
   if (overrideAvec) {
     try {
-    // Stability
-    args.push("--AvecWeights:Stability:ChurnWeight");
-    args.push(config.get<number>("avecWeights.stability.churnWeight", 0.4).toString());
+      // Stability
+      args.push("--AvecWeights:Stability:ChurnWeight");
+      args.push(config.get<number>("avecWeights.stability.churnWeight", 0.4).toString());
 
-    args.push("--AvecWeights:Stability:ContributorWeight");
-    args.push(config.get<number>("avecWeights.stability.contributorWeight", 0.3).toString());
+      args.push("--AvecWeights:Stability:ContributorWeight");
+      args.push(config.get<number>("avecWeights.stability.contributorWeight", 0.3).toString());
 
-    args.push("--AvecWeights:Stability:TestWeight");
-    args.push(config.get<number>("avecWeights.stability.testWeight", 0.3).toString());
+      args.push("--AvecWeights:Stability:TestWeight");
+      args.push(config.get<number>("avecWeights.stability.testWeight", 0.3).toString());
 
-    args.push("--AvecWeights:Stability:ChurnNormalize");
-    args.push(config.get<number>("avecWeights.stability.churnNormalize", 10).toString());
+      args.push("--AvecWeights:Stability:ChurnNormalize");
+      args.push(config.get<number>("avecWeights.stability.churnNormalize", 10).toString());
 
-    args.push("--AvecWeights:Stability:TestLineCoverageNormalize");
-    args.push(config.get<number>("avecWeights.stability.testLineCoverageNormalize", 100.0).toString());
+      args.push("--AvecWeights:Stability:TestLineCoverageNormalize");
+      args.push(config.get<number>("avecWeights.stability.testLineCoverageNormalize", 100.0).toString());
 
-    args.push("--AvecWeights:Stability:TestLineCoverageWeight");
-    args.push(config.get<number>("avecWeights.stability.testLineCoverageWeight", 0.5).toString());
+      args.push("--AvecWeights:Stability:TestLineCoverageWeight");
+      args.push(config.get<number>("avecWeights.stability.testLineCoverageWeight", 0.5).toString());
 
-    args.push("--AvecWeights:Stability:TestBranchCoverageNormalize");
-    args.push(config.get<number>("avecWeights.stability.testBranchCoverageNormalize", 100.0).toString());
+      args.push("--AvecWeights:Stability:TestBranchCoverageNormalize");
+      args.push(config.get<number>("avecWeights.stability.testBranchCoverageNormalize", 100.0).toString());
 
-    args.push("--AvecWeights:Stability:TestBranchCoverageWeight");
-    args.push(config.get<number>("avecWeights.stability.testBranchCoverageWeight", 0.5).toString());
+      args.push("--AvecWeights:Stability:TestBranchCoverageWeight");
+      args.push(config.get<number>("avecWeights.stability.testBranchCoverageWeight", 0.5).toString());
 
-    args.push("--AvecWeights:Stability:TestBaseBias");
-    args.push(config.get<number>("avecWeights.stability.testBaseBias", 0.5).toString());
+      args.push("--AvecWeights:Stability:TestBaseBias");
+      args.push(config.get<number>("avecWeights.stability.testBaseBias", 0.5).toString());
 
-    args.push("--AvecWeights:Stability:ContributorCap");
-    args.push(config.get<number>("avecWeights.stability.contributorCap", 5).toString());
+      args.push("--AvecWeights:Stability:ContributorCap");
+      args.push(config.get<number>("avecWeights.stability.contributorCap", 5).toString());
 
-    // Logic
-    args.push("--AvecWeights:Logic:ComplexityWeight");
-    args.push(config.get<number>("avecWeights.logic.complexityWeight", 0.7).toString());
+      // Logic
+      args.push("--AvecWeights:Logic:ComplexityWeight");
+      args.push(config.get<number>("avecWeights.logic.complexityWeight", 0.7).toString());
 
-    args.push("--AvecWeights:Logic:ParameterWeight");
-    args.push(config.get<number>("avecWeights.logic.parameterWeight", 0.3).toString());
+      args.push("--AvecWeights:Logic:ParameterWeight");
+      args.push(config.get<number>("avecWeights.logic.parameterWeight", 0.3).toString());
 
-    args.push("--AvecWeights:Logic:LocDivisor");
-    args.push(config.get<number>("avecWeights.logic.locDivisor", 10).toString());
+      args.push("--AvecWeights:Logic:LocDivisor");
+      args.push(config.get<number>("avecWeights.logic.locDivisor", 10).toString());
 
-    args.push("--AvecWeights:Logic:ParameterCap");
-    args.push(config.get<number>("avecWeights.logic.parameterCap", 5).toString());
+      args.push("--AvecWeights:Logic:ParameterCap");
+      args.push(config.get<number>("avecWeights.logic.parameterCap", 5).toString());
 
-    // Friction
-    args.push("--AvecWeights:Friction:CentralityWeight");
-    args.push(config.get<number>("avecWeights.friction.centralityWeight", 0.4).toString());
+      // Friction
+      args.push("--AvecWeights:Friction:CentralityWeight");
+      args.push(config.get<number>("avecWeights.friction.centralityWeight", 0.4).toString());
 
-    args.push("--AvecWeights:Friction:DependencyWeight");
-    args.push(config.get<number>("avecWeights.friction.dependencyWeight", 0.6).toString());
+      args.push("--AvecWeights:Friction:DependencyWeight");
+      args.push(config.get<number>("avecWeights.friction.dependencyWeight", 0.6).toString());
 
-    args.push("--AvecWeights:Friction:ChurnWeight");
-    args.push(config.get<number>("avecWeights.friction.churnWeight", 0.7).toString());
+      args.push("--AvecWeights:Friction:ChurnWeight");
+      args.push(config.get<number>("avecWeights.friction.churnWeight", 0.7).toString());
 
-    args.push("--AvecWeights:Friction:CollaborationNormalize");
-    args.push(config.get<number>("avecWeights.friction.collaborationNormalize", 0.3).toString());
+      args.push("--AvecWeights:Friction:CollaborationNormalize");
+      args.push(config.get<number>("avecWeights.friction.collaborationNormalize", 0.3).toString());
 
-    args.push("--AvecWeights:Friction:StructuralFrictionWeight");
-    args.push(config.get<number>("avecWeights.friction.structuralFrictionWeight", 0.4).toString());
+      args.push("--AvecWeights:Friction:StructuralFrictionWeight");
+      args.push(config.get<number>("avecWeights.friction.structuralFrictionWeight", 0.4).toString());
 
-    args.push("--AvecWeights:Friction:ProcessFrictionWeight");
-    args.push(config.get<number>("avecWeights.friction.processFrictionWeight", 0.3).toString());
+      args.push("--AvecWeights:Friction:ProcessFrictionWeight");
+      args.push(config.get<number>("avecWeights.friction.processFrictionWeight", 0.3).toString());
 
-    args.push("--AvecWeights:Friction:CognitiveFrictionWeight");
-    args.push(config.get<number>("avecWeights.friction.cognitiveFrictionWeight", 0.3).toString());
+      args.push("--AvecWeights:Friction:CognitiveFrictionWeight");
+      args.push(config.get<number>("avecWeights.friction.cognitiveFrictionWeight", 0.3).toString());
 
-    args.push("--AvecWeights:Friction:CyclomaticComplexityWeight");
-    args.push(config.get<number>("avecWeights.friction.cyclomaticComplexityWeight", 20.0).toString());
+      args.push("--AvecWeights:Friction:CyclomaticComplexityWeight");
+      args.push(config.get<number>("avecWeights.friction.cyclomaticComplexityWeight", 20.0).toString());
 
-    args.push("--AvecWeights:Friction:GitContributorsNormalize");
-    args.push(config.get<number>("avecWeights.friction.gitContributorsNormalize", 10.0).toString());
+      args.push("--AvecWeights:Friction:GitContributorsNormalize");
+      args.push(config.get<number>("avecWeights.friction.gitContributorsNormalize", 10.0).toString());
 
-    args.push("--AvecWeights:Friction:GitTotalCommitsNormalize");
-    args.push(config.get<number>("avecWeights.friction.gitTotalCommitsNormalize", 50.0).toString());
+      args.push("--AvecWeights:Friction:GitTotalCommitsNormalize");
+      args.push(config.get<number>("avecWeights.friction.gitTotalCommitsNormalize", 50.0).toString());
 
-    args.push("--AvecWeights:Friction:IncomingCap");
-    args.push(config.get<number>("avecWeights.friction.incomingCap", 10).toString());
+      args.push("--AvecWeights:Friction:IncomingCap");
+      args.push(config.get<number>("avecWeights.friction.incomingCap", 10).toString());
 
-    // Autonomy
-    args.push("--AvecWeights:Autonomy:FileNumberBlastRadius");
-    args.push(config.get<number>("avecWeights.autonomy.fileNumberBlastRadius", 30).toString());
+      // Autonomy
+      args.push("--AvecWeights:Autonomy:FileNumberBlastRadius");
+      args.push(config.get<number>("avecWeights.autonomy.fileNumberBlastRadius", 30).toString());
 
-    args.push("--AvecWeights:Autonomy:DependencyRatio");
-    args.push(config.get<number>("avecWeights.autonomy.dependencyRatio", 0.8).toString());
+      args.push("--AvecWeights:Autonomy:DependencyRatio");
+      args.push(config.get<number>("avecWeights.autonomy.dependencyRatio", 0.8).toString());
 
-    args.push("--AvecWeights:Autonomy:AbsoluteCount");
-    args.push(config.get<number>("avecWeights.autonomy.absoluteCount", 0.2).toString());
+      args.push("--AvecWeights:Autonomy:AbsoluteCount");
+      args.push(config.get<number>("avecWeights.autonomy.absoluteCount", 0.2).toString());
     } catch (err) {
       console.error("Error appending AvecWeights flags:", err);
     }
@@ -341,7 +386,7 @@ async function tapAndForwardSymbols(uri: vscode.Uri) {
     // Process only the filtered list to avoid the "insane" output
     for (const symbol of filteredSymbols) {
       await tapAndForwardReferences(uri, symbol);
-       await new Promise(r => setTimeout(r, 5));
+      await new Promise(r => setTimeout(r, 5));
     }
   } catch (err) {
     console.error("Error tapping symbols:", err);

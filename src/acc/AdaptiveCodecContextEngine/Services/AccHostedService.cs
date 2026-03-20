@@ -1,4 +1,3 @@
-
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
@@ -13,14 +12,14 @@ public class AccHostedService : IHostedService
         SurrealDbRepository repository,
         GitWatcher gitWatcher,
         MetricsCollector metricsCollector,
-        ILogger<AccHostedService> logger)
+        ILogger<AccHostedService> logger
+    )
     {
         _repository = repository;
         _gitWatcher = gitWatcher;
         _metricsCollector = metricsCollector;
         _logger = logger;
     }
-
 
     public async Task StartAsync(CancellationToken stoppingToken)
     {
@@ -41,8 +40,6 @@ public class AccHostedService : IHostedService
             await _metricsCollector.StartAsync(stoppingToken);
 
             _logger.LogInformation("ACC is running. Press Ctrl+C to stop.");
-
-
         }
         catch (OperationCanceledException)
         {
@@ -54,8 +51,6 @@ public class AccHostedService : IHostedService
             throw;
         }
     }
-
-
 
     public Task StopAsync(CancellationToken cancellationToken)
     {
