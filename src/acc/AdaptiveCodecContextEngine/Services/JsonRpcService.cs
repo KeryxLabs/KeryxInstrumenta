@@ -1,11 +1,11 @@
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Rpc;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using System.Net;
-using System.Net.Sockets;
-using System.Text;
 
 public class JsonRpcServer : BackgroundService
 {
@@ -17,14 +17,15 @@ public class JsonRpcServer : BackgroundService
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         TypeInfoResolver = ACCJsonContext.Default,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
     public JsonRpcServer(
         IAccQueryService queryService,
         LspStreamManager streamManager,
         ILogger<JsonRpcServer> logger,
-        IConfiguration configuration)
+        IConfiguration configuration
+    )
     {
         _queryService = queryService;
         _logger = logger;
@@ -59,7 +60,6 @@ public class JsonRpcServer : BackgroundService
         listener.Stop();
     }
 
-
     // In JsonRpcServer.HandleClientAsync
     private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
     {
@@ -72,12 +72,16 @@ public class JsonRpcServer : BackgroundService
 
             // Read ONE request
             var line = await reader.ReadLineAsync(ct);
-            if (string.IsNullOrEmpty(line)) return;
+            if (string.IsNullOrEmpty(line))
+                return;
 
             _logger.LogDebug($"RPC Request: {line}");
 
             var response = await ProcessRequestAsync(line);
-            var responseJson = JsonSerializer.Serialize(response, ACCJsonContext.Default.JsonRpcResponse);
+            var responseJson = JsonSerializer.Serialize(
+                response,
+                ACCJsonContext.Default.JsonRpcResponse
+            );
 
             _logger.LogDebug($"RPC Response: {responseJson}");
 
@@ -86,7 +90,6 @@ public class JsonRpcServer : BackgroundService
 
             // Close connection after response
             await Task.Delay(100, ct); // Brief delay to ensure client receives
-
         }
         catch (Exception ex)
         {
@@ -97,6 +100,7 @@ public class JsonRpcServer : BackgroundService
             client.Close(); // Explicit close
         }
     }
+
     // private async Task HandleClientAsync(TcpClient client, CancellationToken ct)
     // {
     //     try
@@ -147,7 +151,7 @@ public class JsonRpcServer : BackgroundService
             {
                 JsonRpc = "2.0",
                 Id = request.Id,
-                Result = result
+                Result = result,
             };
         }
         catch (Exception ex)
@@ -161,43 +165,63 @@ public class JsonRpcServer : BackgroundService
     {
         return request.Method switch
         {
-            "acc.getNode" =>
-                JsonSerializer.SerializeToElement(await HandleGetNodeAsync(request.Params), ACCJsonContext.Default.NodeDto),
+            "acc.getNode" => JsonSerializer.SerializeToElement(
+                await HandleGetNodeAsync(request.Params),
+                ACCJsonContext.Default.NodeDto
+            ),
 
-            "acc.queryRelations" =>
-                JsonSerializer.SerializeToElement(await HandleQueryRelationsAsync(request.Params), ACCJsonContext.Default.NodeDto),
+            "acc.queryRelations" => JsonSerializer.SerializeToElement(
+                await HandleQueryRelationsAsync(request.Params),
+                ACCJsonContext.Default.NodeDto
+            ),
 
-            "acc.queryDependencies" =>
-                JsonSerializer.SerializeToElement(await HandleQueryDependenciesAsync(request.Params), ACCJsonContext.Default.ListNodeDto),
+            "acc.queryDependencies" => JsonSerializer.SerializeToElement(
+                await HandleQueryDependenciesAsync(request.Params),
+                ACCJsonContext.Default.ListNodeDto
+            ),
 
-            "acc.queryPatterns" =>
-                JsonSerializer.SerializeToElement(await HandleQueryPatternsAsync(request.Params), ACCJsonContext.Default.ListNodeDto),
+            "acc.queryPatterns" => JsonSerializer.SerializeToElement(
+                await HandleQueryPatternsAsync(request.Params),
+                ACCJsonContext.Default.ListNodeDto
+            ),
 
-            "acc.search" =>
-                JsonSerializer.SerializeToElement(await HandleSearchAsync(request.Params), ACCJsonContext.Default.ListNodeDto),
+            "acc.search" => JsonSerializer.SerializeToElement(
+                await HandleSearchAsync(request.Params),
+                ACCJsonContext.Default.ListNodeDto
+            ),
 
-            "acc.getHighFriction" =>
-                JsonSerializer.SerializeToElement(await HandleGetHighFrictionAsync(request.Params), ACCJsonContext.Default.ListNodeDto),
+            "acc.getHighFriction" => JsonSerializer.SerializeToElement(
+                await HandleGetHighFrictionAsync(request.Params),
+                ACCJsonContext.Default.ListNodeDto
+            ),
 
-            "acc.getUnstable" =>
-                JsonSerializer.SerializeToElement(await HandleGetUnstableAsync(request.Params), ACCJsonContext.Default.ListNodeDto),
+            "acc.getUnstable" => JsonSerializer.SerializeToElement(
+                await HandleGetUnstableAsync(request.Params),
+                ACCJsonContext.Default.ListNodeDto
+            ),
 
-            "acc.getStats" =>
-                JsonSerializer.SerializeToElement(await HandleGetStatsAsync(), ACCJsonContext.Default.ProjectStatsDto),
+            "acc.getStats" => JsonSerializer.SerializeToElement(
+                await HandleGetStatsAsync(),
+                ACCJsonContext.Default.ProjectStatsDto
+            ),
 
             // New LSP stream management methods
-            "acc.registerLspStream" =>
-                JsonSerializer.SerializeToElement(await HandleRegisterLspStreamAsync(request.Params), ACCJsonContext.Default.RegisterLspStreamResponse),
-            "acc.unregisterLspStream" =>
-                JsonSerializer.SerializeToElement(await HandleUnregisterLspStreamAsync(request.Params), ACCJsonContext.Default.Boolean),
-            "acc.listLspStreams" =>
-                JsonSerializer.SerializeToElement(HandleListLspStreams(), ACCJsonContext.Default.ListLspStreamInfo),
+            "acc.registerLspStream" => JsonSerializer.SerializeToElement(
+                await HandleRegisterLspStreamAsync(request.Params),
+                ACCJsonContext.Default.RegisterLspStreamResponse
+            ),
+            "acc.unregisterLspStream" => JsonSerializer.SerializeToElement(
+                await HandleUnregisterLspStreamAsync(request.Params),
+                ACCJsonContext.Default.Boolean
+            ),
+            "acc.listLspStreams" => JsonSerializer.SerializeToElement(
+                HandleListLspStreams(),
+                ACCJsonContext.Default.ListLspStreamInfo
+            ),
 
-
-            _ => default
+            _ => default,
         };
     }
-
 
     private async Task<NodeDto?> HandleGetNodeAsync(JsonElement? paramsElement)
     {
@@ -216,7 +240,10 @@ public class JsonRpcServer : BackgroundService
         if (!paramsElement.HasValue)
             throw new ArgumentException("Missing params");
 
-        var @params = JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.QueryRelationsParams);
+        var @params = JsonSerializer.Deserialize(
+            paramsElement.Value,
+            ACCJsonContext.Default.QueryRelationsParams
+        );
         if (@params == null)
             throw new ArgumentException("Invalid params");
 
@@ -228,7 +255,10 @@ public class JsonRpcServer : BackgroundService
         if (!paramsElement.HasValue)
             throw new ArgumentException("Missing params");
 
-        var @params = JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.QueryDependenciesParams);
+        var @params = JsonSerializer.Deserialize(
+            paramsElement.Value,
+            ACCJsonContext.Default.QueryDependenciesParams
+        );
         if (@params == null)
             throw new ArgumentException("Invalid params");
 
@@ -237,7 +267,8 @@ public class JsonRpcServer : BackgroundService
             @params.NodeId,
             direction,
             @params.MaxDepth,
-            @params.IncludeScores);
+            @params.IncludeScores
+        );
     }
 
     private async Task<List<NodeDto>> HandleQueryPatternsAsync(JsonElement? paramsElement)
@@ -245,7 +276,10 @@ public class JsonRpcServer : BackgroundService
         if (!paramsElement.HasValue)
             throw new ArgumentException("Missing params");
 
-        var @params = JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.QueryPatternsParams);
+        var @params = JsonSerializer.Deserialize(
+            paramsElement.Value,
+            ACCJsonContext.Default.QueryPatternsParams
+        );
         if (@params == null)
             throw new ArgumentException("Invalid params");
 
@@ -257,7 +291,10 @@ public class JsonRpcServer : BackgroundService
         if (!paramsElement.HasValue)
             throw new ArgumentException("Missing params");
 
-        var @params = JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.SearchParams);
+        var @params = JsonSerializer.Deserialize(
+            paramsElement.Value,
+            ACCJsonContext.Default.SearchParams
+        );
         if (@params == null)
             throw new ArgumentException("Invalid params");
 
@@ -267,23 +304,31 @@ public class JsonRpcServer : BackgroundService
     private async Task<List<NodeDto>> HandleGetHighFrictionAsync(JsonElement? paramsElement)
     {
         var @params = paramsElement.HasValue
-            ? JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.GetHighFrictionParams)
+            ? JsonSerializer.Deserialize(
+                paramsElement.Value,
+                ACCJsonContext.Default.GetHighFrictionParams
+            )
             : new GetHighFrictionParams();
 
         return await _queryService.GetNodesWithHighFrictionAsync(
             @params?.MinFriction ?? 0.7,
-            @params?.Limit ?? 20);
+            @params?.Limit ?? 20
+        );
     }
 
     private async Task<List<NodeDto>> HandleGetUnstableAsync(JsonElement? paramsElement)
     {
         var @params = paramsElement.HasValue
-            ? JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.GetUnstableParams)
+            ? JsonSerializer.Deserialize(
+                paramsElement.Value,
+                ACCJsonContext.Default.GetUnstableParams
+            )
             : new GetUnstableParams();
 
         return await _queryService.GetUnstableNodesAsync(
             @params?.MaxStability ?? 0.4,
-            @params?.Limit ?? 20);
+            @params?.Limit ?? 20
+        );
     }
 
     private async Task<ProjectStatsDto> HandleGetStatsAsync()
@@ -297,19 +342,21 @@ public class JsonRpcServer : BackgroundService
         {
             JsonRpc = "2.0",
             Id = id,
-            Error = new JsonRpcError
-            {
-                Code = code,
-                Message = message
-            }
+            Error = new JsonRpcError { Code = code, Message = message },
         };
     }
-    private async Task<RegisterLspStreamResponse> HandleRegisterLspStreamAsync(JsonElement? paramsElement)
+
+    private async Task<RegisterLspStreamResponse> HandleRegisterLspStreamAsync(
+        JsonElement? paramsElement
+    )
     {
         if (!paramsElement.HasValue)
             throw new ArgumentException("Missing params");
 
-        var @params = JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.RegisterLspStreamParams);
+        var @params = JsonSerializer.Deserialize(
+            paramsElement.Value,
+            ACCJsonContext.Default.RegisterLspStreamParams
+        );
         if (@params == null)
             throw new ArgumentException("Invalid params");
 
@@ -320,22 +367,15 @@ public class JsonRpcServer : BackgroundService
                 streamType,
                 @params.Language,
                 @params.Path,
-                @params.Port);
+                @params.Port
+            );
 
-            return new RegisterLspStreamResponse
-            {
-                Success = true,
-                StreamId = streamId
-            };
+            return new RegisterLspStreamResponse { Success = true, StreamId = streamId };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to register LSP stream");
-            return new RegisterLspStreamResponse
-            {
-                Success = false,
-                Error = ex.Message
-            };
+            return new RegisterLspStreamResponse { Success = false, Error = ex.Message };
         }
     }
 
@@ -344,7 +384,10 @@ public class JsonRpcServer : BackgroundService
         if (!paramsElement.HasValue)
             throw new ArgumentException("Missing params");
 
-        var @params = JsonSerializer.Deserialize(paramsElement.Value, ACCJsonContext.Default.UnregisterLspStreamParams);
+        var @params = JsonSerializer.Deserialize(
+            paramsElement.Value,
+            ACCJsonContext.Default.UnregisterLspStreamParams
+        );
         if (@params == null)
             throw new ArgumentException("Invalid params");
 

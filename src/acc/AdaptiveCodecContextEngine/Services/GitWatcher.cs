@@ -5,19 +5,21 @@ using LibGit2Sharp;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 
-public class GitWatcher
+public class GitWatcher : IDisposable
 {
     private readonly string _repoPath;
     private readonly Channel<GitEventWithContext> _eventChannel;
     private readonly FileSystemWatcher _fsWatcher;
     private readonly ILogger<GitWatcher> _logger;
     private readonly HashSet<string> _relevantExtensions;
+    private readonly SurrealDbRepository _repository;
 
     private Repository? _repo;
     private readonly AdaptiveContextInstrumentation _instrumentation;
 
     public GitWatcher(
         Channel<GitEventWithContext> eventChannel,
+        SurrealDbRepository repository,
         ILogger<GitWatcher> logger,
         IConfiguration configuration,
         AdaptiveContextInstrumentation instrumentation
@@ -31,6 +33,7 @@ public class GitWatcher
         _eventChannel = eventChannel;
         _logger = logger;
         _instrumentation = instrumentation;
+        _repository = repository;
 
         _fsWatcher = new FileSystemWatcher(_repoPath)
         {
@@ -86,21 +89,43 @@ public class GitWatcher
         _logger.LogTrace("Git Watcher Enabled");
 
         // Initial index of entire repo (runs async, doesn't block)
-        _ = Task.Run(async () => await IndexRepository(ct), ct);
+        _ = Task.Run(
+            async () =>
+            {
+                try
+                {
+                    var last = await _repository.GetLastIndexedAtAsync(_repoPath, ct);
+                    if (last.HasValue && (DateTime.UtcNow - last.Value) < TimeSpan.FromSeconds(30))
+                    {
+                        _logger.LogInformation(
+                            "Skipping initial repository index; last indexed at {LastIndexedAt}",
+                            last.Value
+                        );
+                        return;
+                    }
+
+                    await IndexRepository(ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error during conditional initial index");
+                }
+            },
+            ct
+        );
     }
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(OnFileChanged));
-        activity?.SetTag("file.path", e.FullPath);
-        activity?.SetTag("file.change", e.ChangeType.ToString());
-
         // Filter by language extension
         if (!IsRelevantFile(e.FullPath))
         {
             _logger.LogTrace("Ignoring file: {FilePath}", e.FullPath);
             return;
         }
+        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(OnFileChanged));
+        activity?.SetTag("file.path", e.FullPath);
+        activity?.SetTag("file.change", e.ChangeType.ToString());
 
         var written = _eventChannel.Writer.TryWrite(
             new GitEventWithContext(
@@ -121,15 +146,14 @@ public class GitWatcher
 
     private void OnFileRenamed(object sender, RenamedEventArgs e)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(OnFileRenamed));
-        activity?.SetTag("file.old", e.OldFullPath);
-        activity?.SetTag("file.new", e.FullPath);
-
         if (!IsRelevantFile(e.FullPath))
         {
             _logger.LogTrace("Ignoring renamed file: {FilePath}", e.FullPath);
             return;
         }
+        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(OnFileRenamed));
+        activity?.SetTag("file.old", e.OldFullPath);
+        activity?.SetTag("file.new", e.FullPath);
 
         var written = _eventChannel.Writer.TryWrite(
             new GitEventWithContext(
@@ -196,6 +220,16 @@ public class GitWatcher
             }
 
             activity?.SetTag("index.total", fileCount);
+
+            // Persist last indexed timestamp so restarts are idempotent
+            try
+            {
+                await _repository.SetLastIndexedAtAsync(_repoPath, DateTime.UtcNow, ct);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to persist last indexed timestamp");
+            }
         }
         catch (Exception ex)
         {

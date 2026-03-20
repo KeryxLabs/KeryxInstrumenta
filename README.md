@@ -179,6 +179,14 @@ Need to switch reasoning posture? Pull AVEC mood presets:
 
 The model calls `get_moods`, presents options (focused, creative, defensive, analytical, etc.), applies the swap, then recalibrates to measure the shift.
 
+
+### Cross-Model Continuity Demo
+
+### Gemini 3 -->  Claude Sonnet 4.5 --> GPT4o --> GPT5-mini
+[dwhatsapp-demo.webm](https://github.com/user-attachments/assets/9dc532f6-fecc-4df1-bf19-dc050b548b86)
+
+
+
 ## How to Use ACC
 
 Use ACC when an agent needs compressed architectural perception of a codebase instead of raw file dumps.
@@ -202,57 +210,6 @@ Use AVEC pattern matching to find similarly fragile, complex, or high-impact nod
 ### 4. Feed results back into your agent loop
 
 Use ACC output as structured context for planning, review, and change impact analysis, then pair with `sttp-mcp` for long-horizon session continuity.
-
----
-
-### Cross-Model Continuity Demo
-
-### Gemini 3 -->  Claude Sonnet 4.5 --> GPT4o --> GPT5-mini
-[dwhatsapp-demo.webm](https://github.com/user-attachments/assets/9dc532f6-fecc-4df1-bf19-dc050b548b86)
-
-
-
-## Proof
-
-### Multi-model validation (2026-03-01)
-
-| Model | Temporal Node | Natural Language | Safety Triggered |
-|---|:---:|:---:|:---:|
-| GPT-4o | ✅ | ✅ | ❌ |
-| Claude | ✅ | ✅ | ❌ |
-| Gemini | ✅ | ✅ | ❌ |
-| Kimi-k2 | ✅ | ✅ | ❌ |
-
-All four models parsed, responded in, and extended the protocol correctly. Zero safety triggers.
-
-### Cross-model continuity (2026-03-03)
-
-Unplanned live pipeline:
-
-```
-DeepSeek   → produced a conversational response
-Kimi-k2    → compressed it into a STTP node (no shared state)
-GPT-4o     → received only the STTP node, continued coherently
-```
-
-Three companies. Three architectures. Zero shared state. The conversation arrived intact.
-
-### Physical portability (2026-03-05)
-
-```bash
-# Stopped server on machine A
-# Copied SurrealKV DB file to machine B
-# Restarted server on machine B
-# Called list_nodes → retrieved 17 stored nodes successfully
-```
-
-Context survived the transfer. No cloud dependency. No lock-in.
-
-### Test coverage
-
-- **9/9 tests passing** — parsing, validation, storage, integration
-- Docker build smoke test passing
-- CI workflow live
 
 ---
 

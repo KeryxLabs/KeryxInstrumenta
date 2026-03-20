@@ -139,7 +139,7 @@ Different project types get different defaults:
 
 - .NET 10.0 SDK
 - SurrealDB (`brew install surrealdb/tap/surreal` or [download](https://surrealdb.com/install))
-- Lizard (`pip install lizard`)
+- Lizard (`pip install lizard`) — **installed automatically by the VSCode extension if not present**
 - LSP for your language (e.g., OmniSharp for C#)
 
 ### Build
@@ -297,8 +297,8 @@ Console.WriteLine($"Delta: {updated.AvecDelta.Stability}");
 - [x] AVEC formula calculation
 - [x] SurrealDB graph storage
 - [x] Three core query types
+- [x] **VSCode extension** - auto-downloads ACC server binary; auto-installs `lizard` via pip if not present
 - [ ] **Neovim plugin (Cognoscere)** - in progress
-- [ ] VSCode extension
 - [ ] HTTP/gRPC query API
 - [ ] MCP server adapter
 - [ ] Language-specific complexity analyzers (beyond Lizard)

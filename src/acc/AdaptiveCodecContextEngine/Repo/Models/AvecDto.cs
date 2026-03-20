@@ -1,22 +1,20 @@
-
 using System.Diagnostics.CodeAnalysis;
-
 
 [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.All)]
 public record AvecDto
 {
-    [JsonPropertyName("stability")]   
+    [JsonPropertyName("stability")]
     public double Stability { get; init; }
-    
-    [JsonPropertyName("logic")]   
+
+    [JsonPropertyName("logic")]
     public double Logic { get; init; }
-    
-    [JsonPropertyName("friction")]   
+
+    [JsonPropertyName("friction")]
     public double Friction { get; init; }
-    
-    [JsonPropertyName("autonomy")]   
+
+    [JsonPropertyName("autonomy")]
     public double Autonomy { get; init; }
-    
-    [JsonPropertyName("computed_at")]   
+
+    [JsonPropertyName("computed_at")]
     public DateTime? ComputedAt { get; init; }
 }

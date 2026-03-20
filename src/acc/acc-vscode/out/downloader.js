@@ -40,7 +40,8 @@ const http = __importStar(require("http"));
 const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const tar = __importStar(require("tar"));
-const ACC_VERSION = '0.2.0'; // Update this with releases
+const child_process = __importStar(require("child_process"));
+const ACC_VERSION = '0.3.0'; // Update this with releases
 const GITHUB_RELEASES_URL = `https://github.com/KeryxLabs/KeryxInstrumenta/releases/download`;
 class AccServerDownloader {
     constructor(context, outputChannel) {
@@ -92,6 +93,18 @@ class AccServerDownloader {
         const binaryPath = path.join(serverDir, platformInfo.binaryName);
         return fs.existsSync(binaryPath) ? binaryPath : null;
     }
+    getLizardPath() {
+        const config = vscode.workspace.getConfiguration('acc');
+        const customPath = config.get('lizardPath');
+        if (customPath) {
+            return customPath;
+        }
+        // If lizard is available globally (in PATH), return its name so callers can invoke it.
+        if (this.isCommandAvailable('lizard')) {
+            return 'lizard';
+        }
+        return null;
+    }
     async ensureServerInstalled() {
         const existingPath = this.getServerPath();
         if (existingPath) {
@@ -104,6 +117,51 @@ class AccServerDownloader {
             return null;
         }
         return await this.downloadServer();
+    }
+    async ensureLizardInstalled() {
+        const existingPath = this.getLizardPath();
+        if (existingPath) {
+            this.outputChannel.appendLine(`Lizard found at: ${existingPath}`);
+            return existingPath;
+        }
+        this.outputChannel.appendLine('Lizard not found.');
+        const result = await vscode.window.showInformationMessage('Lizard not found. Install via pip?', 'Install via pip', 'Cancel');
+        if (result === 'Install via pip') {
+            const ok = await this.installLizardViaPip();
+            if (ok && this.isCommandAvailable('lizard')) {
+                return 'lizard';
+            }
+            vscode.window.showErrorMessage('Failed to install lizard via pip. Install manually and retry.');
+            return null;
+        }
+        return null;
+    }
+    installLizardViaPip() {
+        return new Promise((resolve) => {
+            const pyCandidates = ['python3', 'python'];
+            const python = pyCandidates.find(p => this.isCommandAvailable(p));
+            if (!python) {
+                vscode.window.showErrorMessage('Python not found in PATH. Install Python to use pip.');
+                resolve(false);
+                return;
+            }
+            vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'Installing lizard via pip...',
+                cancellable: false
+            }, (progress) => {
+                return new Promise((innerResolve) => {
+                    const args = ['-m', 'pip', 'install', '--upgrade', '--user', 'lizard'];
+                    const proc = child_process.spawn(python, args);
+                    proc.stdout.on('data', (d) => this.outputChannel.appendLine(d.toString()));
+                    proc.stderr.on('data', (d) => this.outputChannel.appendLine(d.toString()));
+                    proc.on('close', (code) => {
+                        innerResolve();
+                        resolve(code === 0);
+                    });
+                });
+            });
+        });
     }
     async downloadServer() {
         const platformInfo = this.getPlatformInfo();
@@ -207,6 +265,16 @@ class AccServerDownloader {
                 reject(err);
             });
         });
+    }
+    isCommandAvailable(cmd) {
+        try {
+            const which = process.platform === 'win32' ? 'where' : 'which';
+            const res = child_process.spawnSync(which, [cmd], { encoding: 'utf8' });
+            return res.status === 0 && !!res.stdout && res.stdout.trim().length > 0;
+        }
+        catch {
+            return false;
+        }
     }
 }
 exports.AccServerDownloader = AccServerDownloader;

@@ -36,13 +36,17 @@ public class AvecCalculator
         );
 
         // Test bonus: average of line and branch coverage
-        var testBonus = (m.TestLineCoverage / 100.0) * 0.5 + (m.TestBranchCoverage / 100.0) * 0.5;
+        var testBonus =
+            (m.TestLineCoverage / _weights.Stability.TestLineCoverageNormalize)
+                * _weights.Stability.TestLineCoverageWeight
+            + (m.TestBranchCoverage / _weights.Stability.TestBranchCoverageNormalize)
+                * _weights.Stability.TestBranchCoverageWeight;
 
         // Combine weighted factors
         var stability =
             (1 - churnPenalty * _weights.Stability.ChurnWeight)
             * (1 - contributorPenalty * _weights.Stability.ContributorWeight)
-            * (0.5 + testBonus * _weights.Stability.TestWeight);
+            * (_weights.Stability.TestBaseBias + testBonus * _weights.Stability.TestWeight);
 
         return Clamp(stability, 0, 1);
     }
@@ -71,24 +75,37 @@ public class AvecCalculator
         var centrality = m.IncomingEdges / (double)totalDegree;
         var dependencyLoad = Math.Min(m.IncomingEdges / (double)_weights.Friction.IncomingCap, 1.0);
 
-        var structuralFriction = (centrality * 0.4) + (dependencyLoad * 0.6);
+        var structuralFriction =
+            (centrality * _weights.Friction.CentralityWeight)
+            + (dependencyLoad * _weights.Friction.DependencyWeight);
 
         // 2. Process Friction (Git) - Is this a "Hotspot"?
         // High commits + Many contributors = High coordination friction.
-        var churn = Math.Min(m.GitTotalCommits / 50.0, 1.0);
-        var collaborationDensity = Math.Min(m.GitContributors / 10.0, 1.0);
+        var churn = Math.Min(m.GitTotalCommits / _weights.Friction.GitTotalCommitsNormalize, 1.0);
+        var collaborationDensity = Math.Min(
+            m.GitContributors / _weights.Friction.GitContributorsNormalize,
+            1.0
+        );
 
-        var processFriction = (churn * 0.7) + (collaborationDensity * 0.3);
+        var processFriction =
+            (churn * _weights.Friction.ChurnWeight)
+            + (collaborationDensity * _weights.Friction.CollaborationNormalize);
 
         // 3. Cognitive Friction (Lizard/Metrics) - Is it a "Brain Drain"?
         // High complexity per line makes it harder to reason about.
         var density = m.LinesOfCode > 0 ? (double)m.CyclomaticComplexity / m.LinesOfCode : 0;
-        var cognitiveFriction = Math.Min(m.CyclomaticComplexity / 20.0, 1.0);
+
+        var cognitiveFriction = Math.Min(
+            m.CyclomaticComplexity / _weights.Friction.CyclomaticComplexityWeight,
+            1.0
+        );
 
         // 4. Final Weighted Friction
-        // 40% Architecture, 30% Team/History, 30% Code Quality
+        // Default: 40% Architecture, 30% Team/History, 30% Code Quality
         var friction =
-            (structuralFriction * 0.4) + (processFriction * 0.3) + (cognitiveFriction * 0.3);
+            (structuralFriction * _weights.Friction.StructuralFrictionWeight)
+            + (processFriction * _weights.Friction.ProcessFrictionWeight)
+            + (cognitiveFriction * _weights.Friction.CognitiveFrictionWeight);
 
         return Clamp(friction, 0, 1);
     }
@@ -99,12 +116,17 @@ public class AvecCalculator
         var dependencyRatio = m.OutgoingEdges / (double)totalDegree;
 
         // 2. The "Blast Radius" Penalty
-        // If a file has 30 outgoing edges, even if the ratio is okay,
+        // Default: If a file has 30 outgoing edges, even if the ratio is okay,
         // it's still "Fragile" because any of those 30 files could break it.
-        var blastRadius = Math.Min(m.OutgoingEdges / 30.0, 1.0);
+        var blastRadius = Math.Min(
+            m.OutgoingEdges / (double)_weights.Autonomy.FileNumberBlastRadius,
+            1.0
+        );
 
-        // Weighted Autonomy: 80% Ratio, 20% Absolute Count
-        var autonomy = (1 - dependencyRatio) * 0.8 + (1 - blastRadius) * 0.2;
+        // Weighted Autonomy - Default: 80% Ratio, 20% Absolute Count
+        var autonomy =
+            (1 - dependencyRatio) * _weights.Autonomy.DependencyRatio
+            + (1 - blastRadius) * _weights.Autonomy.DependencyRatio;
         return Clamp(autonomy, 0, 1);
     }
 

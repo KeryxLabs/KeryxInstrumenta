@@ -5,6 +5,7 @@ using AdaptiveCodecContextEngine.Models.Git;
 using AdaptiveCodecContextEngine.Models.Lsp;
 using AdaptiveCodecContextEngine.Models.Surreal;
 using Dahomey.Cbor.Serialization.Converters;
+using LibGit2Sharp;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -48,7 +49,7 @@ var surrealSettings = new SurrealDbSettings();
 builder.Configuration.GetSection("SurrealDb").Bind(surrealSettings);
 
 // --- 2. Bind Configuration (AOT Safe) ---
-builder.Services.Configure<SurrealDbSettings>(builder.Configuration.GetSection("SurrealDb"));
+
 builder.Services.Configure<AccOptions>(builder.Configuration.GetSection("Acc"));
 builder.Services.Configure<AvecWeights>(builder.Configuration.GetSection("AvecWeights"));
 
@@ -68,6 +69,19 @@ if (dbEndpoint.StartsWith("surrealkv://"))
 
 // var repoPathHash =builder.Configuration.GetSection("Acc").Get<AccOptions>()?.RepositoryPath.ComputeStableHash();
 // var dbName = $"{surrealSettings.Database}_{repoPathHash}";
+
+var accOptions =
+    builder.Configuration.GetSection("Acc").Get<AccOptions>()
+    ?? throw new InvalidOperationException("ACC configuration missing");
+
+if (accOptions.UseGitBranchNaming)
+{
+    using var repo = new Repository(accOptions.RepositoryPath);
+    // Get the current branch name using the Head.FriendlyName property
+    string branchName = repo.Head.FriendlyName.Replace("/", "_");
+    surrealSettings.Database = $"{surrealSettings.Database}_{branchName}";
+}
+
 var options = SurrealDbOptions
     .Create()
     .WithEndpoint(dbEndpoint)
@@ -82,12 +96,14 @@ if (surrealSettings.Remote)
 else
     builder.Services.AddSurreal(options).AddSurrealKvProvider();
 
+builder.Services.Configure<SurrealDbSettings>(builder.Configuration.GetSection("SurrealDb"));
+
 // --- 4. Register Services ---
 // Channels
 builder
     .Services.AddSingleton(_ =>
         Channel.CreateBounded<LspMessageWithContext>(
-            new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait }
+            new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.Wait }
         )
     )
     .AddSingleton(_ =>
@@ -97,12 +113,12 @@ builder
     )
     .AddSingleton(_ =>
         Channel.CreateBounded<NodeUpdateWithContext>(
-            new BoundedChannelOptions(2000) { FullMode = BoundedChannelFullMode.Wait }
+            new BoundedChannelOptions(500) { FullMode = BoundedChannelFullMode.Wait }
         )
     )
     .AddSingleton(_ =>
         Channel.CreateBounded<DependencyEdgeWithContext>(
-            new BoundedChannelOptions(2000) { FullMode = BoundedChannelFullMode.Wait }
+            new BoundedChannelOptions(500) { FullMode = BoundedChannelFullMode.Wait }
         )
     );
 
@@ -141,6 +157,7 @@ public class AccOptions
     public AvecTarget? Target { get; set; }
     public string[] FileExtensions { get; set; } = [];
     public List<LspStreamConfig> LspStreams { get; set; } = [];
+    public bool UseGitBranchNaming { get; set; } = true;
 }
 
 public class AvecTarget
