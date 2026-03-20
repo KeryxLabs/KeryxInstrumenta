@@ -143,18 +143,6 @@ public class LspStreamManager
 
     private async Task ListenStdinAsync(LspStreamListener listener, CancellationToken ct)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(
-            nameof(ListenStdinAsync)
-        );
-        activity?.SetTag("lsp.stream.type", LspStreamType.Stdin.ToString());
-        activity?.SetTag("lsp.language", listener.Language);
-        activity?.AddEvent(
-            new ActivityEvent(
-                "Listening on stdin",
-                tags: new() { ["language"] = listener.Language }
-            )
-        );
-
         var stdin = Console.OpenStandardInput();
         await listener.ListenAsync(stdin, ct);
     }
@@ -165,17 +153,10 @@ public class LspStreamManager
         CancellationToken ct
     )
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(
-            nameof(ListenNamedPipeAsync)
-        );
-        activity?.SetTag("lsp.stream.type", LspStreamType.Pipe.ToString());
-        activity?.SetTag("lsp.language", listener.Language);
 #if WINDOWS
         var pipe = new NamedPipeClientStream(".", pipeName, PipeDirection.In);
         await pipe.ConnectAsync(ct);
-        activity?.AddEvent(
-            new ActivityEvent("NamedPipeConnected", tags: new() { ["pipe.name"] = pipeName })
-        );
+
         await listener.ListenAsync(pipe, ct);
 #else
         // Unix domain socket
@@ -184,9 +165,6 @@ public class LspStreamManager
         // Wait for socket to exist (editor might create it)
         while (!File.Exists(socketPath) && !ct.IsCancellationRequested)
         {
-            activity?.AddEvent(
-                new ActivityEvent("WaitingForSocket", tags: new() { ["socket.path"] = socketPath })
-            );
             _logger.LogDebug("Waiting for socket: {SocketPath}", socketPath);
             await Task.Delay(100, ct);
         }
@@ -199,21 +177,12 @@ public class LspStreamManager
                 ProtocolType.Unspecified
             );
             await socket.ConnectAsync(new UnixDomainSocketEndPoint(socketPath), ct);
-            activity?.AddEvent(
-                new ActivityEvent("SocketConnected", tags: new() { ["socket.path"] = socketPath })
-            );
+
             var stream = new NetworkStream(socket, ownsSocket: true);
             await listener.ListenAsync(stream, ct);
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.AddEvent(
-                new ActivityEvent(
-                    "SocketError",
-                    tags: new() { ["socket.path"] = socketPath, ["error.message"] = ex.Message }
-                )
-            );
             _logger.LogError(ex, "Error connecting to socket: {SocketPath}", socketPath);
             throw;
         }
@@ -222,26 +191,15 @@ public class LspStreamManager
 
     private async Task ListenTcpAsync(LspStreamListener listener, int port, CancellationToken ct)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(ListenTcpAsync));
-        activity?.SetTag("lsp.stream.type", LspStreamType.Tcp.ToString());
-        activity?.SetTag("lsp.language", listener.Language);
-        activity?.SetTag("tcp.port", port);
-
         var tcpListener = new TcpListener(IPAddress.Loopback, port);
 
         try
         {
             tcpListener.Start();
-            activity?.AddEvent(
-                new ActivityEvent("TcpListenerStarted", tags: new() { ["port"] = port })
-            );
 
             while (!ct.IsCancellationRequested)
             {
                 var client = await tcpListener.AcceptTcpClientAsync(ct);
-                activity?.AddEvent(
-                    new ActivityEvent("ClientConnected", tags: new() { ["port"] = port })
-                );
 
                 // Handle each client in a separate task so we can accept more connections
                 _ = Task.Run(
@@ -254,25 +212,11 @@ public class LspStreamManager
                         }
                         catch (Exception ex)
                         {
-                            activity?.AddEvent(
-                                new ActivityEvent(
-                                    "ClientHandlerError",
-                                    tags: new() { ["port"] = port, ["error.message"] = ex.Message }
-                                )
-                            );
-                            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
                             _logger.LogError(ex, "Error handling client on port {Port}", port);
                         }
                         finally
                         {
                             client.Close();
-                            activity?.AddEvent(
-                                new ActivityEvent(
-                                    "ClientDisconnected",
-                                    tags: new() { ["port"] = port }
-                                )
-                            );
-                            activity?.SetStatus(ActivityStatusCode.Ok);
                         }
                     },
                     ct
@@ -281,28 +225,15 @@ public class LspStreamManager
         }
         catch (OperationCanceledException)
         {
-            activity?.SetStatus(ActivityStatusCode.Ok, "Listener cancelled");
-            activity?.AddEvent(
-                new ActivityEvent("TCP listener cancelled on port", tags: new() { ["port"] = port })
-            );
+            _logger.LogTrace("TCP Listeting cancelled.");
         }
         catch (Exception ex)
         {
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            activity?.AddEvent(
-                new ActivityEvent(
-                    "TcpListenerError",
-                    tags: new() { ["port"] = port, ["error.message"] = ex.Message }
-                )
-            );
+            _logger.LogError(ex, "Error while listenting on tcp.");
         }
         finally
         {
             tcpListener.Stop();
-            activity?.AddEvent(
-                new ActivityEvent("TcpListenerStopped", tags: new() { ["port"] = port })
-            );
-            activity?.SetStatus(ActivityStatusCode.Ok, "Listener Stopped");
         }
     }
 

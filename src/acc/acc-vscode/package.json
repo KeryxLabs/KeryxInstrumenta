@@ -1,7 +1,7 @@
 {
   "name": "acc-vscode",
   "displayName": "ACC - Adaptive Codec Context",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "KeryxLabs",
   "repository": {
     "type": "git",
@@ -77,6 +77,125 @@
           "type":"string",
           "description": "The endpoint for collecting OTEL telemetry. Usually an otel collector or a sink",
           "default":"localhost:4317"
+        }
+        ,
+        "acc.avecWeights.override": {
+          "type": "boolean",
+          "description": "When true, pass configured AvecWeights flags to the ACC engine (overrides engine defaults)",
+          "default": false
+        }
+        ,
+        "acc.avecWeights.stability.churnWeight": {
+          "type": "number",
+          "default": 0.4
+        },
+        "acc.avecWeights.stability.contributorWeight": {
+          "type": "number",
+          "default": 0.3
+        },
+        "acc.avecWeights.stability.testWeight": {
+          "type": "number",
+          "default": 0.3
+        },
+        "acc.avecWeights.stability.churnNormalize": {
+          "type": "number",
+          "default": 10
+        },
+        "acc.avecWeights.stability.testLineCoverageNormalize": {
+          "type": "number",
+          "default": 100.0
+        },
+        "acc.avecWeights.stability.testLineCoverageWeight": {
+          "type": "number",
+          "default": 0.5
+        },
+        "acc.avecWeights.stability.testBranchCoverageNormalize": {
+          "type": "number",
+          "default": 100.0
+        },
+        "acc.avecWeights.stability.testBranchCoverageWeight": {
+          "type": "number",
+          "default": 0.5
+        },
+        "acc.avecWeights.stability.testBaseBias": {
+          "type": "number",
+          "default": 0.5
+        },
+        "acc.avecWeights.stability.contributorCap": {
+          "type": "number",
+          "default": 5
+        },
+        "acc.avecWeights.logic.complexityWeight": {
+          "type": "number",
+          "default": 0.7
+        },
+        "acc.avecWeights.logic.parameterWeight": {
+          "type": "number",
+          "default": 0.3
+        },
+        "acc.avecWeights.logic.locDivisor": {
+          "type": "number",
+          "default": 10
+        },
+        "acc.avecWeights.logic.parameterCap": {
+          "type": "number",
+          "default": 5
+        },
+        "acc.avecWeights.friction.centralityWeight": {
+          "type": "number",
+          "default": 0.4
+        },
+        "acc.avecWeights.friction.dependencyWeight": {
+          "type": "number",
+          "default": 0.6
+        },
+        "acc.avecWeights.friction.churnWeight": {
+          "type": "number",
+          "default": 0.7
+        },
+        "acc.avecWeights.friction.collaborationNormalize": {
+          "type": "number",
+          "default": 0.3
+        },
+        "acc.avecWeights.friction.structuralFrictionWeight": {
+          "type": "number",
+          "default": 0.4
+        },
+        "acc.avecWeights.friction.processFrictionWeight": {
+          "type": "number",
+          "default": 0.3
+        },
+        "acc.avecWeights.friction.cognitiveFrictionWeight": {
+          "type": "number",
+          "default": 0.3
+        },
+        "acc.avecWeights.friction.cyclomaticComplexityWeight": {
+          "type": "number",
+          "default": 20.0
+        },
+        "acc.avecWeights.friction.gitContributorsNormalize": {
+          "type": "number",
+          "default": 10.0
+        },
+        "acc.avecWeights.friction.gitTotalCommitsNormalize": {
+          "type": "number",
+          "default": 50.0
+        },
+        "acc.avecWeights.friction.incomingCap": {
+          "type": "number",
+          "default": 10
+        },
+        "acc.avecWeights.autonomy.fileNumberBlastRadius": {
+          "type": "number",
+          "default": 30
+        },
+        "acc.avecWeights.autonomy.dependencyRatio": {
+          "type": "number",
+          "default": 0.8
+        },
+        "acc.avecWeights.autonomy.absoluteCount": {
+          "type": "number",
+          "default": 0.2
         }
       }
     }

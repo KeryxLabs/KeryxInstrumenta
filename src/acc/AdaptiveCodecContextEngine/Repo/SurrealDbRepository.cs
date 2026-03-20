@@ -39,7 +39,7 @@ public class SurrealDbRepository
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Initializing SurrealDB schema...");
-        await _db.Use(_settings.Namespace, _settings.Database, cancellationToken);
+        //await _db.Use(_settings.Namespace, _settings.Database, cancellationToken);
 
         if (!_schemaInitialized)
         {

@@ -8,6 +8,13 @@ let accProcess: ChildProcess | undefined;
 let accClient: AccClient | undefined;
 let downloader: AccServerDownloader;
 let outputChannel: vscode.OutputChannel;
+// Windows: \\.\pipe\your-pipe-name
+// Unix: /tmp/your-pipe.sock
+const PIPE_PATH = process.platform === 'win32'
+  ? "\\\\.\\pipe\\acc-engine"
+  : "/tmp/acc-engine.sock";
+
+let pipeSocket: net.Socket | null = null;
 
 export async function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel("ACC");
@@ -158,6 +165,102 @@ async function startAccEngine(
     args.push(config.get<string>("telemetry.endpoint", "localhost:4317"));
   }
 
+  // Append AvecWeights flags from user settings only when override enabled
+  const overrideAvec = config.get<boolean>("avecWeights.override", false);
+  if (overrideAvec) {
+    try {
+    // Stability
+    args.push("--AvecWeights:Stability:ChurnWeight");
+    args.push(config.get<number>("avecWeights.stability.churnWeight", 0.4).toString());
+
+    args.push("--AvecWeights:Stability:ContributorWeight");
+    args.push(config.get<number>("avecWeights.stability.contributorWeight", 0.3).toString());
+
+    args.push("--AvecWeights:Stability:TestWeight");
+    args.push(config.get<number>("avecWeights.stability.testWeight", 0.3).toString());
+
+    args.push("--AvecWeights:Stability:ChurnNormalize");
+    args.push(config.get<number>("avecWeights.stability.churnNormalize", 10).toString());
+
+    args.push("--AvecWeights:Stability:TestLineCoverageNormalize");
+    args.push(config.get<number>("avecWeights.stability.testLineCoverageNormalize", 100.0).toString());
+
+    args.push("--AvecWeights:Stability:TestLineCoverageWeight");
+    args.push(config.get<number>("avecWeights.stability.testLineCoverageWeight", 0.5).toString());
+
+    args.push("--AvecWeights:Stability:TestBranchCoverageNormalize");
+    args.push(config.get<number>("avecWeights.stability.testBranchCoverageNormalize", 100.0).toString());
+
+    args.push("--AvecWeights:Stability:TestBranchCoverageWeight");
+    args.push(config.get<number>("avecWeights.stability.testBranchCoverageWeight", 0.5).toString());
+
+    args.push("--AvecWeights:Stability:TestBaseBias");
+    args.push(config.get<number>("avecWeights.stability.testBaseBias", 0.5).toString());
+
+    args.push("--AvecWeights:Stability:ContributorCap");
+    args.push(config.get<number>("avecWeights.stability.contributorCap", 5).toString());
+
+    // Logic
+    args.push("--AvecWeights:Logic:ComplexityWeight");
+    args.push(config.get<number>("avecWeights.logic.complexityWeight", 0.7).toString());
+
+    args.push("--AvecWeights:Logic:ParameterWeight");
+    args.push(config.get<number>("avecWeights.logic.parameterWeight", 0.3).toString());
+
+    args.push("--AvecWeights:Logic:LocDivisor");
+    args.push(config.get<number>("avecWeights.logic.locDivisor", 10).toString());
+
+    args.push("--AvecWeights:Logic:ParameterCap");
+    args.push(config.get<number>("avecWeights.logic.parameterCap", 5).toString());
+
+    // Friction
+    args.push("--AvecWeights:Friction:CentralityWeight");
+    args.push(config.get<number>("avecWeights.friction.centralityWeight", 0.4).toString());
+
+    args.push("--AvecWeights:Friction:DependencyWeight");
+    args.push(config.get<number>("avecWeights.friction.dependencyWeight", 0.6).toString());
+
+    args.push("--AvecWeights:Friction:ChurnWeight");
+    args.push(config.get<number>("avecWeights.friction.churnWeight", 0.7).toString());
+
+    args.push("--AvecWeights:Friction:CollaborationNormalize");
+    args.push(config.get<number>("avecWeights.friction.collaborationNormalize", 0.3).toString());
+
+    args.push("--AvecWeights:Friction:StructuralFrictionWeight");
+    args.push(config.get<number>("avecWeights.friction.structuralFrictionWeight", 0.4).toString());
+
+    args.push("--AvecWeights:Friction:ProcessFrictionWeight");
+    args.push(config.get<number>("avecWeights.friction.processFrictionWeight", 0.3).toString());
+
+    args.push("--AvecWeights:Friction:CognitiveFrictionWeight");
+    args.push(config.get<number>("avecWeights.friction.cognitiveFrictionWeight", 0.3).toString());
+
+    args.push("--AvecWeights:Friction:CyclomaticComplexityWeight");
+    args.push(config.get<number>("avecWeights.friction.cyclomaticComplexityWeight", 20.0).toString());
+
+    args.push("--AvecWeights:Friction:GitContributorsNormalize");
+    args.push(config.get<number>("avecWeights.friction.gitContributorsNormalize", 10.0).toString());
+
+    args.push("--AvecWeights:Friction:GitTotalCommitsNormalize");
+    args.push(config.get<number>("avecWeights.friction.gitTotalCommitsNormalize", 50.0).toString());
+
+    args.push("--AvecWeights:Friction:IncomingCap");
+    args.push(config.get<number>("avecWeights.friction.incomingCap", 10).toString());
+
+    // Autonomy
+    args.push("--AvecWeights:Autonomy:FileNumberBlastRadius");
+    args.push(config.get<number>("avecWeights.autonomy.fileNumberBlastRadius", 30).toString());
+
+    args.push("--AvecWeights:Autonomy:DependencyRatio");
+    args.push(config.get<number>("avecWeights.autonomy.dependencyRatio", 0.8).toString());
+
+    args.push("--AvecWeights:Autonomy:AbsoluteCount");
+    args.push(config.get<number>("avecWeights.autonomy.absoluteCount", 0.2).toString());
+    } catch (err) {
+      console.error("Error appending AvecWeights flags:", err);
+    }
+  }
+
   outputChannel.appendLine(`Starting ACC server: ${serverPath}`);
   outputChannel.appendLine(`Args: ${args.join(" ")}`);
 
@@ -204,42 +307,47 @@ async function startAccEngine(
 }
 async function tapAndForwardSymbols(uri: vscode.Uri) {
   try {
-    // 1. Get document symbols from VSCode's LSP
-    const symbols = await vscode.commands.executeCommand<
-      vscode.DocumentSymbol[]
-    >("vscode.executeDocumentSymbolProvider", uri);
+    const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
+      "vscode.executeDocumentSymbolProvider",
+      uri
+    );
 
-    if (!symbols || symbols.length === 0) {
-      console.log("No symbols found for", uri.fsPath);
-      return;
-    }
+    if (!symbols?.length) return;
 
-    console.log(`Tapped ${symbols.length} symbols from ${uri.fsPath}`);
+    // --- NEW: Filter for relevance ---
+    const relevantKinds = [
+      vscode.SymbolKind.Class,
+      vscode.SymbolKind.Interface,
+      vscode.SymbolKind.Function,
+      vscode.SymbolKind.Method,
+    ];
 
-    // 2. Convert to LSP message format
+    // Only keep top-level or structural symbols
+    const filteredSymbols = symbols.filter(s => relevantKinds.includes(s.kind));
+
+    console.log(`Filtered down to ${filteredSymbols.length} relevant symbols.`);
+
     const lspMessage = {
       jsonrpc: "2.0",
       id: Date.now(),
       method: "textDocument/documentSymbol",
-      params: {
-        textDocument: {
-          uri: uri.toString(),
-        },
-      },
-      result: symbols.map(convertSymbol),
+      params: { textDocument: { uri: uri.toString() } },
+      result: filteredSymbols.map(convertSymbol),
     };
 
-    // 3. Forward to ACC
     await forwardToAcc(lspMessage);
 
-    // 4. Get references for each symbol to build edges
-    for (const symbol of symbols) {
+    // --- NEW: Batching or Throttling ---
+    // Process only the filtered list to avoid the "insane" output
+    for (const symbol of filteredSymbols) {
       await tapAndForwardReferences(uri, symbol);
+       await new Promise(r => setTimeout(r, 5));
     }
   } catch (err) {
     console.error("Error tapping symbols:", err);
   }
 }
+
 
 async function tapAndForwardReferences(
   uri: vscode.Uri,
@@ -316,25 +424,41 @@ function convertSymbol(symbol: vscode.DocumentSymbol): any {
   };
 }
 
-async function forwardToAcc(message: any) {
-  return new Promise<void>((resolve, reject) => {
-    const socket = net.connect(9340, "localhost");
 
-    const content = JSON.stringify(message);
-    const header = `Content-Length: ${content.length}\r\n\r\n`;
-    const fullMessage = header + content;
+async function getPipe(): Promise<net.Socket> {
+  if (pipeSocket && !pipeSocket.destroyed) return pipeSocket;
 
-    socket.on("connect", () => {
-      socket.write(fullMessage);
-      socket.end();
-      resolve();
+  return new Promise((resolve, reject) => {
+    pipeSocket = net.connect(PIPE_PATH, () => {
+      console.log("Connected to ACC Engine via Pipe");
+      resolve(pipeSocket!);
     });
 
-    socket.on("error", (err) => {
-      console.error("Error forwarding to ACC:", err);
+    pipeSocket.on('error', (err) => {
+      pipeSocket = null;
       reject(err);
     });
+
+    // Auto-cleanup on close
+    pipeSocket.on('end', () => { pipeSocket = null; });
   });
+}
+async function forwardToAcc(message: any) {
+  try {
+    const socket = await getPipe();
+
+    // 1. Stringify once
+    const content = JSON.stringify(message);
+
+    // 2. Use Buffer.byteLength (Crucial for C# parsing logic!)
+    const contentLength = Buffer.byteLength(content, 'utf8');
+    const header = `Content-Length: ${contentLength}\r\n\r\n`;
+
+    // 3. Write as one atomic chunk to the pipe
+    socket.write(header + content);
+  } catch (err) {
+    console.error("Failed to pipe data to engine:", err);
+  }
 }
 
 async function buildDependencyGraph() {
@@ -472,7 +596,7 @@ class AccClient {
     return this.rpcCall("acc.registerLspStream", {
       type: "tcp",
       language,
-      port,
+      path: PIPE_PATH,
     });
   }
 

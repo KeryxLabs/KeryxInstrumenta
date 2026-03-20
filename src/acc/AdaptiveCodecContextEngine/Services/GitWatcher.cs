@@ -91,16 +91,15 @@ public class GitWatcher
 
     private void OnFileChanged(object sender, FileSystemEventArgs e)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(OnFileChanged));
-        activity?.SetTag("file.path", e.FullPath);
-        activity?.SetTag("file.change", e.ChangeType.ToString());
-
         // Filter by language extension
         if (!IsRelevantFile(e.FullPath))
         {
             _logger.LogTrace("Ignoring file: {FilePath}", e.FullPath);
             return;
         }
+        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(OnFileChanged));
+        activity?.SetTag("file.path", e.FullPath);
+        activity?.SetTag("file.change", e.ChangeType.ToString());
 
         var written = _eventChannel.Writer.TryWrite(
             new GitEventWithContext(
@@ -121,15 +120,14 @@ public class GitWatcher
 
     private void OnFileRenamed(object sender, RenamedEventArgs e)
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(OnFileRenamed));
-        activity?.SetTag("file.old", e.OldFullPath);
-        activity?.SetTag("file.new", e.FullPath);
-
         if (!IsRelevantFile(e.FullPath))
         {
             _logger.LogTrace("Ignoring renamed file: {FilePath}", e.FullPath);
             return;
         }
+        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(OnFileRenamed));
+        activity?.SetTag("file.old", e.OldFullPath);
+        activity?.SetTag("file.new", e.FullPath);
 
         var written = _eventChannel.Writer.TryWrite(
             new GitEventWithContext(
