@@ -4,6 +4,8 @@ ACC for VS Code auto-launches the ACC engine for your workspace and gives you in
 
 It is designed to reduce "search by grep + memory" workflows by providing dimensional code intelligence directly from the command palette.
 
+Download now from our release tags!!
+
 ## What It Does
 
 - Auto-checks for an ACC server binary on startup
