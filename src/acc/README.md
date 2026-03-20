@@ -15,7 +15,8 @@ ACC (Adaptive Codec Context) transforms codebases into a **dimensional semantic 
 These dimensions form **AVEC** (Attractor Vector Encoding Configuration) - coordinates in a 4D space that describe a node's architectural characteristics.
 
 ## Grafana Dashboard - Real Time Tracking Of Codebase Health
-<img width="1884" height="1005" alt="image" src="https://github.com/user-attachments/assets/a67e36c4-7c7d-41d9-849e-eaab4cbcec40" />
+<img width="1920" height="1080" alt="screenshot-2026-03-19_21-51-48" src="https://github.com/user-attachments/assets/9ff0b6ec-02a6-48fe-822e-81b5559e4b73" />
+
 
 
 
