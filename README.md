@@ -211,6 +211,12 @@ Use AVEC pattern matching to find similarly fragile, complex, or high-impact nod
 
 Use ACC output as structured context for planning, review, and change impact analysis, then pair with `sttp-mcp` for long-horizon session continuity.
 
+
+## Real time health analysis of codebase
+### Track your changes as you code within grafana
+<img width="1920" height="1080" alt="screenshot-2026-03-19_21-51-48" src="https://github.com/user-attachments/assets/51b3d2a2-35e8-4eec-a8c3-cb91a1900122" />
+
+
 ---
 
 ## Instruments
