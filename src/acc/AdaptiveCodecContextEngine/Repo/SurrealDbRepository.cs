@@ -163,8 +163,6 @@ public class SurrealDbRepository
         );
 
         _logger.LogPossibleDbWriteError(response);
-
-        _logger.LogPossibleDbWriteError(response);
         // Event: Recalculate AVEC when metrics change
         response = await _db.RawQuery(
             @"

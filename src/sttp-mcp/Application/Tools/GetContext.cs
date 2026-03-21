@@ -1,42 +1,43 @@
+using System.ComponentModel;
+using Microsoft.Extensions.Logging;
+using ModelContextProtocol.Server;
 using SttpMcp.Domain.Contracts;
 using SttpMcp.Domain.Models;
-using System.ComponentModel;
-using ModelContextProtocol.Server;
-using Microsoft.Extensions.Logging;
-
-
 
 namespace SttpMcp.Application.Tools;
 
 public sealed class GetContextTool(INodeStore store, ILogger<GetContextTool> logger)
 {
-    [McpServerTool(Name = "get_context"), Description("""
-        Retrieve persisted context for this session.
+    [
+        McpServerTool(Name = "get_context"),
+        Description(
+            """
+                Retrieve persisted context for this session.
 
-        Returns the most resonant ⏣ nodes for your current attractor state.
-        Inject retrieved nodes into your active context before responding.
+                Returns the most resonant ⏣ nodes for your current attractor state.
+                Inject retrieved nodes into your active context before responding.
 
-        The nodes are self-sufficient. Read ⊕ → ⦿ → ◈ → ⍉ to reorient from each.
-        The content layer carries what was true. The envelope carries when and who.
-        The metrics carry how faithfully it was compressed.
+                The nodes are self-sufficient. Read ⊕ → ⦿ → ◈ → ⍉ to reorient from each.
+                The content layer carries what was true. The envelope carries when and who.
+                The metrics carry how faithfully it was compressed.
 
-        Provide your current AVEC state so retrieval is calibrated to where you
-        are now — not where the session started.
-        """)]
+                Provide your current AVEC state so retrieval is calibrated to where you
+                are now — not where the session started.
+                """
+        )
+    ]
     public async Task<RetrieveResult> GetAsync(
-        [Description("Session identifier used to scope resonance retrieval.")]
-        string sessionId,
+        [Description("Session identifier used to scope resonance retrieval.")] string sessionId,
         [Description("Current stability weighting (0.0 to 1.0). Use a decimal value.")]
-        float stability,
+            float stability,
         [Description("Current friction weighting (0.0 to 1.0). Use a decimal value.")]
-        float friction,
-        [Description("Current logic weighting (0.0 to 1.0). Use a decimal value.")]
-        float logic,
+            float friction,
+        [Description("Current logic weighting (0.0 to 1.0). Use a decimal value.")] float logic,
         [Description("Current autonomy weighting (0.0 to 1.0). Use a decimal value.")]
-        float autonomy,
-        [Description("Maximum nodes to retrieve. Default 5.")]
-        int limit = 5,
-        CancellationToken ct = default)
+            float autonomy,
+        [Description("Maximum nodes to retrieve. Default 5.")] int limit = 5,
+        CancellationToken ct = default
+    )
     {
         try
         {
@@ -45,7 +46,7 @@ public sealed class GetContextTool(INodeStore store, ILogger<GetContextTool> log
                 Stability = stability,
                 Friction = friction,
                 Logic = logic,
-                Autonomy = autonomy
+                Autonomy = autonomy,
             };
 
             var nodes = await store.GetByResonanceAsync(sessionId, current, limit, ct);
@@ -55,7 +56,12 @@ public sealed class GetContextTool(INodeStore store, ILogger<GetContextTool> log
                 {
                     Nodes = [],
                     Retrieved = 0,
-                    PsiRange = new PsiRange { Min = 0, Max = 0, Average = 0 }
+                    PsiRange = new PsiRange
+                    {
+                        Min = 0,
+                        Max = 0,
+                        Average = 0,
+                    },
                 };
 
             var psiValues = nodes.Select(n => n.Psi).ToList();
@@ -68,8 +74,8 @@ public sealed class GetContextTool(INodeStore store, ILogger<GetContextTool> log
                 {
                     Min = psiValues.Min(),
                     Max = psiValues.Max(),
-                    Average = psiValues.Average()
-                }
+                    Average = psiValues.Average(),
+                },
             };
         }
         catch (Exception ex)
@@ -79,7 +85,12 @@ public sealed class GetContextTool(INodeStore store, ILogger<GetContextTool> log
             {
                 Nodes = [],
                 Retrieved = 0,
-                PsiRange = new PsiRange { Min = 0, Max = 0, Average = 0 }
+                PsiRange = new PsiRange
+                {
+                    Min = 0,
+                    Max = 0,
+                    Average = 0,
+                },
             };
         }
     }

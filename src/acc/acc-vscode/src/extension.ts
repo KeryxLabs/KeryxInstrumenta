@@ -10,11 +10,14 @@ let downloader: AccServerDownloader;
 let outputChannel: vscode.OutputChannel;
 // Windows: \\.\pipe\your-pipe-name
 // Unix: /tmp/your-pipe.sock
-const PIPE_PATH = process.platform === 'win32'
-  ? "\\\\.\\pipe\\acc-engine"
-  : "/tmp/acc-engine.sock";
+function getPipePath(language: string): string {
+  return process.platform === 'win32'
+    ? `\\\\.\\pipe\\acc-engine-${language}`
+    : `/tmp/acc-engine-${language}.sock`;
+}
 
-let pipeSocket: net.Socket | null = null;
+const pipeSockets = new Map<string, net.Socket>();
+const registeredLanguages = new Set<string>();
 
 export async function activate(context: vscode.ExtensionContext) {
   outputChannel = vscode.window.createOutputChannel("ACC");
@@ -60,14 +63,13 @@ export async function activate(context: vscode.ExtensionContext) {
   setTimeout(() => {
     accClient = new AccClient("localhost", 9339);
 
-    // Register LSP stream
-    const language =
-      vscode.window.activeTextEditor?.document.languageId;
+    // Trigger initial forwarding for the active file.
+    // Language registration happens on-demand inside tapAndForwardSymbols.
+    const activeEditor = vscode.window.activeTextEditor;
+    if (activeEditor) {
+      tapAndForwardSymbols(activeEditor.document.uri);
+    }
 
-      if (language)
-        accClient.registerLspStream(language, 9340);
-
-    // Initial crawl on activation (optional)
     vscode.window.showInformationMessage(
       'ACC: Ready! Run "ACC: Build Dependency Graph" to index your codebase.',
     );
@@ -154,6 +156,10 @@ export function deactivate() {
   if (accProcess) {
     accProcess.kill();
   }
+  for (const socket of pipeSockets.values()) {
+    socket.destroy();
+  }
+  pipeSockets.clear();
 }
 
 // 1. Create the status bar item
@@ -354,6 +360,11 @@ async function startAccEngine(
 }
 async function tapAndForwardSymbols(uri: vscode.Uri) {
   try {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const language = doc.languageId;
+
+    await ensureLanguageRegistered(language);
+
     const symbols = await vscode.commands.executeCommand<vscode.DocumentSymbol[]>(
       "vscode.executeDocumentSymbolProvider",
       uri
@@ -361,7 +372,6 @@ async function tapAndForwardSymbols(uri: vscode.Uri) {
 
     if (!symbols?.length) return;
 
-    // --- NEW: Filter for relevance ---
     const relevantKinds = [
       vscode.SymbolKind.Class,
       vscode.SymbolKind.Interface,
@@ -369,7 +379,6 @@ async function tapAndForwardSymbols(uri: vscode.Uri) {
       vscode.SymbolKind.Method,
     ];
 
-    // Only keep top-level or structural symbols
     const filteredSymbols = symbols.filter(s => relevantKinds.includes(s.kind));
 
     console.log(`Filtered down to ${filteredSymbols.length} relevant symbols.`);
@@ -382,12 +391,10 @@ async function tapAndForwardSymbols(uri: vscode.Uri) {
       result: filteredSymbols.map(convertSymbol),
     };
 
-    await forwardToAcc(lspMessage);
+    await forwardToAcc(lspMessage, language);
 
-    // --- NEW: Batching or Throttling ---
-    // Process only the filtered list to avoid the "insane" output
     for (const symbol of filteredSymbols) {
-      await tapAndForwardReferences(uri, symbol);
+      await tapAndForwardReferences(uri, symbol, language);
       await new Promise(r => setTimeout(r, 5));
     }
   } catch (err) {
@@ -399,6 +406,7 @@ async function tapAndForwardSymbols(uri: vscode.Uri) {
 async function tapAndForwardReferences(
   uri: vscode.Uri,
   symbol: vscode.DocumentSymbol,
+  language: string,
 ) {
   try {
     const refs = await vscode.commands.executeCommand<vscode.Location[]>(
@@ -411,7 +419,6 @@ async function tapAndForwardReferences(
 
     console.log(`Found ${refs.length} references for ${symbol.name}`);
 
-    // Forward reference data to ACC for edge building
     const edgeMessage = {
       jsonrpc: "2.0",
       id: Date.now(),
@@ -436,7 +443,7 @@ async function tapAndForwardReferences(
       })),
     };
 
-    await forwardToAcc(edgeMessage);
+    await forwardToAcc(edgeMessage, language);
   } catch (err) {
     console.error("Error tapping references:", err);
   }
@@ -473,27 +480,41 @@ function convertSymbol(symbol: vscode.DocumentSymbol): any {
 }
 
 
-async function getPipe(): Promise<net.Socket> {
-  if (pipeSocket && !pipeSocket.destroyed) return pipeSocket;
+async function ensureLanguageRegistered(language: string): Promise<void> {
+  if (registeredLanguages.has(language) || !accClient) return;
+  try {
+    await accClient.registerLspStream(language);
+    registeredLanguages.add(language);
+    outputChannel.appendLine(`Registered LSP stream for language: ${language}`);
+  } catch (err) {
+    outputChannel.appendLine(`Failed to register LSP stream for ${language}: ${err}`);
+  }
+}
 
+async function getPipe(language: string): Promise<net.Socket> {
+  const existing = pipeSockets.get(language);
+  if (existing && !existing.destroyed) return existing;
+
+  const pipePath = getPipePath(language);
   return new Promise((resolve, reject) => {
-    pipeSocket = net.connect(PIPE_PATH, () => {
-      console.log("Connected to ACC Engine via Pipe");
-      resolve(pipeSocket!);
+    const socket = net.connect(pipePath, () => {
+      pipeSockets.set(language, socket);
+      console.log(`Connected to ACC Engine via pipe for: ${language}`);
+      resolve(socket);
     });
 
-    pipeSocket.on('error', (err) => {
-      pipeSocket = null;
+    socket.on('error', (err) => {
+      pipeSockets.delete(language);
       reject(err);
     });
 
-    // Auto-cleanup on close
-    pipeSocket.on('end', () => { pipeSocket = null; });
+    socket.on('end', () => { pipeSockets.delete(language); });
+    socket.on('close', () => { pipeSockets.delete(language); });
   });
 }
-async function forwardToAcc(message: any) {
+async function forwardToAcc(message: any, language: string) {
   try {
-    const socket = await getPipe();
+    const socket = await getPipe(language);
 
     // 1. Stringify once
     const content = JSON.stringify(message);
@@ -640,11 +661,11 @@ class AccClient {
     });
   }
 
-  async registerLspStream(language: string, port: number) {
+  async registerLspStream(language: string) {
     return this.rpcCall("acc.registerLspStream", {
       type: "pipe",
       language,
-      path: PIPE_PATH,
+      path: getPipePath(language),
     });
   }
 
