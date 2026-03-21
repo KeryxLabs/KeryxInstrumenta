@@ -12,7 +12,7 @@ public interface IAccQueryService
     /// <param name="nodeId">The unique node identifier (e.g., "UserService.cs:AuthenticateAsync:23")</param>
     /// <returns>The node with all metrics and scores, or null if not found</returns>
     Task<NodeDto?> GetNodeAsync(string nodeId);
-    
+
     /// <summary>
     /// Queries a node and its immediate relationships (incoming and outgoing edges).
     /// </summary>
@@ -20,7 +20,7 @@ public interface IAccQueryService
     /// <param name="includeScores">Whether to include AVEC dimensional scores in the response</param>
     /// <returns>The node with its direct relationships, or null if not found</returns>
     Task<NodeDto?> QueryRelationsAsync(string nodeId, bool includeScores = false);
-    
+
     /// <summary>
     /// Performs graph traversal to find all dependencies of a node (transitive closure).
     /// Useful for impact analysis - "what breaks if I change this?"
@@ -34,8 +34,9 @@ public interface IAccQueryService
         string nodeId,
         DependencyDirection direction = DependencyDirection.Both,
         int maxDepth = -1,
-        bool includeScores = false);
-    
+        bool includeScores = false
+    );
+
     /// <summary>
     /// Finds nodes with similar dimensional profiles using Euclidean distance in 4D AVEC space.
     /// Useful for finding architectural patterns - "show me code similar to this."
@@ -44,7 +45,7 @@ public interface IAccQueryService
     /// <param name="threshold">Similarity threshold from 0.0 (very different) to 1.0 (identical). Default 0.8</param>
     /// <returns>List of nodes clustered near the target profile in dimensional space</returns>
     Task<List<NodeDto>> QueryPatternsAsync(AvecScores targetProfile, double threshold = 0.8);
-    
+
     /// <summary>
     /// Searches for nodes by name using substring matching.
     /// </summary>
@@ -52,7 +53,7 @@ public interface IAccQueryService
     /// <param name="limit">Maximum number of results to return. Default 10</param>
     /// <returns>List of matching nodes</returns>
     Task<List<NodeDto>> SearchByNameAsync(string name, int limit = 10);
-    
+
     /// <summary>
     /// Finds nodes with high friction (many incoming dependencies, central chokepoints).
     /// These are risky to change as they affect many other parts of the codebase.
@@ -61,7 +62,7 @@ public interface IAccQueryService
     /// <param name="limit">Maximum number of results. Default 20</param>
     /// <returns>List of high-friction nodes ordered by friction (highest first)</returns>
     Task<List<NodeDto>> GetNodesWithHighFrictionAsync(double minFriction = 0.7, int limit = 20);
-    
+
     /// <summary>
     /// Finds nodes with low stability (high churn, many contributors, low test coverage).
     /// These are more likely to break or introduce bugs.
@@ -70,7 +71,7 @@ public interface IAccQueryService
     /// <param name="limit">Maximum number of results. Default 20</param>
     /// <returns>List of unstable nodes ordered by stability (lowest first)</returns>
     Task<List<NodeDto>> GetUnstableNodesAsync(double maxStability = 0.4, int limit = 20);
-    
+
     /// <summary>
     /// Retrieves aggregate statistics for the entire project.
     /// Includes total node count and average AVEC scores across all nodes.
@@ -83,55 +84,64 @@ public class AccQueryService : IAccQueryService
 {
     private readonly SurrealDbRepository _repository;
     private readonly ILogger<AccQueryService> _logger;
-    
+
     public AccQueryService(SurrealDbRepository repository, ILogger<AccQueryService> logger)
     {
         _repository = repository;
         _logger = logger;
     }
-    
+
     public async Task<NodeDto?> GetNodeAsync(string nodeId)
     {
         return await _repository.QueryRelationsAsync(nodeId, includeScores: true);
     }
-    
+
     public async Task<NodeDto?> QueryRelationsAsync(string nodeId, bool includeScores = false)
     {
         return await _repository.QueryRelationsAsync(nodeId, includeScores);
     }
-    
+
     public async Task<List<NodeDto>> QueryDependenciesAsync(
         string nodeId,
         DependencyDirection direction = DependencyDirection.Both,
         int maxDepth = -1,
-        bool includeScores = false)
+        bool includeScores = false
+    )
     {
         return await _repository.QueryDependenciesAsync(nodeId, direction, maxDepth, includeScores);
     }
-    
-    public async Task<List<NodeDto>> QueryPatternsAsync(AvecScores targetProfile, double threshold = 0.8)
+
+    public async Task<List<NodeDto>> QueryPatternsAsync(
+        AvecScores targetProfile,
+        double threshold = 0.8
+    )
     {
         return await _repository.QueryPatternsAsync(targetProfile, threshold);
     }
-    
+
     public async Task<List<NodeDto>> SearchByNameAsync(string name, int limit = 10)
     {
         return await _repository.SearchByNameAsync(name, limit);
     }
-    
-    public async Task<List<NodeDto>> GetNodesWithHighFrictionAsync(double minFriction = 0.7, int limit = 20)
+
+    public async Task<List<NodeDto>> GetNodesWithHighFrictionAsync(
+        double minFriction = 0.7,
+        int limit = 20
+    )
     {
         return await _repository.GetNodesWithHighFrictionAsync(minFriction, limit);
     }
-    
-    public async Task<List<NodeDto>> GetUnstableNodesAsync(double maxStability = 0.4, int limit = 20)
+
+    public async Task<List<NodeDto>> GetUnstableNodesAsync(
+        double maxStability = 0.4,
+        int limit = 20
+    )
     {
         return await _repository.GetUnstableNodesAsync(maxStability, limit);
     }
-    
+
     public async Task<ProjectStatsDto> GetProjectStatsAsync()
     {
         return await _repository.GetProjectStatsAsync();
     }
 }
-

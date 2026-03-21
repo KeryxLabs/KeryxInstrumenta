@@ -527,7 +527,7 @@ class AccClient {
     }
     async registerLspStream(language, port) {
         return this.rpcCall("acc.registerLspStream", {
-            type: "tcp",
+            type: "pipe",
             language,
             path: PIPE_PATH,
         });

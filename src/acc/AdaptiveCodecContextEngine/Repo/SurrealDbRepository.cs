@@ -130,6 +130,7 @@ public class SurrealDbRepository
             DEFINE FIELD IF NOT EXISTS created_at ON depends TYPE datetime DEFAULT time::now();
             
             DEFINE INDEX IF NOT EXISTS depends_in_out ON depends FIELDS in, out, relationship_type UNIQUE;
+            DEFINE INDEX IF NOT EXISTS idx_node_lookup ON TABLE node COLUMNS file_path, name, signature;
         ",
             cancellationToken: cancellationToken
         );
@@ -252,8 +253,34 @@ public class SurrealDbRepository
 
         var parameters = new Dictionary<string, object?> { { "data", data } };
 
+        // This would some the identity issue if I figure out how to make it performant enough
+        // var query =
+        //     @"LET $results = (
+        //         FOR $row IN $data {
+        //             LET $existing = (
+        //                 SELECT id FROM node
+        //                 WHERE id = $row.node_id
+        //                 -- Catch renames: same file, same name, same starting line
+        //                 OR (file_path = $row.file_path AND name = $row.name AND line_start = $row.line_start)
+        //                 -- Catch moves: same file, same name (Lizard/Git fallback)
+        //                 OR (file_path = $row.file_path AND name = $row.name)
+        //                 ORDER BY line_start ASC LIMIT 1
+        //             ).id;
+
+        //             IF $existing != NONE {
+        //                 -- If we found it via line_start but the node_id (hash) is different,
+        //                 -- it means a rename happened. We update the node_id and signature.
+        //                 UPDATE $existing MERGE $row SET updated_at = time::now();
+        //             } ELSE {
+        //                 CREATE node CONTENT $row SET created_at = time::now(), updated_at = time::now();
+        //             };
+        //         };
+        //         );
+
+        //         RETURN $results;";
         var result = await _db.RawQuery(
             "INSERT INTO node $data ON DUPLICATE KEY UPDATE updated_at = time::now() RETURN AFTER;",
+            //query,
             parameters,
             cancellationToken: cancellationToken
         );
@@ -261,8 +288,7 @@ public class SurrealDbRepository
         _logger.LogPossibleDbWriteError(result);
 
         var records = result.GetValue<List<NodeRecord>>(0);
-        var rawRecords = result.GetValue<List<object?>>(0);
-        _logger.LogInformation("Raw JSON: {Json}", JsonSerializer.Serialize(rawRecords));
+
         if (records?.Count > 0)
         {
             await BatchRecalculateAsync(
@@ -374,7 +400,6 @@ public class SurrealDbRepository
 
         foreach (var node in nodes)
         {
-            // 2. Perform the C# calculation in memory (Super Fast)
             var metrics = new NodeMetrics
             {
                 LinesOfCode = node.LinesOfCode,
@@ -430,7 +455,6 @@ public class SurrealDbRepository
             );
         }
 
-        // Use INSERT with the array, which SurrealDB optimizes as a bulk-patch
         var avecQuery =
             @"
                         FOR $u IN $updates {

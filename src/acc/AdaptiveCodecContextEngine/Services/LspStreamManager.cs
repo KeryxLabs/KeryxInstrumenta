@@ -275,7 +275,12 @@ public enum LspStreamType
 
 public record LspStreamInfo
 {
+    [JsonPropertyName("stream_id")]
     public string StreamId { get; init; } = null!;
+
+    [JsonPropertyName("language")]
     public string Language { get; init; } = null!;
+
+    [JsonPropertyName("is_active")]
     public bool IsActive { get; init; }
 }

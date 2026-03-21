@@ -1,0 +1,152 @@
+{
+  "$comment": "ACC (AdaptiveCodecContextEngine) LSP Stream JSON-RPC 2.0 Schema Examples",
+  "$comment_lspStreamType": "type accepts: 'Stdin' | 'Pipe' | 'Tcp' (case-insensitive)",
+
+  "methods": {
+
+    "acc.registerLspStream": {
+      "$comment": "Registers an LSP stream. Returns a streamId on success, or an error message on failure.",
+
+      "request_stdin": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "acc.registerLspStream",
+        "params": {
+          "type": "Stdin",
+          "language": "csharp",
+          "path": null,
+          "port": null
+        }
+      },
+
+      "request_pipe": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "acc.registerLspStream",
+        "params": {
+          "type": "Pipe",
+          "language": "csharp",
+          "path": "/tmp/acc-lsp.pipe",
+          "port": null
+        }
+      },
+
+      "request_tcp": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "acc.registerLspStream",
+        "params": {
+          "type": "Tcp",
+          "language": "csharp",
+          "path": null,
+          "port": 2087
+        }
+      },
+
+      "response_success": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "success": true,
+          "streamId": "stream-a1b2c3d4",
+          "error": null
+        }
+      },
+
+      "response_failure": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "success": false,
+          "streamId": null,
+          "error": "Failed to bind to port 2087: address already in use"
+        }
+      }
+    },
+
+    "acc.unregisterLspStream": {
+      "$comment": "Unregisters a previously registered LSP stream by its streamId. Returns a boolean indicating success.",
+
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "acc.unregisterLspStream",
+        "params": {
+          "streamId": "stream-a1b2c3d4"
+        }
+      },
+
+      "response_success": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": true
+      },
+
+      "response_not_found": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": false
+      }
+    },
+
+    "acc.listLspStreams": {
+      "$comment": "Returns all currently registered LSP streams. No params required.",
+
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "acc.listLspStreams"
+      },
+
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": [
+          {
+            "stream_id": "stream-a1b2c3d4",
+            "language": "csharp",
+            "is_active": true
+          },
+          {
+            "stream_id": "stream-e5f6g7h8",
+            "language": "typescript",
+            "is_active": false
+          }
+        ]
+      },
+
+      "response_empty": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": []
+      }
+    }
+  },
+
+  "error_examples": {
+    "missing_params": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "error": {
+        "code": -32602,
+        "message": "Missing params"
+      }
+    },
+    "invalid_params": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "error": {
+        "code": -32602,
+        "message": "Invalid params"
+      }
+    },
+    "method_not_found": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "error": {
+        "code": -32601,
+        "message": "Method not found"
+      }
+    }
+  }
+}

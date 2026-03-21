@@ -62,8 +62,10 @@ export async function activate(context: vscode.ExtensionContext) {
 
     // Register LSP stream
     const language =
-      vscode.window.activeTextEditor?.document.languageId || "csharp";
-    accClient.registerLspStream(language, 9340);
+      vscode.window.activeTextEditor?.document.languageId;
+
+      if (language)
+        accClient.registerLspStream(language, 9340);
 
     // Initial crawl on activation (optional)
     vscode.window.showInformationMessage(
@@ -440,6 +442,7 @@ async function tapAndForwardReferences(
   }
 }
 
+
 function convertSymbol(symbol: vscode.DocumentSymbol): any {
   return {
     name: symbol.name,
@@ -639,7 +642,7 @@ class AccClient {
 
   async registerLspStream(language: string, port: number) {
     return this.rpcCall("acc.registerLspStream", {
-      type: "tcp",
+      type: "pipe",
       language,
       path: PIPE_PATH,
     });

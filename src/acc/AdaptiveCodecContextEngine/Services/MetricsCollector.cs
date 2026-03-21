@@ -4,6 +4,7 @@ using System.Text;
 using AdaptiveCodecContextEngine.Diagnostics;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Git;
+using AdaptiveCodecContextEngine.Models.Lizard;
 using AdaptiveCodecContextEngine.Models.Lsp;
 using AdaptiveCodecContextEngine.Models.Surreal;
 using Microsoft.Extensions.Logging;
@@ -196,7 +197,7 @@ public class MetricsCollector
                 FilePath = UriToFilePath(fileUri),
                 LineStart = symbol.Range.Start.Line,
                 LineEnd = symbol.Range.End.Line,
-                Namespace = parentNamespace,
+                Namespace = parentNamespace ?? symbol.Name ?? "default", // This is a recursive call so the parent namespace will be null guaranteeing the use of symbol.Name as the namespace
                 Signature = symbol.Detail,
                 ReturnType = ExtractReturnType(symbol.Detail),
             };
@@ -422,19 +423,26 @@ public class MetricsCollector
         }
     }
 
+    private string GenerateNodeId(string filePath, string functionName, int lineStart)
+    {
+        var relativePath = Path.GetRelativePath(_gitWatcher.RepoPath, filePath);
+        var fullId = $"{relativePath}:{functionName}:{lineStart}".ToLowerInvariant();
+        return $"node_{ComputeStableHash(fullId)}";
+    }
+
     private string GenerateNodeIdFromSymbol(string fileUri, DocumentSymbol symbol)
     {
         var filePath = UriToFilePath(fileUri);
-        var relativePath = Path.GetRelativePath(Environment.CurrentDirectory, filePath);
-        var full_id = $"{relativePath}:{symbol.Name}:{symbol.Range.Start.Line}";
+        var relativePath = Path.GetRelativePath(_gitWatcher.RepoPath, filePath);
+        var full_id = $"{relativePath}:{symbol.Name}:{symbol.Range.Start.Line}".ToLowerInvariant();
         return $"node_{ComputeStableHash(full_id)}";
     }
 
     private string GenerateNodeIdFromLocation(Location location, string name)
     {
         var filePath = UriToFilePath(location.Uri);
-        var relativePath = Path.GetRelativePath(Environment.CurrentDirectory, filePath);
-        var full_id = $"{relativePath}:{name}:{location.Range.Start.Line}";
+        var relativePath = Path.GetRelativePath(_gitWatcher.RepoPath, filePath);
+        var full_id = $"{relativePath}:{name}:{location.Range.Start.Line}".ToLowerInvariant();
         return $"node_{ComputeStableHash(full_id)}";
     }
 
@@ -531,76 +539,67 @@ public class MetricsCollector
 
             if (lizardResult?.FunctionList != null)
             {
-                foreach (var function in lizardResult.FunctionList)
-                {
-                    //_logger.LogInformation("Building function");
-                    // Merge with LSP data if available
-                    var nodeId = GenerateNodeId(
-                        gitEvent.FilePath,
-                        function.Name,
-                        function.StartLine
-                    );
-
-                    var update = new NodeUpdate
-                    {
-                        NodeId = nodeId,
-                        Type = "function",
-                        Language = DetectLanguage(gitEvent.FilePath),
-                        Name = function.Name,
-                        FilePath = gitEvent.FilePath,
-                        LineStart = function.StartLine,
-                        LineEnd = function.EndLine,
-                        Signature = function.LongName,
-
-                        // Lizard metrics
-                        LinesOfCode = function.Nloc,
-                        CyclomaticComplexity = function.CyclomaticComplexity,
-                        Parameters = function.ParameterCount,
-
-                        // Git metrics
-                        GitHistory = history,
-                    };
-
-                    await _updateChannel.Writer.WriteAsync(new(update, activity?.Context), ct);
-                    activity?.AddEvent(
-                        new(
-                            "Lizard function update queued",
-                            tags: new() { ["function.name"] = function.Name }
-                        )
-                    );
-                    activity?.SetTag("code.nloc", update.LinesOfCode);
-                    activity?.SetTag("code.cyclomatic_complexity", update.CyclomaticComplexity);
-                    activity?.SetTag("code.parameter_count", update.Parameters);
-                    activity?.SetTag("code.signature", update.Signature);
-
-                    _instrumentation.ComplexityHistogram.Record(
-                        update.CyclomaticComplexity ?? 0,
-                        new KeyValuePair<string, object?>("code.language", update.Language)
-                    );
-                }
+                await ProcessLizarFunctions(lizardResult, gitEventWithContext, history, ct);
             }
         }
     }
 
-    // private async Task ProcessNodeUpdates(CancellationToken ct)
-    // {
-    //     await foreach (var update in _updateChannel.Reader.ReadAllAsync(ct))
-    //     {
-    //         _logger.LogInformation("Upserting node {NodeId} for {FilePath}", update.NodeId, update.FilePath);
-    //         // Upsert to SurrealDB - merges LSP + Lizard + Git data
+    private async Task ProcessLizarFunctions(
+        LizardResult lizardResult,
+        GitEventWithContext gitEventWithContext,
+        GitHistory? history,
+        CancellationToken ct
+    )
+    {
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(ProcessLizarFunctions),
+            ActivityKind.Consumer
+        );
+        var gitEvent = gitEventWithContext.Event;
+        foreach (var function in lizardResult.FunctionList)
+        {
+            //_logger.LogInformation("Building function");
+            // Merge with LSP data if available
+            var nodeId = GenerateNodeId(gitEvent.FilePath, function.Name, function.StartLine);
 
-    //         try
-    //         {
+            var update = new NodeUpdate
+            {
+                NodeId = nodeId,
+                Type = "function",
+                Language = DetectLanguage(gitEvent.FilePath),
+                Name = function.Name,
+                FilePath = gitEvent.FilePath,
+                LineStart = function.StartLine,
+                LineEnd = function.EndLine,
+                Signature = function.LongName,
 
-    //             await _repository.UpsertNodeAsync(update);
-    //         }
-    //         catch (Exception ex)
-    //         {
-    //             _logger.LogError(ex, "Unable to upsert {NodeId}", update.NodeId);
-    //             throw;
-    //         }
-    //     }
-    // }
+                // Lizard metrics
+                LinesOfCode = function.Nloc,
+                CyclomaticComplexity = function.CyclomaticComplexity,
+                Parameters = function.ParameterCount,
+
+                // Git metrics
+                GitHistory = history,
+            };
+
+            await _updateChannel.Writer.WriteAsync(new(update, activity?.Context), ct);
+            activity?.AddEvent(
+                new(
+                    "Lizard function update queued",
+                    tags: new() { ["function.name"] = function.Name }
+                )
+            );
+            activity?.SetTag("code.nloc", update.LinesOfCode);
+            activity?.SetTag("code.cyclomatic_complexity", update.CyclomaticComplexity);
+            activity?.SetTag("code.parameter_count", update.Parameters);
+            activity?.SetTag("code.signature", update.Signature);
+
+            _instrumentation.ComplexityHistogram.Record(
+                update.CyclomaticComplexity ?? 0,
+                new KeyValuePair<string, object?>("code.language", update.Language)
+            );
+        }
+    }
 
     private async Task ProcessNodeUpdates(CancellationToken ct)
     {
@@ -663,12 +662,6 @@ public class MetricsCollector
             );
             // Optionally re-queue or log for manual review
         }
-    }
-
-    private string GenerateNodeId(string filePath, string functionName, int lineStart)
-    {
-        var fullId = $"{filePath}:{functionName}:{lineStart}";
-        return $"node_{ComputeStableHash(fullId)}";
     }
 
     private static string ComputeStableHash(string input)

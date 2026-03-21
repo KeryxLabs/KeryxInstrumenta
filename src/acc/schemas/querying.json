@@ -1,0 +1,559 @@
+{
+  "$comment": "ACC (AdaptiveCodecContextEngine) JSON-RPC 2.0 Schema Examples",
+
+  "methods": {
+    "acc.getNode": {
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "acc.getNode",
+        "params": {
+          "nodeId": "UserService.cs:AuthenticateAsync:23"
+        }
+      },
+      "response_found": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": {
+          "node_id": "UserService.cs:AuthenticateAsync:23",
+          "type": "Method",
+          "language": "csharp",
+          "namespace": "MyApp.Services",
+          "name": "AuthenticateAsync",
+          "signature": "Task<AuthResult> AuthenticateAsync(string username, string password)",
+          "file_path": "src/Services/UserService.cs",
+          "line_start": 23,
+          "line_end": 57,
+          "return_type": "Task<AuthResult>",
+          "lines_of_code": 34,
+          "cyclomatic_complexity": 7,
+          "parameters": 2,
+          "git_created": "2023-04-12T09:15:00Z",
+          "git_last_modified": "2024-11-03T14:42:00Z",
+          "git_total_commits": 18,
+          "git_contributors": 3,
+          "git_avg_days_between_changes": 12.4,
+          "git_recent_frequency": "high",
+          "test_covered": true,
+          "test_line_coverage": 0.87,
+          "test_branch_coverage": 0.72,
+          "test_count": 6,
+          "incoming_edges": 5,
+          "outgoing_edges": 3,
+          "total_degree": 8,
+          "avec": {
+            "stability": 0.61,
+            "logic": 0.74,
+            "friction": 0.68,
+            "autonomy": 0.45,
+            "computed_at": "2024-12-18T11:30:00Z"
+          },
+          "avec_learned": {
+            "stability": 0.58,
+            "logic": 0.76,
+            "friction": 0.7,
+            "autonomy": 0.43,
+            "computed_at": "2024-12-18T11:30:00Z"
+          },
+          "avec_delta": {
+            "stability": 0.03,
+            "logic": -0.02,
+            "friction": -0.02,
+            "autonomy": 0.02,
+            "computed_at": null
+          }
+        }
+      },
+      "response_not_found": {
+        "jsonrpc": "2.0",
+        "id": 1,
+        "result": null
+      }
+    },
+
+    "acc.queryRelations": {
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "acc.queryRelations",
+        "params": {
+          "nodeId": "UserService.cs:AuthenticateAsync:23",
+          "includeScores": true
+        }
+      },
+      "response_found": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": {
+          "node_id": "UserService.cs:AuthenticateAsync:23",
+          "type": "Method",
+          "language": "csharp",
+          "namespace": "MyApp.Services",
+          "name": "AuthenticateAsync",
+          "signature": "Task<AuthResult> AuthenticateAsync(string username, string password)",
+          "file_path": "src/Services/UserService.cs",
+          "line_start": 23,
+          "line_end": 57,
+          "return_type": "Task<AuthResult>",
+          "lines_of_code": 34,
+          "cyclomatic_complexity": 7,
+          "parameters": 2,
+          "git_created": "2023-04-12T09:15:00Z",
+          "git_last_modified": "2024-11-03T14:42:00Z",
+          "git_total_commits": 18,
+          "git_contributors": 3,
+          "git_avg_days_between_changes": 12.4,
+          "git_recent_frequency": "high",
+          "test_covered": true,
+          "test_line_coverage": 0.87,
+          "test_branch_coverage": 0.72,
+          "test_count": 6,
+          "incoming_edges": 5,
+          "outgoing_edges": 3,
+          "total_degree": 8,
+          "avec": {
+            "stability": 0.61,
+            "logic": 0.74,
+            "friction": 0.68,
+            "autonomy": 0.45,
+            "computed_at": "2024-12-18T11:30:00Z"
+          },
+          "avec_learned": {
+            "stability": 0.58,
+            "logic": 0.76,
+            "friction": 0.7,
+            "autonomy": 0.43,
+            "computed_at": "2024-12-18T11:30:00Z"
+          },
+          "avec_delta": {
+            "stability": 0.03,
+            "logic": -0.02,
+            "friction": -0.02,
+            "autonomy": 0.02,
+            "computed_at": null
+          }
+        }
+      },
+      "response_not_found": {
+        "jsonrpc": "2.0",
+        "id": 2,
+        "result": null
+      }
+    },
+
+    "acc.queryDependencies": {
+      "$comment_direction": "direction accepts: 'Incoming' | 'Outgoing' | 'Both'. maxDepth -1 = unlimited.",
+      "request_incoming_unlimited": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "acc.queryDependencies",
+        "params": {
+          "nodeId": "UserService.cs:AuthenticateAsync:23",
+          "direction": "Incoming",
+          "maxDepth": -1,
+          "includeScores": false
+        }
+      },
+      "request_outgoing_shallow": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "acc.queryDependencies",
+        "params": {
+          "nodeId": "UserService.cs:AuthenticateAsync:23",
+          "direction": "Outgoing",
+          "maxDepth": 2,
+          "includeScores": true
+        }
+      },
+      "request_both_default": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "method": "acc.queryDependencies",
+        "params": {
+          "nodeId": "UserService.cs:AuthenticateAsync:23",
+          "direction": "Both",
+          "maxDepth": -1,
+          "includeScores": false
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 3,
+        "result": [
+          {
+            "node_id": "OrderService.cs:PlaceOrderAsync:44",
+            "type": "Method",
+            "language": "csharp",
+            "namespace": "MyApp.Services",
+            "name": "PlaceOrderAsync",
+            "signature": "Task<OrderResult> PlaceOrderAsync(OrderRequest request)",
+            "file_path": "src/Services/OrderService.cs",
+            "line_start": 44,
+            "line_end": 91,
+            "return_type": "Task<OrderResult>",
+            "lines_of_code": 47,
+            "cyclomatic_complexity": 11,
+            "parameters": 1,
+            "git_created": "2023-01-20T08:00:00Z",
+            "git_last_modified": "2024-12-18T11:30:00Z",
+            "git_total_commits": 31,
+            "git_contributors": 5,
+            "git_avg_days_between_changes": 7.2,
+            "git_recent_frequency": "high",
+            "test_covered": true,
+            "test_line_coverage": 0.63,
+            "test_branch_coverage": 0.51,
+            "test_count": 9,
+            "incoming_edges": 12,
+            "outgoing_edges": 6,
+            "total_degree": 18,
+            "avec": {
+              "stability": 0.31,
+              "logic": 0.85,
+              "friction": 0.88,
+              "autonomy": 0.22,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_learned": {
+              "stability": 0.29,
+              "logic": 0.87,
+              "friction": 0.9,
+              "autonomy": 0.2,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_delta": {
+              "stability": 0.02,
+              "logic": -0.02,
+              "friction": -0.02,
+              "autonomy": 0.02,
+              "computed_at": null
+            }
+          }
+        ]
+      }
+    },
+
+    "acc.queryPatterns": {
+      "$comment": "Finds nodes with similar AVEC profiles using Euclidean distance in 4D space. threshold: 0.0 (very different) to 1.0 (identical).",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "method": "acc.queryPatterns",
+        "params": {
+          "profile": {
+            "stability": 0.9,
+            "logic": 0.4,
+            "friction": 0.2,
+            "autonomy": 0.7
+          },
+          "threshold": 0.8
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 4,
+        "result": [
+          {
+            "node_id": "PaymentService.cs:ProcessPaymentAsync:12",
+            "type": "Method",
+            "language": "csharp",
+            "namespace": "MyApp.Services",
+            "name": "ProcessPaymentAsync",
+            "signature": "Task<PaymentResult> ProcessPaymentAsync(PaymentRequest request)",
+            "file_path": "src/Services/PaymentService.cs",
+            "line_start": 12,
+            "line_end": 38,
+            "return_type": "Task<PaymentResult>",
+            "lines_of_code": 26,
+            "cyclomatic_complexity": 4,
+            "parameters": 1,
+            "git_created": "2023-06-01T10:00:00Z",
+            "git_last_modified": "2024-10-15T09:00:00Z",
+            "git_total_commits": 6,
+            "git_contributors": 2,
+            "git_avg_days_between_changes": 45.1,
+            "git_recent_frequency": "low",
+            "test_covered": true,
+            "test_line_coverage": 0.95,
+            "test_branch_coverage": 0.91,
+            "test_count": 12,
+            "incoming_edges": 2,
+            "outgoing_edges": 4,
+            "total_degree": 6,
+            "avec": {
+              "stability": 0.88,
+              "logic": 0.41,
+              "friction": 0.21,
+              "autonomy": 0.68,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_learned": {
+              "stability": 0.89,
+              "logic": 0.4,
+              "friction": 0.2,
+              "autonomy": 0.7,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_delta": {
+              "stability": -0.01,
+              "logic": 0.01,
+              "friction": 0.01,
+              "autonomy": -0.02,
+              "computed_at": null
+            }
+          }
+        ]
+      }
+    },
+
+    "acc.search": {
+      "$comment": "Case-insensitive substring match on node name.",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "method": "acc.search",
+        "params": {
+          "name": "OrderHandler",
+          "limit": 10
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 5,
+        "result": [
+          {
+            "node_id": "OrderHandler.cs:HandleAsync:8",
+            "type": "Method",
+            "language": "csharp",
+            "namespace": "MyApp.Handlers",
+            "name": "HandleAsync",
+            "signature": "Task HandleAsync(OrderCommand command)",
+            "file_path": "src/Handlers/OrderHandler.cs",
+            "line_start": 8,
+            "line_end": 29,
+            "return_type": "Task",
+            "lines_of_code": 21,
+            "cyclomatic_complexity": 5,
+            "parameters": 1,
+            "git_created": "2023-03-10T07:30:00Z",
+            "git_last_modified": "2024-09-22T16:00:00Z",
+            "git_total_commits": 11,
+            "git_contributors": 2,
+            "git_avg_days_between_changes": 18.3,
+            "git_recent_frequency": "medium",
+            "test_covered": true,
+            "test_line_coverage": 0.78,
+            "test_branch_coverage": 0.65,
+            "test_count": 4,
+            "incoming_edges": 3,
+            "outgoing_edges": 5,
+            "total_degree": 8,
+            "avec": {
+              "stability": 0.55,
+              "logic": 0.6,
+              "friction": 0.4,
+              "autonomy": 0.5,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_learned": {
+              "stability": 0.54,
+              "logic": 0.61,
+              "friction": 0.41,
+              "autonomy": 0.49,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_delta": {
+              "stability": 0.01,
+              "logic": -0.01,
+              "friction": -0.01,
+              "autonomy": 0.01,
+              "computed_at": null
+            }
+          }
+        ]
+      }
+    },
+
+    "acc.getHighFriction": {
+      "$comment": "Finds chokepoints — nodes many others depend on. Results ordered by friction descending.",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "method": "acc.getHighFriction",
+        "params": {
+          "minFriction": 0.7,
+          "limit": 20
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 6,
+        "result": [
+          {
+            "node_id": "OrderService.cs:PlaceOrderAsync:44",
+            "type": "Method",
+            "language": "csharp",
+            "namespace": "MyApp.Services",
+            "name": "PlaceOrderAsync",
+            "signature": "Task<OrderResult> PlaceOrderAsync(OrderRequest request)",
+            "file_path": "src/Services/OrderService.cs",
+            "line_start": 44,
+            "line_end": 91,
+            "return_type": "Task<OrderResult>",
+            "lines_of_code": 47,
+            "cyclomatic_complexity": 11,
+            "parameters": 1,
+            "git_created": "2023-01-20T08:00:00Z",
+            "git_last_modified": "2024-12-18T11:30:00Z",
+            "git_total_commits": 31,
+            "git_contributors": 5,
+            "git_avg_days_between_changes": 7.2,
+            "git_recent_frequency": "high",
+            "test_covered": true,
+            "test_line_coverage": 0.63,
+            "test_branch_coverage": 0.51,
+            "test_count": 9,
+            "incoming_edges": 12,
+            "outgoing_edges": 6,
+            "total_degree": 18,
+            "avec": {
+              "stability": 0.31,
+              "logic": 0.85,
+              "friction": 0.88,
+              "autonomy": 0.22,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_learned": {
+              "stability": 0.29,
+              "logic": 0.87,
+              "friction": 0.9,
+              "autonomy": 0.2,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_delta": {
+              "stability": 0.02,
+              "logic": -0.02,
+              "friction": -0.02,
+              "autonomy": 0.02,
+              "computed_at": null
+            }
+          }
+        ]
+      }
+    },
+
+    "acc.getUnstable": {
+      "$comment": "Finds high-churn, low-coverage nodes most likely to introduce bugs. Results ordered by stability ascending.",
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "method": "acc.getUnstable",
+        "params": {
+          "maxStability": 0.4,
+          "limit": 20
+        }
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 7,
+        "result": [
+          {
+            "node_id": "ReportingService.cs:GenerateReportAsync:77",
+            "type": "Method",
+            "language": "csharp",
+            "namespace": "MyApp.Services",
+            "name": "GenerateReportAsync",
+            "signature": "Task<Report> GenerateReportAsync(ReportRequest request)",
+            "file_path": "src/Services/ReportingService.cs",
+            "line_start": 77,
+            "line_end": 140,
+            "return_type": "Task<Report>",
+            "lines_of_code": 63,
+            "cyclomatic_complexity": 14,
+            "parameters": 1,
+            "git_created": "2022-11-05T12:00:00Z",
+            "git_last_modified": "2024-12-17T08:45:00Z",
+            "git_total_commits": 52,
+            "git_contributors": 7,
+            "git_avg_days_between_changes": 3.1,
+            "git_recent_frequency": "high",
+            "test_covered": false,
+            "test_line_coverage": 0.12,
+            "test_branch_coverage": 0.05,
+            "test_count": 1,
+            "incoming_edges": 8,
+            "outgoing_edges": 9,
+            "total_degree": 17,
+            "avec": {
+              "stability": 0.18,
+              "logic": 0.91,
+              "friction": 0.75,
+              "autonomy": 0.15,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_learned": {
+              "stability": 0.16,
+              "logic": 0.93,
+              "friction": 0.77,
+              "autonomy": 0.13,
+              "computed_at": "2024-12-18T11:30:00Z"
+            },
+            "avec_delta": {
+              "stability": 0.02,
+              "logic": -0.02,
+              "friction": -0.02,
+              "autonomy": 0.02,
+              "computed_at": null
+            }
+          }
+        ]
+      }
+    },
+
+    "acc.getStats": {
+      "request": {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "method": "acc.getStats"
+      },
+      "response": {
+        "jsonrpc": "2.0",
+        "id": 8,
+        "result": {
+          "total_nodes": 1482,
+          "avg_stability": 0.61,
+          "avg_logic": 0.54,
+          "avg_friction": 0.43,
+          "avg_autonomy": 0.58
+        }
+      }
+    }
+  },
+
+  "error_examples": {
+    "method_not_found": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "error": {
+        "code": -32601,
+        "message": "Method not found"
+      }
+    },
+    "invalid_params": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "error": {
+        "code": -32602,
+        "message": "Invalid params"
+      }
+    },
+    "internal_error": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "error": {
+        "code": -32603,
+        "message": "Internal error"
+      }
+    }
+  }
+}
