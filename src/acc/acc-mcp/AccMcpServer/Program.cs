@@ -11,9 +11,6 @@ builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 builder.Services.AddSingleton<AccEngineClient>();
 
 // Add the MCP services: the transport to use (stdio) and the tools to register.
-builder.Services
-    .AddMcpServer()
-    .WithStdioServerTransport()
-    .WithTools<AccTools>();
+builder.Services.AddMcpServer().WithStdioServerTransport().WithTools<AccTools>();
 
 await builder.Build().RunAsync();

@@ -24,9 +24,10 @@ internal class AccEngineClient
 
     public AccEngineClient(IConfiguration configuration, ILogger<AccEngineClient> logger)
     {
-        _host = configuration.GetValue<string>("AccEngine:Host") ?? "localhost";
+        _host = configuration.GetValue<string>("AccEngine:Host") ?? "0.0.0.0";
         _port = configuration.GetValue<int>("AccEngine:Port", 9339);
         _logger = logger;
+        _logger.LogInformation("Connected to: {Host}:{Port}", _host, _port);
     }
 
     /// <summary>

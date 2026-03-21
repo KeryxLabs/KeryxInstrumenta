@@ -10,6 +10,6 @@ ENV AccEngine__Port=9339
 # Binaries are pre-built on the host by build-image.sh before docker build runs.
 # appsettings.json is included in the publish output and is picked up automatically
 # from the working directory by Microsoft.Extensions.Hosting.
-COPY src/acc/acc-mcp/AccMcpServer/publish/ ./
+COPY publish/ ./
 
 ENTRYPOINT ["/app/AccMcpServer"]
