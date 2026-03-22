@@ -10,13 +10,16 @@ public class GitWatcher : IDisposable
     private readonly string _repoPath;
     private readonly Channel<GitEventWithContext> _eventChannel;
     private readonly FileSystemWatcher _fsWatcher;
+    private readonly FileSystemWatcher _gitHeadWatcher;
     private readonly ILogger<GitWatcher> _logger;
     private readonly HashSet<string> _relevantExtensions;
     private readonly SurrealDbRepository _repository;
 
     private Repository? _repo;
+    private string? _trackingBranch;
     private readonly AdaptiveContextInstrumentation _instrumentation;
     public string RepoPath => _repoPath;
+
     public GitWatcher(
         Channel<GitEventWithContext> eventChannel,
         SurrealDbRepository repository,
@@ -46,6 +49,11 @@ public class GitWatcher : IDisposable
                 | NotifyFilters.Attributes
                 | NotifyFilters.Size,
         };
+        _gitHeadWatcher = new FileSystemWatcher(Path.Join(_repoPath, ".git"))
+        {
+            NotifyFilter = NotifyFilters.LastWrite,
+            Filter = "HEAD",
+        };
 
         var extensions = configuration.GetSection("Acc:FileExtensions").Get<string[]>();
         _relevantExtensions =
@@ -71,6 +79,7 @@ public class GitWatcher : IDisposable
         try
         {
             _repo = new Repository(_repoPath);
+            _trackingBranch = _repo.Head.FriendlyName;
         }
         catch (Exception ex)
         {
@@ -85,6 +94,27 @@ public class GitWatcher : IDisposable
         _fsWatcher.Renamed += OnFileRenamed;
         _fsWatcher.Error += (s, e) => _logger.LogError(e.GetException(), "Watcher Error!");
         _fsWatcher.EnableRaisingEvents = true;
+
+        DateTime _lastRead = DateTime.MinValue;
+
+        //Git Head watcher
+        _gitHeadWatcher.Changed += (s, e) =>
+        {
+            using var repo = new Repository(_repoPath);
+            var currentBranch = repo.Head.FriendlyName;
+
+            if (currentBranch != _trackingBranch)
+            {
+                _logger.LogInformation(
+                    "Branch changed from {trackingBranch} to {currentBranch}. Restarting...",
+                    _trackingBranch,
+                    currentBranch
+                );
+
+                RestartApplication();
+            }
+        };
+        _gitHeadWatcher.EnableRaisingEvents = true;
 
         _logger.LogTrace("Git Watcher Enabled");
 
@@ -168,6 +198,29 @@ public class GitWatcher : IDisposable
             )
         );
         activity?.SetTag("event.enqueued", written);
+    }
+
+    private void RestartApplication()
+    {
+        string? exePath = Process.GetCurrentProcess()?.MainModule?.FileName;
+
+        if (string.IsNullOrEmpty(exePath))
+        {
+            _logger.LogError("Unable to get main module file name. Shutting down engine.");
+            Environment.Exit(0);
+        }
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = exePath,
+            UseShellExecute = true, // Ensures it starts as a fresh top-level process
+            WorkingDirectory = Environment.CurrentDirectory,
+        };
+        startInfo.Arguments = string.Join(" ", Environment.GetCommandLineArgs().Skip(1));
+        _logger.LogInformation("Restarting Service in new shell.");
+
+        Process.Start(startInfo);
+        Environment.Exit(0);
     }
 
     private async Task IndexRepository(CancellationToken ct)

@@ -79,6 +79,9 @@ if (accOptions.UseGitBranchNaming)
     using var repo = new Repository(accOptions.RepositoryPath);
     // Get the current branch name using the Head.FriendlyName property
     string branchName = repo.Head.FriendlyName.Replace("/", "_");
+    DirectoryInfo info = new(accOptions.RepositoryPath);
+
+    surrealSettings.Namespace = $"{surrealSettings.Namespace}_{info.Name}";
     surrealSettings.Database = $"{surrealSettings.Database}_{branchName}";
 }
 
