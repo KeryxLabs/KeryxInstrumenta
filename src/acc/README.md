@@ -1,6 +1,6 @@
 # ACC - Adaptive Codec Context
 
-> A continous dimensional indexing system for codebases that provides agents with compressed, queryable perception of code environments.
+> A living physics engine for codebases. ACC models structure, stability, and complexity as continuous dimensional metrics. Giving you and your tools queryable intelligence over how your code actually behaves.
 
 
 ## What is ACC?
@@ -12,23 +12,160 @@ ACC (Adaptive Codec Context) transforms codebases into a **dimensional semantic 
 - **Friction** - How many things depend on this? (incoming edges + centrality)
 - **Autonomy** - How self-directed is this code? (outgoing dependencies inverse)
 
-These dimensions form **AVEC** (Attractor Vector Encoding Configuration) - coordinates in a 4D space that describe a node's architectural characteristics.
+These dimensions form **AVEC** (Attractor Vector Encoding Configuration) - coordinates in a 4D space that describe a codebase health at an abstract layer that can be understood from multiple lenses.
+
+
+## Why ACC?
+
+Understanding your codebase matters  not because AI needs it, but because you do. How code changes over time, where the real complexity lives, what breaks when you touch something, this is knowledge that gets lost as teams and codebases grow.
+ACC makes that knowledge explicit. It models your code as a living graph with dimensional metrics (AVEC) that capture stability, logic density, friction, and autonomy. Not as a snapshot, but continuously, as your codebase evolves.
+The agent tooling is a consequence of that, not the point. A well-indexed codebase is useful to every tool that touches it, including the one between your ears.
 
 ## Grafana Dashboard - Real Time Tracking Of Codebase Health
 <img width="1920" height="1080" alt="screenshot-2026-03-19_21-51-48" src="https://github.com/user-attachments/assets/9ff0b6ec-02a6-48fe-822e-81b5559e4b73" />
 
 
+## Tooling Surface
+
+ACC can be used through four interfaces:
+
+- **VS Code extension** (`acc-vscode`) for in-editor workflows and graph actions
+- **Neovim plugin** (`acc.nvim`) for terminal-native indexing and queries
+- **CLI** (`acc-cli`) for scripts, automation, and shell pipelines
+- **MCP server** (`acc-mcp`) for agent/tool integrations over stdio
+
+## Installation
+
+### Prerequisites
+
+- .NET 10.0 SDK (only required when building from source)
+- SurrealDB (`brew install surrealdb/tap/surreal` or [download](https://surrealdb.com/install))
+- Lizard (`pip install lizard`) for complexity metrics
+- LSP for your language (for graph ingestion)
+
+### Install from GitHub Releases
+
+ACC publishes separate release tags per tool:
+
+- Engine: `acc-engine/v0.3.1`
+- CLI: `acc-cli/v0.1.0`
+- MCP: `acc-mcp/v0.1.0`
+- VS Code extension: `acc-vscode/v0.3.1`
+
+### Example downloads:
+
+```bash
+# ACC engine (linux-x64)
+curl -fsSL \
+  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-engine/v0.3.1/acc-0.3.1-linux-x64.tar.gz \
+  | tar -xz
+
+# ACC CLI (linux-x64)
+curl -fsSL \
+  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-cli/v0.1.0/acc-cli-0.1.0-linux-x64.tar.gz \
+  | tar -xz
+
+# ACC MCP server (linux-x64)
+curl -fsSL \
+  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-mcp/v0.1.0/acc-mcp-0.1.0-linux-x64.tar.gz \
+  | tar -xz
+```
+
+### Install VS Code extension from a release `.vsix`:
+
+```bash
+code --install-extension acc-vscode-0.3.1.vsix
+```
+
+### Build from source
+
+```bash
+git clone https://github.com/KeryxLabs/KeryxInstrumenta.git
+cd KeryxInstrumenta/src/acc/AdaptiveCodecContextEngine
+
+# Build release artifacts for all supported platforms
+./build.sh
+
+# Build and upload release artifacts
+./build.sh --publish
+```
+
+## Quick Start by Tool
+
+### 1. ACC Engine
+
+```bash
+# Start ACC engine
+cd src/acc/AdaptiveCodecContextEngine
+./acc
+```
+
+The engine listens for JSON-RPC queries on `localhost:9339` by default.
+
+### 2. VS Code Extension (`acc-vscode`)
+
+1. Install the release `.vsix`.
+2. Open a project in VS Code.
+3. Run `ACC: Build Dependency Graph` from command palette.
+4. Run `ACC: Show High-Friction Nodes` or `ACC: Search Nodes`.
+
+### 3. Neovim Plugin (`acc.nvim`)
+
+Install with your plugin manager:
+
+```lua
+{
+  "KeryxLabs/acc.nvim",
+  event = "VeryLazy",
+  opts = {},
+}
+```
+
+Then run:
+
+- `:AccBuildGraph`
+- `:AccSearch`
+- `:AccHighFriction`
+
+The plugin can auto-download the ACC engine binary from GitHub Releases on first run.
+
+### 4. CLI (`acc-cli`)
+
+```bash
+# Project-wide health snapshot
+./acc-cli stats
+
+# Find risky chokepoints
+./acc-cli risk friction --min 0.7 --limit 10
+
+# Impact analysis for a node
+./acc-cli graph deps "UserService.cs:AuthenticateAsync:23" -d Incoming --depth 3
+```
+
+### 5. MCP Server (`acc-mcp`)
+
+Add to your MCP client config (stdio transport):
+
+```json
+{
+  "servers": {
+    "AccMcp": {
+      "type": "stdio",
+      "command": "/absolute/path/to/AccMcpServer"
+    }
+  }
+}
+```
+
+Example ACC MCP tools:
+
+- `get_project_stats`
+- `search_by_name`
+- `query_dependencies`
+- `get_high_friction_nodes`
 
 
-## Why ACC?
 
-Current agent tools dump raw filesystem content and LSP output - a firehose of tokens that drowns small models and wastes context for large ones. ACC provides:
-
-✅ **Compressed perception** - Dimensional profiles instead of raw code  
-✅ **Queryable structure** - Graph traversal, pattern matching, impact analysis  
-✅ **Agent learning** - Runtime AVEC updates based on interaction outcomes  
-✅ **Language agnostic** - Works with any LSP + git repo  
-✅ **Local-first** - Embedded SurrealDB, no cloud dependency  
 
 ## Architecture
 ```
@@ -133,51 +270,6 @@ Scores are **configurable** via weights in `appsettings.json`:
 Different project types get different defaults:
 - **Existing legacy system**: Heavily penalize churn, prioritize stability
 - **New greenfield project**: Favor autonomy, expect low test coverage initially
-
-## Installation
-
-### Prerequisites
-
-- .NET 10.0 SDK
-- SurrealDB (`brew install surrealdb/tap/surreal` or [download](https://surrealdb.com/install))
-- Lizard (`pip install lizard`) — **installed automatically by the VSCode extension if not present**
-- LSP for your language (e.g., OmniSharp for C#)
-
-### Build
-```bash
-# Clone
-git clone https://github.com/KeryxLabs/KeryxInstrumenta.git
-cd acc
-
-# Build
-dotnet build
-
-# Or publish as AOT binary
-dotnet publish -c Release -r linux-x64
-```
-
-### Run
-```bash
-# Start SurrealDB
-surreal start --log debug --user root --pass root file:///tmp/acc.db
-
-# Configure ACC
-cat > appsettings.json <<EOF
-{
-  "Acc": {
-    "RepositoryPath": "/path/to/your/repo",
-    "SurrealDbConnection": "ws://localhost:8000",
-    "Language": "csharp"
-  }
-}
-EOF
-
-# Run ACC
-dotnet run
-
-# Or use the download the binary from our release tags 
-./acc 
-```
 
 ## Configuration
 
@@ -299,9 +391,11 @@ Console.WriteLine($"Delta: {updated.AvecDelta.Stability}");
 - [x] SurrealDB graph storage
 - [x] Three core query types
 - [x] **VSCode extension** - auto-downloads ACC server binary; auto-installs `lizard` via pip if not present
-- [ ] **Neovim plugin (Cognoscere)** - in progress
+- [x] **Neovim plugin (`acc.nvim`)**
+- [x] **CLI (`acc-cli`)**
+- [x] **MCP server (`acc-mcp`)**
 - [ ] HTTP/gRPC query API
-- [ ] MCP server adapter
+- [ ] Hosted MCP gateway adapter
 - [ ] Language-specific complexity analyzers (beyond Lizard)
 - [ ] Real-time change propagation (WebSocket events)
 
@@ -321,7 +415,7 @@ ACC is the perception layer for the broader KeryxLabs infrastructure:
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+Apache 2.0 License - see [LICENSE](LICENSE)
 
 ## Contributing
 

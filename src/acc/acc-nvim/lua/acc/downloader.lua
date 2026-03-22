@@ -5,6 +5,7 @@ local M = {}
 
 local ACC_VERSION = "0.3.1"
 local GITHUB_RELEASES_URL = "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download"
+local ACC_RELEASE_TAG = "acc-engine/v" .. ACC_VERSION
 
 -- Returns the data directory where the binary is stored
 local function server_dir()
@@ -69,7 +70,7 @@ function M.download_server(cb)
   local dir      = server_dir()
   local archive  = dir .. "/" .. info.asset
   local bin_path = dir .. "/" .. info.binary
-  local url      = GITHUB_RELEASES_URL .. "/v" .. ACC_VERSION .. "/" .. info.asset
+  local url      = GITHUB_RELEASES_URL .. "/" .. ACC_RELEASE_TAG .. "/" .. info.asset
 
   vim.fn.mkdir(dir, "p")
 
