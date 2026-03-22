@@ -1,0 +1,96 @@
+services:
+  init:
+    image:  &tempoImage grafana/tempo:2.5.0
+    user: root
+    entrypoint: 
+      - "chown"
+      - "-R"
+      - "10001:10001"
+      - "/var/tempo"
+    volumes:
+      - tempo_data:/var/tempo
+  tempo:
+    image: *tempoImage
+    container_name: tempo
+    command:
+      - '--config.file=/etc/tempo/tempo.yml'
+    ports:
+      - '3200:3200'
+      - '4417:4417'
+      - '4418:4418'
+    restart: unless-stopped
+    volumes:
+      - ./tempo:/etc/tempo
+      - tempo_data:/var/tempo
+    networks:
+      - observability_net
+    depends_on:
+      - init
+  otel-collector:
+    image: otel/opentelemetry-collector:0.103.0
+    container_name: otel-collector
+    command:
+      - '--config=/etc/otel/otel-collector.yml'
+    ports:
+      - '4318:4318'
+      - '4317:4317'
+      - '8888:8888'
+    volumes:
+      - ./otel:/etc/otel
+    networks:
+      - observability_net
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--enable-feature=otlp-write-receiver'
+      - '--enable-feature=native-histograms'
+      - '--web.enable-remote-write-receiver' # Allows Tempo to push RED metrics
+      - '--enable-feature=exemplars-storage' # Allows "jump to trace" from graphs
+      - '--storage.tsdb.retention.time=15d'  # Set your own retention
+    ports:
+      - '9090:9090'
+    restart: unless-stopped
+    volumes:
+      - ./prometheus:/etc/prometheus
+      - prom_data:/prometheus
+    networks:
+      - observability_net
+  grafana:
+    image: grafana/grafana:12.4.0
+    container_name: grafana
+    ports:
+      - '3000:3000'
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=grafana
+      - GF_FEATURE_TOGGLES_ENABLE=traceqlEditor
+    volumes:
+      - ./grafana:/etc/grafana/provisioning/datasources
+    networks:
+      - observability_net
+  loki:
+    image: grafana/loki:3.0.0
+    container_name: loki
+    command:
+      - '--config.file=/etc/loki/loki.yml'
+    ports:
+      - '3100:3100'
+      - '3101:3101'
+    restart: unless-stopped    
+    volumes:
+      - ./loki:/etc/loki
+      - loki_data:/loki
+    networks:
+      - observability_net
+
+volumes:
+  prom_data:
+  tempo_data:
+  loki_data:
+
+networks:
+  observability_net:
+    driver: bridge

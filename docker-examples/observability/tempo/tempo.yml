@@ -1,0 +1,50 @@
+server:
+  http_listen_port: 3200
+  grpc_listen_port: 9096
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: "0.0.0.0:4417" # Standard OTLP gRPC port
+        http:
+          endpoint: "0.0.0.0:4418" # Standard OTLP HTTP port
+
+ingester:
+  max_block_duration: 1h               # Higher throughput; keeps traces in RAM longer for speed
+
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal             # Moved away from /tmp
+    local:
+      path: /var/tempo/blocks          # Moved away from /tmp
+    pool:
+      max_workers: 100                 # Beef up query speed for local disk
+      queue_depth: 10000
+
+compactor:
+  compaction:
+    block_retention: 168h              # Match your Loki retention (7 days)
+    compacted_block_retention: 1h
+
+metrics_generator:
+  processor:
+    local_blocks:
+      filter_server_spans: false
+    span_metrics:                      # Generates "Request, Error, Duration" (RED) metrics
+  traces_storage:
+    path: /var/tempo/generator/traces
+  storage:
+    path: /var/tempo/generator/wal
+    remote_write:
+      - url: http://prometheus:9090/api/v1/write
+        send_exemplars: true
+
+overrides:
+  metrics_generator_processors: [service-graphs, span-metrics, local-blocks]
+  ingestion_rate_limit_bytes: 20000000 # 20MB/s limit
+  max_bytes_per_trace: 10000000        # 10MB limit per trace to prevent OOM

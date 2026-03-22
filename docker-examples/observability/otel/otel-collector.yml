@@ -1,0 +1,60 @@
+receivers:
+  otlp:
+    protocols:
+      grpc: 
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+  prometheus/collector:
+    config:
+      scrape_configs:
+        - job_name: "opentelemetry-collector"
+          static_configs:
+            - targets: ["prometheus:8888"]
+processors:
+  batch:
+    send_batch_size: 1024
+    send_batch_max_size: 2048 # Provides headroom for bursts
+    timeout: 5s
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 1800
+    spike_limit_mib: 400
+
+exporters:
+  otlphttp/metrics:
+    endpoint: http://prometheus:9090/api/v1/otlp
+    tls:
+      insecure: true
+  otlp/traces:
+    endpoint: tempo:4417
+    tls:
+      insecure: true
+  otlphttp/logs:
+    endpoint: http://loki:3100/otlp
+    tls:
+      insecure: true
+  logging/metrics:
+    verbosity: detailed
+  logging/traces:
+    verbosity: detailed
+  logging/logs:
+    verbosity: detailed
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch,memory_limiter]
+      exporters: [otlp/traces]
+
+    metrics:
+      receivers: [otlp, prometheus/collector]
+      processors: [batch]
+      exporters: [otlphttp/metrics]
+
+    logs:
+      receivers: [otlp]
+      processors: [batch, memory_limiter]
+      exporters: [otlphttp/logs]
+
