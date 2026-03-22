@@ -1,99 +1,158 @@
-# MCP Server
+# ACC MCP Server (`acc-mcp`)
 
-This README was created using the C# MCP server project template.
-It demonstrates how you can easily create an MCP server using C# and publish it as a NuGet package.
+`acc-mcp` is the MCP server for ACC (Adaptive Codec Context).
 
-The MCP server is built as a self-contained application and does not require the .NET runtime to be installed on the target machine.
-However, since it is self-contained, it must be built for each target platform separately.
-By default, the template is configured to build for:
-* `win-x64`
-* `win-arm64`
-* `osx-arm64`
-* `linux-x64`
-* `linux-arm64`
-* `linux-musl-x64`
+It exposes ACC graph and AVEC analysis tools over stdio so MCP-compatible clients can query indexed code intelligence without embedding ACC directly.
 
-If your users require more platforms to be supported, update the list of runtime identifiers in the project's `<RuntimeIdentifiers />` element.
+## What This Server Exposes
 
-See [aka.ms/nuget/mcp/guide](https://aka.ms/nuget/mcp/guide) for the full guide.
+`acc-mcp` currently provides these MCP tools:
 
-Please note that this template is currently in an early preview stage. If you have feedback, please take a [brief survey](http://aka.ms/dotnet-mcp-template-survey).
+- `get_acc_node`
+- `query_relations`
+- `query_dependencies`
+- `query_patterns`
+- `search_by_name`
+- `get_high_friction_nodes`
+- `get_unstable_nodes`
+- `get_project_stats`
 
-## Checklist before publishing to NuGet.org
+These map to ACC engine JSON-RPC methods and return JSON payloads from the engine.
 
-- Test the MCP server locally using the steps below.
-- Update the package metadata in the .csproj file, in particular the `<PackageId>`.
-- Update `.mcp/server.json` to declare your MCP server's inputs.
-  - See [configuring inputs](https://aka.ms/nuget/mcp/guide/configuring-inputs) for more details.
-- Pack the project using `dotnet pack`.
+## Important Dependency
 
-The `bin/Release` directory will contain the package file (.nupkg), which can be [published to NuGet.org](https://learn.microsoft.com/nuget/nuget-org/publish-a-package).
+`acc-mcp` is a bridge. It requires the ACC engine to be running and reachable.
 
-## Developing locally
+- Default endpoint: `localhost:9339`
+- Override via environment variables:
+  - `AccEngine__Host`
+  - `AccEngine__Port`
 
-To test this MCP server from source code (locally) without using a built MCP server package, you can configure your IDE to run the project directly using `dotnet run`.
+Before starting `acc-mcp`, start ACC engine and build/index your graph.
+
+## Getting Started
+
+### Option A: Run from GHCR (fastest)
+
+```bash
+docker run --rm -i \
+  -e AccEngine__Host=host.docker.internal \
+  -e AccEngine__Port=9339 \
+  ghcr.io/keryxlabs/acc-mcp:<version>
+```
+
+On Linux, if `host.docker.internal` is not available, use your host IP.
+
+### Option B: Download release binary (no Docker)
+
+Linux x64 example:
+
+```bash
+VERSION="0.1.0"
+curl -fL -o acc-mcp.tar.gz \
+  "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-mcp/v${VERSION}/acc-mcp-${VERSION}-linux-x64.tar.gz"
+tar -xzf acc-mcp.tar.gz
+chmod +x AccMcpServer
+./AccMcpServer
+```
+
+### Option C: Run from source
+
+```bash
+dotnet restore
+dotnet run --project ./AccMcpServer.csproj
+```
+
+## MCP Client Configuration
+
+### Docker (GHCR)
 
 ```json
 {
   "servers": {
-    "AccMcpServer": {
+    "AccMcp": {
+      "type": "stdio",
+      "command": "docker",
+      "args": [
+        "run",
+        "--rm",
+        "-i",
+        "-e",
+        "AccEngine__Host=host.docker.internal",
+        "-e",
+        "AccEngine__Port=9339",
+        "ghcr.io/keryxlabs/acc-mcp:<version>"
+      ]
+    }
+  }
+}
+```
+
+### Local binary
+
+```json
+{
+  "servers": {
+    "AccMcp": {
+      "type": "stdio",
+      "command": "/absolute/path/to/AccMcpServer"
+    }
+  }
+}
+```
+
+### Local source checkout
+
+```json
+{
+  "servers": {
+    "AccMcp": {
       "type": "stdio",
       "command": "dotnet",
       "args": [
         "run",
         "--project",
-        "<PATH TO PROJECT DIRECTORY>"
+        "/absolute/path/to/src/acc/acc-mcp/AccMcpServer/AccMcpServer.csproj"
       ]
     }
   }
 }
 ```
 
-Refer to the VS Code or Visual Studio documentation for more information on configuring and using MCP servers:
+## Example Agent Prompts
 
-- [Use MCP servers in VS Code (Preview)](https://code.visualstudio.com/docs/copilot/chat/mcp-servers)
-- [Use MCP servers in Visual Studio (Preview)](https://learn.microsoft.com/visualstudio/ide/mcp-servers)
+- "Use `get_project_stats` and summarize codebase AVEC health."
+- "Run `get_high_friction_nodes` with `minFriction: 0.8` and show top 10 risks."
+- "Find `Authenticate` with `search_by_name`, then run `query_dependencies` incoming depth 3."
+- "For `UserService.cs:AuthenticateAsync:23`, run `query_relations` and explain direct callers and callees."
 
-## Testing the MCP Server
+## Build And Release Artifacts
 
-Once configured, you can ask Copilot Chat for a random number, for example, `Give me 3 random numbers`. It should prompt you to use the `get_random_number` tool on the `AccMcpServer` MCP server and show you the results.
+Use `build.sh` in this directory to publish self-contained binaries per RID and optionally upload to namespaced release tags:
 
-## Publishing to NuGet.org
+- Tag format: `acc-mcp/v<version>`
+- Artifact format: `acc-mcp-<version>-<platform>.tar.gz`
 
-1. Run `dotnet pack -c Release` to create the NuGet package
-2. Publish to NuGet.org with `dotnet nuget push bin/Release/*.nupkg --api-key <your-api-key> --source https://api.nuget.org/v3/index.json`
-
-## Using the MCP Server from NuGet.org
-
-Once the MCP server package is published to NuGet.org, you can configure it in your preferred IDE. Both VS Code and Visual Studio use the `dnx` command to download and install the MCP server package from NuGet.org.
-
-- **VS Code**: Create a `<WORKSPACE DIRECTORY>/.vscode/mcp.json` file
-- **Visual Studio**: Create a `<SOLUTION DIRECTORY>\.mcp.json` file
-
-For both VS Code and Visual Studio, the configuration file uses the following server definition:
-
-```json
-{
-  "servers": {
-    "AccMcpServer": {
-      "type": "stdio",
-      "command": "dnx",
-      "args": [
-        "<your package ID here>",
-        "--version",
-        "<your package version here>",
-        "--yes"
-      ]
-    }
-  }
-}
+```bash
+./build.sh
+./build.sh --publish
 ```
 
-## More information
+Supported platforms:
 
-.NET MCP servers use the [ModelContextProtocol](https://www.nuget.org/packages/ModelContextProtocol) C# SDK. For more information about MCP:
+- `linux-x64`
+- `linux-arm64`
+- `linux-musl-x64`
+- `macos-x64`
+- `macos-arm64`
+- `win-x64`
+- `win-arm64`
 
-- [Official Documentation](https://modelcontextprotocol.io/)
-- [Protocol Specification](https://spec.modelcontextprotocol.io/)
-- [GitHub Organization](https://github.com/modelcontextprotocol)
-- [MCP C# SDK](https://modelcontextprotocol.github.io/csharp-sdk)
+## Troubleshooting
+
+- Connection refused / timeout:
+  - Verify ACC engine is running and listening on `AccEngine__Host:AccEngine__Port`.
+- Empty or low-quality results:
+  - Rebuild ACC graph/index before querying from MCP.
+- Docker cannot reach host engine:
+  - Use `AccEngine__Host=host.docker.internal` (or host IP on Linux).
