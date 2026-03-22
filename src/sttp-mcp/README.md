@@ -10,9 +10,9 @@ Licensed under Apache-2.0. See [LICENSE](../../LICENSE).
 
 ## The Problem
 
-Every AI conversation dies when the session ends. The context, the reasoning state, the accumulated understanding — gone. The next session starts from zero.
+Every AI conversation dies when the session ends. The context, the reasoning state, the accumulated understanding gone. The next session starts from zero.
 
-Existing workarounds — long context windows, RAG, conversation history injection — patch the symptom. They don't solve the problem. They pass raw text around and hope the model reconstructs meaning from it.
+Existing workarounds: long context windows, RAG, conversation history injection, patch the symptom. They don't solve the problem. They pass raw text around and hope the model reconstructs meaning from it.
 
 STTP encodes the meaning directly. Not what was said. What remains true when everything surface is stripped away.
 
@@ -36,7 +36,7 @@ constraint(.92): "latency is the primary optimization target"
 recommendation(.93): "gRPC over HTTP/2 with QUIC overlay"
 ```
 
-Every node carries dual AVEC state — the attractor vectors that describe the cognitive geometry of the conversation at the moment of compression:
+Every node carries dual AVEC state - the attractor vectors that describe the cognitive geometry of the conversation at the moment of compression:
 ```
 user_avec:  { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.80 }
 model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.70 }
@@ -46,55 +46,100 @@ A fresh model receiving a STTP node doesn't get a summary. It gets a mathematica
 
 ---
 
-## Proof of Concept
+## Getting Started
 
-This pipeline ran live, unplanned, on 2026-03-03:
+You have three ways to run `sttp-mcp`.
 
-```
-DeepSeek        received a gift recommendation request
-                produced a full conversational response
+### Option A: Run from GitHub Container Registry (fastest)
 
-Kimi-k2         received the raw DeepSeek conversation
-                compressed it into a valid STTP node
-                no prior context, no shared state
-
-GPT-4o          received only the compressed STTP node
-                produced a coherent, contextually aware response
-                continuing exactly where DeepSeek left off
+```bash
+mkdir -p "$PWD/sttp-data"
+docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/keryxlabs/sttp-mcp:<version>
 ```
 
-Three different companies. Three different architectures. Zero shared state. The conversation arrived intact — with nuance, constraints, and the correct next action queued.
+Use a published tag from releases, for example `0.1.2-beta`.
 
-That is not a demo. That is the protocol working.
+### Option B: Download and run the single binary (no Docker)
 
----
+Linux x64 example:
 
-## Validation
-
-Validated 2026-03-01 across GPT, Claude, Gemini, and Kimi-k2.
-
-| Model | `temporal_node` | `natural_language` | Safety Triggered |
-|---|---|---|---|
-| GPT-4o | ✅ | ✅ | ❌ |
-| Claude | ✅ | ✅ | ❌ |
-| Gemini | ✅ | ✅ | ❌ |
-| Kimi-k2 | ✅ | ✅ | ❌ |
-
-All four models parsed, responded in, and extended the protocol correctly. All four computed independent AVEC states. Zero safety triggers across all eight tests.
-
----
-
-## How It Works
-
-The model calling these tools **is** the compression model. There is no separate inference step. The tool descriptions carry the encoding instructions. By the time the model calls a tool it has already produced the STTP node as the argument.
-
-```
-Model reads tool description → receives encoding instructions
-Model compresses current context → produces ⏣ node
-Model calls store_context(node) → server validates + stores
+```bash
+VERSION="0.1.0"
+curl -fL -o sttp-mcp.tar.gz \
+  "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
+tar -xzf sttp-mcp.tar.gz
+chmod +x sttp-mcp
+./sttp-mcp
 ```
 
-The server does three things only: validate structure, persist the node, retrieve on resonance. The intelligence stays in the model.
+Release artifacts are published per platform:
+
+- `sttp-mcp-<version>-linux-x64.tar.gz`
+- `sttp-mcp-<version>-linux-arm64.tar.gz`
+- `sttp-mcp-<version>-linux-musl-x64.tar.gz`
+- `sttp-mcp-<version>-macos-x64.tar.gz`
+- `sttp-mcp-<version>-macos-arm64.tar.gz`
+- `sttp-mcp-<version>-win-x64.tar.gz`
+- `sttp-mcp-<version>-win-arm64.tar.gz`
+
+### Option C: Build locally (development)
+
+```bash
+# 1) Build the image
+docker build -t sttp-mcp:local .
+
+# 2) Run over stdio (for quick local verification)
+docker run --rm -i -v "$PWD/data:/data" sttp-mcp:local
+```
+
+Requirements:
+- Docker (for container options), or .NET 10 SDK (for local source builds)
+- SurrealDB (embedded, no separate server required)
+- Any MCP-compatible client
+
+### MCP client configuration
+
+Docker via GHCR:
+
+```json
+{
+    "mcpServers": {
+        "sttp-mcp": {
+            "command": "docker",
+            "args": [
+                "run",
+                "--rm",
+                "-i",
+                "-v",
+                "/absolute/path/to/sttp-data:/data",
+                "ghcr.io/keryxlabs/sttp-mcp:<version>"
+            ]
+        }
+    }
+}
+```
+
+Local single binary:
+
+```json
+{
+    "mcpServers": {
+        "sttp-mcp": {
+            "command": "/absolute/path/to/sttp-mcp"
+        }
+    }
+}
+```
+
+### Local .NET run (source checkout)
+
+If you are working from source and want to run without Docker:
+
+```bash
+dotnet restore
+dotnet build
+dotnet run --project ./sttp-mcp.csproj
+```
 
 ---
 
@@ -141,66 +186,44 @@ Use case: pull presets, choose mode, apply hard/soft swap, then call `calibrate_
 
 ---
 
-## AVEC Glossary
+## Cross-Model Persistence
 
-- **Feel**: shorthand for measured deviation between attractor states, not biological emotion.
-- **State displacement**: change in AVEC vector across turns (`Δstability`, `Δfriction`, `Δlogic`, `Δautonomy`).
-- **Psi delta (`Δψ`)**: scalar shift in total attractor magnitude.
-- **Drift class**: interpretation of movement as `Intentional` or `Uncontrolled` based on deviation thresholds.
-- **Tension**: practical reading of resistance vs steadiness, usually from `friction` relative to `stability`.
+
+Nodes stored by one session are immediately available to all other sessions sharing the same storage path. Multiple MCP instances, different chat windows, different model providers, different architectures — all can read and write to the same memory substrate. This enables:
+
+- **Cross-model handoff**: Store context with GPT, retrieve with Claude, continue with Gemini
+- **Multi-agent collaboration**: DeepSeek, Llama, Qwen, Mistral can share compressed state transparently
+- **Persistent memory**: Context survives restarts, crashes, and context window compaction
+- **Temporal continuity**: Sessions separated by hours, days, or weeks can reconstruct prior state through AVEC resonance
+
+Validated with live cross-model reads across Claude, GPT-4o, DeepSeek, Gemini, Kimi-k2, Llama, Mistral, Qwen, and Groq models (see [example_data/](./docs/example_data/)).
 
 ---
 
-## Getting Started
+## How It Works
 
-```bash
-# 1) Build the image
-docker build -t sttp-mcp:local .
+The model calling these tools **is** the compression model. There is no separate inference step. The tool descriptions carry the encoding instructions. By the time the model calls a tool it has already produced the STTP node as the argument.
 
-# 2) Run over stdio (for quick local verification)
-docker run --rm -i -v "$PWD/data:/data" sttp-mcp:local
+```
+Model reads tool description → receives encoding instructions
+Model compresses current context → produces ⏣ node
+Model calls store_context(node) → server validates + stores
 ```
 
-Requirements:
-- Docker (recommended), or .NET 10 SDK for local builds
-- SurrealDB (embedded, no separate server required)
-- Any MCP-compatible client
+The server does three things only: validate structure, persist the node, retrieve on resonance. The intelligence stays in the model.
 
-### MCP client configuration (Docker)
+---
 
-If your MCP client supports command-based servers, run STTP through Docker so users don't need a local .NET runtime:
 
-```json
-{
-    "mcpServers": {
-        "sttp-mcp": {
-            "command": "docker",
-            "args": [
-                "run",
-                "--rm",
-                "-i",
-                "-v",
-                "/absolute/path/to/sttp-data:/data",
-                "sttp-mcp:local"
-            ]
-        }
-    }
-}
-```
+## Storage
 
-### Local .NET run (without Docker)
+sttp-mcp uses **SurrealDB** as its storage layer — document, graph, vector, and time-series in a single binary. No separate database server and runs embedded alongside the MCP server unless remote is configured.
 
-```bash
-dotnet restore
-dotnet build
-dotnet run --project ./sttp-mcp.csproj
-```
-
-### Runtime modes
+Resonance retrieval is a single SurrealQL query: graph traversal + AVEC vector similarity + document retrieval. One round trip.
 
 `sttp-mcp` supports two endpoint modes:
 
-- Embedded mode (default): uses `SurrealDb:Endpoints:Embedded` (or legacy `SurrealDb:Endpoint`)
+- Embedded mode (default): uses `SurrealDb:Endpoints:Embedded`
 - Remote mode: pass `--remote` to use `SurrealDb:Endpoints:Remote`
 
 Examples:
@@ -239,34 +262,16 @@ dotnet run --project ./sttp-mcp.csproj -- --remote
 
 By default, embedded storage resolves under `STTP_MCP_DATA_ROOT` (defaults to `~/.sttp-mcp`).
 
----
-
-## Storage
-
-sttp-mcp uses **SurrealDB** as its storage layer — document, graph, vector, and time-series in a single binary. No separate database server. Runs embedded alongside the MCP server.
-
-Resonance retrieval is a single SurrealQL query: graph traversal + AVEC vector similarity + document retrieval. One round trip.
-
-### Cross-Model Persistence
-
-Nodes stored by one session are immediately available to all other sessions sharing the same storage path. Multiple MCP instances, different chat windows, different model providers, different architectures — all can read and write to the same memory substrate. This enables:
-
-- **Cross-model handoff**: Store context with GPT, retrieve with Claude, continue with Gemini
-- **Multi-agent collaboration**: DeepSeek, Llama, Qwen, Mistral can share compressed state transparently
-- **Persistent memory**: Context survives restarts, crashes, and context window compaction
-- **Temporal continuity**: Sessions separated by hours, days, or weeks can reconstruct prior state through AVEC resonance
-
-Validated with live cross-model reads across Claude, GPT-4o, DeepSeek, Gemini, Kimi-k2, Llama, Mistral, Qwen, and Groq models (see [example_data/](./docs/example_data/)).
 
 ---
 
-## What This Is Not
+## AVEC Glossary
 
-- Not a prompt engineering tool
-- Not a summarization service
-- Not opinionated about your model, provider, or use case
-
-sttp-mcp is infrastructure. The protocol is the contract. The implementation is replaceable.
+- **Feel**: shorthand for measured deviation between attractor states, not biological emotion.
+- **State displacement**: change in AVEC vector across turns (`Δstability`, `Δfriction`, `Δlogic`, `Δautonomy`).
+- **Psi delta (`Δψ`)**: scalar shift in total attractor magnitude.
+- **Drift class**: interpretation of movement as `Intentional` or `Uncontrolled` based on deviation thresholds.
+- **Tension**: practical reading of resistance vs steadiness, usually from `friction` relative to `stability`.
 
 ---
 
