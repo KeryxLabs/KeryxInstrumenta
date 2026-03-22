@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Quick deploy script for the ACC VS Code extension
-# Usage: ./deploy.sh [--publish]
+# Usage: ./build.sh [--publish]
 
 PUBLISH=false
 if [[ "${1:-}" == "--publish" ]]; then
@@ -16,11 +16,14 @@ echo "[INFO] Building extension..."
 npm ci --no-audit --no-fund
 npm run compile
 
-VSIX_NAME=""
+PACKAGE_NAME=$(node -e "console.log(require('./package.json').name)")
+VERSION=$(node -e "console.log(require('./package.json').version)")
+TAG_PREFIX="acc-vscode"
+RELEASE_TAG="${TAG_PREFIX}/v${VERSION}"
+VSIX_NAME="${PACKAGE_NAME}-${VERSION}.vsix"
+
 echo "[INFO] Packaging extension (using npx @vscode/vsce)..."
-if npx -y @vscode/vsce package; then
-  # vsce names the file <publisher>.<name>-<version>.vsix or <name>-<version>.vsix
-  VSIX_NAME=$(ls *.vsix | head -n1 || true)
+if npx -y @vscode/vsce package -o "$VSIX_NAME"; then
   echo "[OK] Created $VSIX_NAME"
 else
   echo "[ERROR] Packaging failed. Ensure @vscode/vsce is available." >&2
@@ -29,7 +32,7 @@ fi
 
 if ! $PUBLISH ; then
   echo "[INFO] Built package at: $VSIX_NAME"
-  echo "Run './deploy.sh --publish' to upload to GitHub release (requires gh CLI)."
+  echo "Run './build.sh --publish' to upload to GitHub release (requires gh CLI)."
   exit 0
 fi
 
@@ -37,9 +40,6 @@ if ! command -v gh &>/dev/null; then
   echo "[ERROR] GitHub CLI (gh) not found. Install: https://cli.github.com/" >&2
   exit 1
 fi
-
-VERSION=$(node -e "console.log(require('./package.json').version)")
-RELEASE_TAG="v${VERSION}"
 
 echo "[GITHUB] Ensuring release $RELEASE_TAG exists..."
 if ! gh release view "$RELEASE_TAG" &>/dev/null; then

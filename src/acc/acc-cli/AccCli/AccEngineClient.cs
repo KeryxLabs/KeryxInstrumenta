@@ -25,10 +25,7 @@ internal sealed class AccEngineClient
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
 
-    private static readonly JsonSerializerOptions PrettyOptions = new()
-    {
-        WriteIndented = true,
-    };
+    private static readonly JsonSerializerOptions PrettyOptions = new() { WriteIndented = true };
 
     public AccEngineClient(IConfiguration configuration, ILogger<AccEngineClient> logger)
     {
@@ -47,7 +44,8 @@ internal sealed class AccEngineClient
         object? @params = null,
         GlobalOptions? globalOptions = null,
         CancellationToken ct = default
-    )                                                                                  {
+    )
+    {
         var host = globalOptions?.Host ?? _defaultHost;
         var port = globalOptions?.Port ?? _defaultPort;
         return SendAsync(method, @params, host, port, ct);
@@ -61,7 +59,13 @@ internal sealed class AccEngineClient
         CancellationToken ct
     )
     {
-        var envelope = new { jsonrpc = "2.0", id = 1, method, @params };
+        var envelope = new
+        {
+            jsonrpc = "2.0",
+            id = 1,
+            method,
+            @params,
+        };
         var requestJson = JsonSerializer.Serialize(envelope, WriteOptions);
 
         _logger.LogDebug("→ {Host}:{Port} {Method} {Request}", host, port, method, requestJson);
@@ -69,11 +73,12 @@ internal sealed class AccEngineClient
         await tcp.ConnectAsync(host, port, ct);
         var encoding = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
         await using var stream = tcp.GetStream();
-        using var reader = new StreamReader(stream, encoding);                             await using var writer = new StreamWriter(stream, encoding) { AutoFlush = true };
+        using var reader = new StreamReader(stream, encoding);
+        await using var writer = new StreamWriter(stream, encoding) { AutoFlush = true };
 
         await writer.WriteLineAsync(requestJson.AsMemory(), ct);
         await writer.FlushAsync(ct);
-                                                                                           var responseLine = await reader.ReadLineAsync(ct);
+        var responseLine = await reader.ReadLineAsync(ct);
         if (string.IsNullOrEmpty(responseLine))
         {
             _logger.LogWarning("← empty response for {Method}", method);
@@ -88,15 +93,19 @@ internal sealed class AccEngineClient
         if (root.TryGetProperty("error", out var error))
         {
             var code = error.TryGetProperty("code", out var c) ? c.GetInt32() : 0;
-            var msg  = error.TryGetProperty("message", out var m) ? m.GetString() : "unknown error";
+            var msg = error.TryGetProperty("message", out var m) ? m.GetString() : "unknown error";
             throw new AccEngineException(code, msg ?? "unknown error");
         }
 
-        if (!root.TryGetProperty("result", out var result) || result.ValueKind == JsonValueKind.Null)
+        if (
+            !root.TryGetProperty("result", out var result)
+            || result.ValueKind == JsonValueKind.Null
+        )
             return null;
 
         return JsonSerializer.Serialize(result, PrettyOptions);
-    }                                                                              }
+    }
+}
 
 internal sealed class AccEngineException(int code, string message)
     : Exception($"ACC engine error {code}: {message}")

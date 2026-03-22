@@ -9,8 +9,6 @@ namespace AccCli;
 ///   acccli --host 10.0.0.5 risk friction
 /// </summary>
 public record GlobalOptions(
-    [Option('H', Description = "ACC engine host (overrides appsettings.json)")]
-    string? Host,
-    [Option('P', Description = "ACC engine port (overrides appsettings.json)")]
-    int? Port
+    [Option('H', Description = "ACC engine host (overrides appsettings.json)")] string? Host,
+    [Option('P', Description = "ACC engine port (overrides appsettings.json)")] int? Port
 ) : ICommandParameterSet;

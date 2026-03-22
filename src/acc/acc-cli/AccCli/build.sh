@@ -3,11 +3,12 @@
 # Usage: ./build.sh [--publish]
 set -e
 
-VERSION="0.3.1"
-TAG_PREFIX="acc-engine"
+VERSION="0.1.0"
+TAG_PREFIX="acc-cli"
 RELEASE="${TAG_PREFIX}/v$VERSION"
-NAME="acc"
-RIDS=(osx-arm64 osx-x64 linux-x64 linux-arm64 win-x64)
+NAME="acc-cli"
+EXEC_NAME="acc-cli"
+RIDS=(osx-arm64 osx-x64 linux-x64 linux-arm64 linux-musl-x64 win-x64 win-arm64)
 
 PUBLISH=false
 if [[ "$1" == "--publish" ]]; then
@@ -45,19 +46,25 @@ package_artifact() {
 	local RID="$1"
 	case "$RID" in
 		osx-arm64)
-			tar -czf "${NAME}-${VERSION}-macos-arm64.tar.gz" -C bin/Release/net10.0/osx-arm64/publish "$NAME" && echo "  [OK] macos-arm64"
+			tar -czf "${NAME}-${VERSION}-macos-arm64.tar.gz" -C "bin/Release/net10.0/osx-arm64/publish" "$EXEC_NAME" && echo "  [OK] macos-arm64"
 			;;
 		osx-x64)
-			tar -czf "${NAME}-${VERSION}-macos-x64.tar.gz" -C bin/Release/net10.0/osx-x64/publish "$NAME" && echo "  [OK] macos-x64"
+			tar -czf "${NAME}-${VERSION}-macos-x64.tar.gz" -C "bin/Release/net10.0/osx-x64/publish" "$EXEC_NAME" && echo "  [OK] macos-x64"
 			;;
 		linux-x64)
-			tar -czf "${NAME}-${VERSION}-linux-x64.tar.gz" -C bin/Release/net10.0/linux-x64/publish "$NAME" && echo "  [OK] linux-x64"
+			tar -czf "${NAME}-${VERSION}-linux-x64.tar.gz" -C "bin/Release/net10.0/linux-x64/publish" "$EXEC_NAME" && echo "  [OK] linux-x64"
 			;;
 		linux-arm64)
-			tar -czf "${NAME}-${VERSION}-linux-arm64.tar.gz" -C bin/Release/net10.0/linux-arm64/publish "$NAME" && echo "  [OK] linux-arm64"
+			tar -czf "${NAME}-${VERSION}-linux-arm64.tar.gz" -C "bin/Release/net10.0/linux-arm64/publish" "$EXEC_NAME" && echo "  [OK] linux-arm64"
+			;;
+		linux-musl-x64)
+			tar -czf "${NAME}-${VERSION}-linux-musl-x64.tar.gz" -C "bin/Release/net10.0/linux-musl-x64/publish" "$EXEC_NAME" && echo "  [OK] linux-musl-x64"
 			;;
 		win-x64)
-			tar -czf "${NAME}-${VERSION}-win-x64.tar.gz" -C bin/Release/net10.0/win-x64/publish "${NAME}.exe" && echo "  [OK] win-x64"
+			tar -czf "${NAME}-${VERSION}-win-x64.tar.gz" -C "bin/Release/net10.0/win-x64/publish" "${EXEC_NAME}.exe" && echo "  [OK] win-x64"
+			;;
+		win-arm64)
+			tar -czf "${NAME}-${VERSION}-win-arm64.tar.gz" -C "bin/Release/net10.0/win-arm64/publish" "${EXEC_NAME}.exe" && echo "  [OK] win-arm64"
 			;;
 	esac
 }
@@ -93,7 +100,9 @@ upload_all() {
 			osx-x64) UPLOADS+=("${NAME}-${VERSION}-macos-x64.tar.gz") ;;
 			linux-x64) UPLOADS+=("${NAME}-${VERSION}-linux-x64.tar.gz") ;;
 			linux-arm64) UPLOADS+=("${NAME}-${VERSION}-linux-arm64.tar.gz") ;;
+			linux-musl-x64) UPLOADS+=("${NAME}-${VERSION}-linux-musl-x64.tar.gz") ;;
 			win-x64) UPLOADS+=("${NAME}-${VERSION}-win-x64.tar.gz") ;;
+			win-arm64) UPLOADS+=("${NAME}-${VERSION}-win-arm64.tar.gz") ;;
 		esac
 	done
 
