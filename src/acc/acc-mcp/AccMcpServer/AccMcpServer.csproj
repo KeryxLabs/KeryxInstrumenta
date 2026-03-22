@@ -19,8 +19,8 @@
 
     <!-- Set recommended package metadata -->
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageId>SampleMcpServer</PackageId>
-    <PackageVersion>0.1.0-beta</PackageVersion>
+    <PackageId>AccMcpServer</PackageId>
+    <PackageVersion>0.1.0</PackageVersion>
     <PackageTags>AI; MCP; server; stdio; ACC; code-analysis</PackageTags>
     <Description>MCP server exposing ACC (AdaptiveCodecContext) engine tools for code search, graph traversal, and AVEC metrics.</Description>
   </PropertyGroup>
