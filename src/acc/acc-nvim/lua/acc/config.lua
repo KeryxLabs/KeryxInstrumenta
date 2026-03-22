@@ -5,7 +5,7 @@ local M = {}
 
 M.defaults = {
   -- ACC engine connection
-  host = "localhost",
+  host = "0.0.0.0",
   port = 9339,
 
   -- Path to acc binary. nil = auto-managed (downloaded to data dir)

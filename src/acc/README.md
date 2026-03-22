@@ -21,6 +21,12 @@ Understanding your codebase matters  not because AI needs it, but because you do
 ACC makes that knowledge explicit. It models your code as a living graph with dimensional metrics (AVEC) that capture stability, logic density, friction, and autonomy. Not as a snapshot, but continuously, as your codebase evolves.
 The agent tooling is a consequence of that, not the point. A well-indexed codebase is useful to every tool that touches it, including the one between your ears.
 
+## Philosophy
+
+> "Real people want AI to power them, not replace them."
+
+ACC provides **exoskeleton architecture** - amplifying developer ability to reason about complex systems rather than automating them away. The codebase becomes queryable, navigable, and measurable through dimensional lenses that compress complexity without losing signal.
+
 ## Grafana Dashboard - Real Time Tracking Of Codebase Health
 <img width="1920" height="1080" alt="screenshot-2026-03-19_21-51-48" src="https://github.com/user-attachments/assets/9ff0b6ec-02a6-48fe-822e-81b5559e4b73" />
 
@@ -168,43 +174,22 @@ Example ACC MCP tools:
 
 
 ## Architecture
-```
-┌─────────────────────────────────────────────────────────────┐
-│                         ACC Core                            │
-│                                                             │
-│  ┌──────────┐    ┌──────────┐    ┌─────────────────────┐    │
-│  │   LSP    │───▶│  Metrics │───▶│   SurrealDB Graph   │    │
-│  │  Watcher │    │Collector │    │  (nodes + edges)    │    │
-│  └──────────┘    └──────────┘    └─────────────────────┘    │
-│                       │                    │                │
-│  ┌──────────┐         │                    │                │
-│  │   Git    │─────────┘                    │                │
-│  │  Watcher │                              │                │
-│  └──────────┘                              │                │
-│                                            │                │
-│  ┌──────────┐                              │                │
-│  │  Lizard  │──────────────────────────────┘                │
-│  │ Analyzer │                                               │
-│  └──────────┘                                               │
-│                                                             │
-│                    ┌─────────────┐                          │
-│                    │ AVEC Formula│                          │
-│                    │  Calculator │                          │ 
-│                    └─────────────┘                          │
-└─────────────────────────────────────────────────────────────┘
-                              │
-                              ▼
-                    ┌──────────────────┐
-                    │    Query SDK     │
-                    │  (FFI/stdio)     │
-                    └──────────────────┘
-                              │
-              ┌───────────────┼───────────────┐
-              ▼               ▼               ▼
-        ┌─────────┐   ┌─────────┐   ┌─────────┐
-        │ Neovim  │   │ VSCode  │   │ Agents  │
-        │ Plugin  │   │Extension│   │         │
-        └─────────┘   └─────────┘   └─────────┘
+```mermaid
+graph TD
+    subgraph ACC_Core [ACC Core]
+        LSP[LSP Watcher] --> MC[Metrics Collector]
+        Git[Git Watcher] --> MC
+        LA[Lizard Analyzer] --> MC
+        MC --> SG[(SurrealDB Graph<br/>nodes + edges)]
+        AVEC[AVEC Formula Calculator] <--> SG
+    end
+
+    ACC_Core --> SDK[Query SDK<br/>FFI/stdio]
+
+    SDK --> Neo[Neovim Plugin]
+    SDK --> VS[VSCode Extension]
+    SDK --> Ag[Agents]
+
 ```
 
 ## Core Queries
@@ -257,42 +242,13 @@ Scores are **configurable** via weights in `appsettings.json`:
     "Stability": {
       "ChurnWeight": 0.4,
       "ContributorWeight": 0.3,
-      "TestWeight": 0.3
-    },
-    "Logic": {
-      "ComplexityWeight": 0.7,
-      "ParameterWeight": 0.3
-    }
-  }
-}
-```
-
-Different project types get different defaults:
-- **Existing legacy system**: Heavily penalize churn, prioritize stability
-- **New greenfield project**: Favor autonomy, expect low test coverage initially
-
-## Configuration
-
-### appsettings.json
-```json
-{
-  "Acc": {
-    "RepositoryPath": "/absolute/path/to/repo",
-    "SurrealDbConnection": "ws://localhost:8000",
-    "Language": "csharp",
-    "Target": {
-      "Stability": 0.95,
-      "Logic": 0.81,
-      "Friction": 0.19,
-      "Autonomy": 0.99
-    }
-  },
-  "AvecWeights": {
-    "Stability": {
-      "ChurnWeight": 0.4,
-      "ContributorWeight": 0.3,
       "TestWeight": 0.3,
       "ChurnNormalize": 10,
+      "TestLineCoverageNormalize": 100.0,
+      "TestLineCoverageWeight": 0.5,
+      "TestBranchCoverageNormalize": 100.0,
+      "TestBranchCoverageWeight": 0.5,
+      "TestBaseBias": 0.5,
       "ContributorCap": 5
     },
     "Logic": {
@@ -302,23 +258,22 @@ Different project types get different defaults:
       "ParameterCap": 5
     },
     "Friction": {
-      "CentralityWeight": 0.6,
-      "DependencyWeight": 0.4,
+      "CentralityWeight": 0.4,
+      "DependencyWeight": 0.6,
+      "ChurnWeight": 0.7,
+      "CollaborationNormalize": 0.3,
+      "StructuralFrictionWeight": 0.4,
+      "ProcessFrictionWeight": 0.3,
+      "CognitiveFrictionWeight": 0.3,
+      "CyclomaticComplexityWeight": 20.0,
+      "GitContributorsNormalize": 10.0,
+      "GitTotalCommitsNormalize": 50.0,
       "IncomingCap": 10
-    }
-  }
-}
-```
-
-### Environment-specific configs
-
-Create `appsettings.Development.json` or `appsettings.Production.json` to override defaults:
-```json
-{
-  "Acc": {
-    "Target": {
-      "Stability": 0.85,
-      "Friction": 0.60
+    },
+    "Autonomy": {
+      "FileNumberBlastRadius": 30,
+      "DependencyRatio": 0.8,
+      "AbsoluteCount": 0.2
     }
   }
 }
@@ -335,6 +290,8 @@ ACC works with any language that has an LSP server:
 | Python     | pylsp                   | `pip install python-lsp-server`  |
 | Go         | gopls                   | `go install golang.org/x/tools/gopls@latest` |
 | Rust       | rust-analyzer           | `rustup component add rust-analyzer` |
+
+...and more
 
 ## Query Examples
 
@@ -366,23 +323,79 @@ QueryPatterns(avec: targetNode.Avec, threshold: 0.85)
 
 ## Agent Integration
 
-Agents can query ACC for dimensional context and **update** AVEC scores based on runtime learning:
-```csharp
-// Query
-var node = QueryRelations("UserService.cs:Login:34");
-Console.WriteLine($"Friction: {node.Avec.Friction}");
+Use ACC through the `acc-mcp` server so agents can call tools over stdio.
 
-// Agent learns this node is actually more stable than metrics suggest
-UpdateLearnedAvec(
-    nodeId: "UserService.cs:Login:34",
-    avec: { stability: 0.95, logic: 0.8, friction: 0.4, autonomy: 0.85 }
-);
+### 1. Register `acc-mcp` in your MCP client
 
-// Divergence becomes visible
-var updated = GetNode("UserService.cs:Login:34");
-Console.WriteLine($"Delta: {updated.AvecDelta.Stability}");
-// Output: +0.20 (learned is higher than computed)
+```json
+{
+  "servers": {
+    "AccMcp": {
+      "type": "stdio",
+      "command": "/absolute/path/to/AccMcpServer"
+    }
+  }
+}
 ```
+
+### 2. Ask your agent using ACC-first prompts
+
+Examples:
+
+- "Use `get_project_stats` and summarize overall AVEC health."
+- "Use `get_high_friction_nodes` with `minFriction: 0.75` and show top 10 chokepoints."
+- "Find `Authenticate` with `search_by_name`, then run `query_dependencies` incoming depth 3."
+- "For node `UserService.cs:AuthenticateAsync:23`, run `query_relations` and explain direct callers/callees."
+- "Find unstable code with `get_unstable_nodes` where `maxStability` is `0.35`."
+
+### 3. Typical ACC MCP workflow
+
+1. `get_project_stats` to establish baseline.
+2. `get_high_friction_nodes` or `get_unstable_nodes` to identify risk.
+3. `search_by_name` to locate a specific symbol when only partial names are known.
+4. `query_relations` for one-hop context.
+5. `query_dependencies` for transitive impact analysis before refactoring.
+6. `query_patterns` to find nodes with similar AVEC shape and compare architecture behavior.
+
+### 4. Tool call examples
+
+```json
+{
+  "tool": "get_project_stats",
+  "arguments": {}
+}
+```
+
+```json
+{
+  "tool": "get_high_friction_nodes",
+  "arguments": {
+    "minFriction": 0.8,
+    "limit": 5
+  }
+}
+```
+
+```json
+{
+  "tool": "query_dependencies",
+  "arguments": {
+    "nodeId": "UserService.cs:AuthenticateAsync:23",
+    "direction": "Incoming",
+    "maxDepth": 3,
+    "includeScores": true
+  }
+}
+```
+
+### 5. Recommended agent pattern
+
+Have the agent:
+
+- Start broad (stats/risk lists), then narrow to specific nodes.
+- Include `nodeId` values in every conclusion so humans can verify fast.
+- Pair every recommendation with dependency impact (`query_dependencies`) before edits.
+- Prefer AVEC deltas (stability vs friction tradeoffs) over raw complexity in isolation.
 
 ## Roadmap
 
@@ -397,6 +410,7 @@ Console.WriteLine($"Delta: {updated.AvecDelta.Stability}");
 - [ ] HTTP/gRPC query API
 - [ ] Hosted MCP gateway adapter
 - [ ] Language-specific complexity analyzers (beyond Lizard)
+- [ ] Git Branch Switching Detection and Auto Database Migration
 - [ ] Real-time change propagation (WebSocket events)
 
 ## Part of KeryxLabs Ecosystem
@@ -427,11 +441,5 @@ Contributions welcome! ACC is designed to be extensible:
 - Build editor integrations
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-## Philosophy
-
-> "Real people want AI to power them, not replace them."
-
-ACC provides **exoskeleton architecture** - amplifying developer ability to reason about complex systems rather than automating them away. The codebase becomes queryable, navigable, and measurable through dimensional lenses that compress complexity without losing signal.
 
 ---
