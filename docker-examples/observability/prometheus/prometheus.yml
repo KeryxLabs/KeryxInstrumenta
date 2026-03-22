@@ -1,0 +1,26 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+# Enable Exemplars (This lets you click a spike in Grafana and jump to the trace)
+storage:
+  exemplars:
+    max_exemplars: 100000
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'otel-collector'
+    static_configs:
+      - targets: ['otel-collector:8888'] # Default OTel health/metrics port
+
+  - job_name: "rabbitmq"
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["host.docker.internal:15692"]
+
+  - job_name: "tempo"
+    static_configs:
+      - targets: ["tempo:3200"]
