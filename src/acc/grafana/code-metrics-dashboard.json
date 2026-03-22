@@ -1,0 +1,896 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {
+        "type": "fiskaly-surrealdb-datasource",
+        "uid": "bfg9f5tccmrcwf"
+      },
+      "description": "Displays the average health for the project as saved in surrealdb",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 12,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "fiskaly-surrealdb-datasource",
+            "uid": "bfg9f5tccmrcwf"
+          },
+          "group": false,
+          "key": "Q-c41a6973-ab80-4564-9ab0-94aa789ae9ba-0",
+          "mode": "raw",
+          "rate": false,
+          "rateFunctions": [
+            "count"
+          ],
+          "rateInterval": "",
+          "rateZero": true,
+          "refId": "A",
+          "requery": true,
+          "surql": "        SELECT \n            count() as TotalNodes,\n            math::mean(avec_stability) as Stability,\n            math::mean(avec_logic) as Logic,\n            math::mean(avec_friction) as Friction,\n            math::mean(avec_autonomy) as Autonomy\n        FROM node\n        WHERE avec_stability IS NOT NONE\n        GROUP ALL;"
+        }
+      ],
+      "title": "Current Average Health",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "description": "Overall Stability measurement of codebase",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "median"
+          ],
+          "fields": "/^avec\\.stability$/",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "filters": [
+            {
+              "id": "0426554e",
+              "isCustomValue": true,
+              "operator": "<",
+              "scope": "span",
+              "tag": "avec.stability",
+              "value": [
+                "0.7"
+              ],
+              "valueType": "float"
+            }
+          ],
+          "key": "Q-6f802632-cd18-4ae1-86c0-257b9833379f-0",
+          "limit": 20,
+          "metricsQueryType": "range",
+          "query": "{ .avec.stability > 0.1}",
+          "queryType": "traceql",
+          "refId": "A",
+          "serviceMapUseNativeHistograms": false,
+          "spss": 50,
+          "tableType": "spans"
+        }
+      ],
+      "title": "Live Stability",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "description": "Overall friction measurement of codebase",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "id": 10,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "median"
+          ],
+          "fields": "/^avec\\.friction$/",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "filters": [
+            {
+              "id": "0426554e",
+              "isCustomValue": true,
+              "operator": "<",
+              "scope": "span",
+              "tag": "avec.stability",
+              "value": [
+                "0.7"
+              ],
+              "valueType": "float"
+            }
+          ],
+          "key": "Q-6f802632-cd18-4ae1-86c0-257b9833379f-0",
+          "limit": 20,
+          "metricsQueryType": "range",
+          "query": "{ .avec.friction > 0.1}",
+          "queryType": "traceql",
+          "refId": "A",
+          "serviceMapUseNativeHistograms": false,
+          "spss": 50,
+          "tableType": "spans"
+        }
+      ],
+      "title": "Live Friction",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "uid": "prometheus"
+      },
+      "description": "Cyclomatic complexity per function",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "scaleDistribution": {
+              "type": "linear"
+            }
+          },
+          "unit": "none"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 23,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "id": 4,
+      "maxDataPoints": 500,
+      "options": {
+        "calculate": false,
+        "cellGap": 1,
+        "cellValues": {},
+        "color": {
+          "exponent": 0.5,
+          "fill": "dark-orange",
+          "mode": "scheme",
+          "reverse": false,
+          "scale": "exponential",
+          "scheme": "Spectral",
+          "steps": 32
+        },
+        "exemplars": {
+          "color": "rgba(255,0,255,0.7)"
+        },
+        "filterValues": {
+          "le": 1e-9
+        },
+        "legend": {
+          "show": true
+        },
+        "rowsFrame": {
+          "layout": "auto"
+        },
+        "selectionMode": "x",
+        "showValue": "auto",
+        "tooltip": {
+          "mode": "single",
+          "showColorScale": false,
+          "yHistogram": false
+        },
+        "yAxis": {
+          "axisPlacement": "left",
+          "reverse": false
+        }
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "expr": "sum by (le) (rate(codebase_complexity_bucket{ }[$__rate_interval]))",
+          "format": "heatmap",
+          "fromExploreMetrics": false,
+          "refId": "codebase_complexity_bucket-heatmap"
+        }
+      ],
+      "title": "Codebase Complexity",
+      "type": "heatmap"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "description": "Overall Autonomy measurement of codebase",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 5
+      },
+      "id": 6,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "median"
+          ],
+          "fields": "/^avec\\.autonomy$/",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "filters": [
+            {
+              "id": "0426554e",
+              "isCustomValue": true,
+              "operator": "<",
+              "scope": "span",
+              "tag": "avec.stability",
+              "value": [
+                "0.7"
+              ],
+              "valueType": "float"
+            }
+          ],
+          "key": "Q-6f802632-cd18-4ae1-86c0-257b9833379f-0",
+          "limit": 20,
+          "metricsQueryType": "range",
+          "query": "{ .avec.autonomy > 0.1}",
+          "queryType": "traceql",
+          "refId": "A",
+          "serviceMapUseNativeHistograms": false,
+          "spss": 50,
+          "tableType": "spans"
+        }
+      ],
+      "title": "Live Autonomy",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "description": "Overall Logic measurement of codebase",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 5
+      },
+      "id": 1,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "median"
+          ],
+          "fields": "/^avec\\.logic$/",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "filters": [
+            {
+              "id": "0426554e",
+              "isCustomValue": true,
+              "operator": "<",
+              "scope": "span",
+              "tag": "avec.logic",
+              "value": [
+                "0.6"
+              ],
+              "valueType": "float"
+            }
+          ],
+          "key": "Q-6f802632-cd18-4ae1-86c0-257b9833379f-0",
+          "limit": 20,
+          "metricsQueryType": "range",
+          "queryType": "traceqlSearch",
+          "refId": "A",
+          "serviceMapUseNativeHistograms": false,
+          "spss": 50,
+          "tableType": "spans"
+        }
+      ],
+      "title": "Live Logic",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "uid": "bfg9f5tccmrcwf"
+      },
+      "description": "Top 20 Functions with highest cyclomatic complexity",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "fillOpacity": 50,
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "pointShape": "circle",
+            "pointSize": {
+              "fixed": 5
+            },
+            "pointStrokeWidth": 1,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "show": "points"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 7,
+        "x": 0,
+        "y": 10
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "mapping": "manual",
+        "series": [
+          {
+            "frame": {
+              "matcher": {
+                "id": "byIndex",
+                "options": 0
+              }
+            },
+            "x": {
+              "matcher": {
+                "id": "byName",
+                "options": "lines_of_code"
+              }
+            },
+            "y": {
+              "matcher": {
+                "id": "byName",
+                "options": "cyclomatic_complexity"
+              }
+            }
+          }
+        ],
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "group": false,
+          "mode": "raw",
+          "rate": false,
+          "rateFunctions": [
+            "count"
+          ],
+          "rateInterval": "",
+          "rateZero": true,
+          "refId": "A",
+          "surql": "SELECT \n    name,\n    cyclomatic_complexity,\n    lines_of_code,\n    avec_friction\nFROM node\nWHERE cyclomatic_complexity > 10\nORDER BY cyclomatic_complexity DESC\nLIMIT 20;"
+        }
+      ],
+      "title": "Test Debt",
+      "type": "xychart"
+    },
+    {
+      "datasource": {
+        "type": "tempo",
+        "uid": "tempo"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            }
+          },
+          "fieldMinMax": false,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 0.2
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 9,
+        "x": 7,
+        "y": 10
+      },
+      "id": 7,
+      "options": {
+        "combine": true,
+        "legend": {
+          "calcs": [
+            "last",
+            "first",
+            "max",
+            "sum"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "tempo",
+            "uid": "tempo"
+          },
+          "filters": [
+            {
+              "id": "0426554e",
+              "isCustomValue": true,
+              "operator": "<",
+              "scope": "span",
+              "tag": "avec.stability",
+              "value": [
+                "0.7"
+              ],
+              "valueType": "float"
+            }
+          ],
+          "key": "Q-6f802632-cd18-4ae1-86c0-257b9833379f-0",
+          "limit": 20,
+          "metricsQueryType": "range",
+          "query": "{ .history.commits.recent > 0 }",
+          "queryType": "traceql",
+          "refId": "A",
+          "serviceMapUseNativeHistograms": false,
+          "spss": 50,
+          "tableType": "spans"
+        }
+      ],
+      "title": "Commit History",
+      "type": "histogram"
+    },
+    {
+      "datasource": {
+        "type": "fiskaly-surrealdb-datasource",
+        "uid": "bfg9f5tccmrcwf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "hideFrom": {
+              "viz": false
+            },
+            "inspect": false
+          },
+          "fieldMinMax": false,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Function"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 402
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 16,
+        "x": 0,
+        "y": 15
+      },
+      "id": 9,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "fiskaly-surrealdb-datasource",
+            "uid": "bfg9f5tccmrcwf"
+          },
+          "group": false,
+          "mode": "raw",
+          "rate": false,
+          "rateFunctions": [
+            "count"
+          ],
+          "rateInterval": "",
+          "rateZero": true,
+          "refId": "A",
+          "requery": true,
+          "surql": "SELECT \n    name AS Function,\narray::last(string::split(file_path, \"/\")) as FileName,\n    git_total_commits AS TotalCommits,\n    avec_stability AS Stability,\n    cyclomatic_complexity AS Complexity\nFROM node\nWHERE git_total_commits > 5\nORDER BY cyclomatic_complexity DESC,avec_stability ASC\nLIMIT 1000;"
+        }
+      ],
+      "title": "Danger Zone",
+      "transparent": true,
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "fiskaly-surrealdb-datasource",
+        "uid": "bfg9f5tccmrcwf"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "footer": {
+              "reducers": []
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 16,
+        "x": 0,
+        "y": 21
+      },
+      "id": 11,
+      "options": {
+        "cellHeight": "sm",
+        "showHeader": true
+      },
+      "pluginVersion": "12.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "fiskaly-surrealdb-datasource",
+            "uid": "bfg9f5tccmrcwf"
+          },
+          "group": false,
+          "mode": "raw",
+          "rate": false,
+          "rateFunctions": [
+            "count"
+          ],
+          "rateInterval": "",
+          "rateZero": true,
+          "refId": "A",
+          "requery": true,
+          "surql": "SELECT \navec_stability AS Stability,\navec_friction AS Friction,\narray::last(string::split(file_path, \"/\")) as FileName,\ngit_avg_days_between_changes AS AvgDaysBetweenChange,\ngit_contributors AS Contributors,\ngit_created AS DateCreated\nFROM node\nWHERE avec_friction > 0.3\nORDER BY avec_friction DESC\nLIMIT 10;"
+        }
+      ],
+      "title": "Developer Pains",
+      "transparent": true,
+      "type": "table"
+    }
+  ],
+  "preload": false,
+  "schemaVersion": 42,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-5m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Codebase Metrics",
+  "uid": "adrjdkx",
+  "version": 41,
+  "weekStart": ""
+}
