@@ -6,8 +6,9 @@ import * as path from 'path';
 import * as tar from 'tar';
 import * as child_process from 'child_process';
 
-const ACC_VERSION = '0.3.0'; // Update this with releases
+const ACC_VERSION = '0.3.1'; // Update this with releases
 const GITHUB_RELEASES_URL = `https://github.com/KeryxLabs/KeryxInstrumenta/releases/download`;
+const ACC_RELEASE_TAG = `acc-engine/v${ACC_VERSION}`;
 
 interface PlatformInfo {
     platform: string;
@@ -174,7 +175,7 @@ export class AccServerDownloader {
             return null;
         }
 
-        const downloadUrl = `${GITHUB_RELEASES_URL}/v${ACC_VERSION}/${platformInfo.assetName}`;
+        const downloadUrl = `${GITHUB_RELEASES_URL}/${ACC_RELEASE_TAG}/${platformInfo.assetName}`;
         const serverDir = path.join(this.context.globalStorageUri.fsPath, 'server');
         
         // Ensure directory exists

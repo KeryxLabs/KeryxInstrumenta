@@ -4,17 +4,17 @@ using AdaptiveCodecContextEngine.Models.Rpc;
 
 namespace AdaptiveCodecContextEngine.Models;
 
-
 [JsonSourceGenerationOptions(
     PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals)]
+    NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
+)]
 [JsonSerializable(typeof(LspMessage))]
 [JsonSerializable(typeof(DocumentSymbolParams))]
 [JsonSerializable(typeof(DocumentSymbol[]))]
-[JsonSerializable(typeof(SymbolInformation[]))]  
-[JsonSerializable(typeof(ReferenceParams))]      
-[JsonSerializable(typeof(ReferenceContext))]     
+[JsonSerializable(typeof(SymbolInformation[]))]
+[JsonSerializable(typeof(ReferenceParams))]
+[JsonSerializable(typeof(ReferenceContext))]
 [JsonSerializable(typeof(Location[]))]
 [JsonSerializable(typeof(LizardResult))]
 [JsonSerializable(typeof(LizardFunction))]

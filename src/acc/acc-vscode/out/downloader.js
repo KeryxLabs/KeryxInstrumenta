@@ -41,7 +41,7 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const tar = __importStar(require("tar"));
 const child_process = __importStar(require("child_process"));
-const ACC_VERSION = '0.3.0'; // Update this with releases
+const ACC_VERSION = '0.3.1'; // Update this with releases
 const GITHUB_RELEASES_URL = `https://github.com/KeryxLabs/KeryxInstrumenta/releases/download`;
 class AccServerDownloader {
     constructor(context, outputChannel) {

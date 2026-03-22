@@ -16,7 +16,7 @@ public class GitWatcher : IDisposable
 
     private Repository? _repo;
     private readonly AdaptiveContextInstrumentation _instrumentation;
-
+    public string RepoPath => _repoPath;
     public GitWatcher(
         Channel<GitEventWithContext> eventChannel,
         SurrealDbRepository repository,

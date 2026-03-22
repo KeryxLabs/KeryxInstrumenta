@@ -1,67 +1,47 @@
 # KeryxInstrumenta
 
-> *Protocol-first infrastructure for persistent AI memory and adaptive code intelligence.*
+> Protocol-first infrastructure for persistent AI memory and adaptive code intelligence.
 
-Language models are stateless. Every session starts cold. KeryxInstrumenta gives conversational state somewhere to go — and a way to get it back.
+Language models are stateless by default. KeryxInstrumenta provides open, production-oriented instruments that make state portable and code understanding queryable.
 
-This is a collection of standalone instruments built on open protocols for stateful AI communication. Each tool is independent, production-ready, and model-agnostic.
+Licensed under Apache-2.0. See `LICENSE`.
 
-Licensed under Apache-2.0. See [LICENSE](./LICENSE).
-
----
-
-## What We're Building
-
-**STTP (Spatio-Temporal Transfer Protocol)** — a typed intermediate representation that encodes conversational state into compressed, confidence-weighted structures any model can reconstruct.
-
-Not a summary. Not a transcript. A mathematical representation of a conversational state.
-
-**Instrument 1: `sttp-mcp`** — an MCP server that lets models compress, store, and retrieve STTP nodes. The model calling the tools *is* the compression model. The server validates structure, persists nodes, and retrieves on resonance.
-
-**Instrument 2: `acc` (Adaptive Codec Context)** — a dimensional code-intelligence instrument that indexes repositories into AVEC-space (stability, logic, friction, autonomy) so agents can query architecture, dependencies, and high-impact patterns without token-heavy raw dumps.
-
----
-
-## Quick Start
+## What This Repo Contains
 
 KeryxInstrumenta currently ships two independent instruments:
 
-- `sttp-mcp` for session memory persistence and transfer
-- `acc` for dimensional repository indexing and agent-facing codebase queries
+- `sttp-mcp`: MCP server for STTP (Spatio-Temporal Transfer Protocol) memory persistence and retrieval.
+- `acc`: Adaptive Codec Context, a dimensional code-intelligence system for repository indexing and analysis.
 
-### Run with Docker (recommended)
+Each instrument is standalone and can be used independently.
 
-This quick start is for `sttp-mcp`.
+## Instrument Overview
+
+| Instrument | Current Line | What It Does |
+|---|---|---|
+| [`sttp-mcp`](./src/sttp-mcp) | `0.1.x-beta` | Stores and retrieves compressed conversational state as STTP nodes via MCP tools |
+| [`acc`](./src/acc) | `0.3.x` | Indexes repositories into AVEC-space and exposes dependency/risk/pattern queries |
+
+## Quick Start
+
+### 1. Clone
 
 ```bash
-# Clone and build
 git clone https://github.com/KeryxLabs/KeryxInstrumenta.git
-cd KeryxInstrumenta/src/sttp-mcp
+cd KeryxInstrumenta
+```
+
+### 2. STTP-MCP (Docker)
+
+```bash
+cd src/sttp-mcp
+
 docker build -t sttp-mcp:local .
-
-# Run over stdio
 docker run --rm -i -v "$PWD/data:/data" sttp-mcp:local
-
-#Run from global image
-docker run --rm -i -v "$PWD/data:/data" ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta
 ```
 
-### Configure your MCP client
+Minimal MCP client config:
 
-```json
-{
-    "mcpServers": {
-        "sttp-mcp": {
-            "command": "docker",
-            "args": [
-                "run", "--rm", "-i",
-                "-v", "/absolute/path/to/sttp-data:/data",
-                "ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta"
-            ]
-        }
-    }
-}
-```
 ```json
 {
   "servers": {
@@ -70,215 +50,149 @@ docker run --rm -i -v "$PWD/data:/data" ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta
       "command": "docker",
       "args": [
         "run",
-        "-i",
         "--rm",
-        "ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta",
-        "--remote",
-        "--remote-endpoint",
-        "http://surreal_db_url:port",
-        "--username",
-        "user",
-        "--password",
-        "pass"
+        "-i",
+        "-v",
+        "/absolute/path/to/sttp-data:/data",
+        "sttp-mcp:local"
       ]
     }
-  },
-  "inputs": []
+  }
 }
-
 ```
 
-### Tools Available
+### 3. ACC
 
-- **`calibrate_session`** — measure current AVEC state, detect drift
-- **`store_context`** — compress and persist a STTP node
-- **`get_context`** — retrieve resonant nodes by attractor alignment
-- **`list_nodes`** — explore stored memory, verify persistence
-- **`get_moods`** — retrieve AVEC presets, apply state swaps
+For full ACC setup and per-tool instructions:
 
-Full protocol docs: [sttp-mcp README](./src/sttp-mcp/README.md)
+- [`src/acc/README.md`](./src/acc/README.md)
 
-ACC docs: [ACC README](./src/acc/README.md)
+## Release Tags
 
-### ACC Quick Start (local)
+KeryxInstrumenta uses namespaced release tags per tool so each artifact stream is independent:
+
+- `sttp-mcp/v...`
+- `acc-engine/v...`
+- `acc-cli/v...`
+- `acc-mcp/v...`
+- `acc-vscode/v...`
+
+## Install from GitHub Releases
+
+### STTP-MCP
+
+Published images are available in GHCR (example):
 
 ```bash
-# From repo root
-cd src/acc
-dotnet build
-dotnet run
+docker run --rm -i -v "$PWD/data:/data" ghcr.io/keryxlabs/sttp-mcp:0.1.2-beta
 ```
 
-ACC indexes repository entities into AVEC-space and exposes query patterns for relations, dependencies, and structural pattern matching. Recent ACC work includes adaptive LSP telemetry instrumentation across stream and metric services.
+### ACC Engine/CLI/MCP Binaries (example: linux-x64)
 
----
+```bash
+# ACC engine
+curl -fsSL \
+  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-engine/v0.3.1/acc-0.3.1-linux-x64.tar.gz \
+  | tar -xz
 
-## How to Use STTP-MCP
+# ACC CLI
+curl -fsSL \
+  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-cli/v0.1.0/acc-cli-0.1.0-linux-x64.tar.gz \
+  | tar -xz
 
-Once the server is running and connected to your MCP client, here's the typical workflow:
-
-### 1. Start a session and calibrate
-
-Ask your model to calibrate at the start of any new session or after significant reasoning shifts:
-
-```
-"Can you calibrate this session?"
-```
-
-The model calls `calibrate_session` with:
-- `sessionId` (e.g., "project-kickoff-2026-03-06")
-- Current AVEC values (stability, friction, logic, autonomy)
-- `trigger` (usually "manual")
-
-The tool returns drift from the previous session state, so the model knows if it's continuing coherently or starting fresh.
-
-### 2. Store important context
-
-When you reach a meaningful checkpoint — completed analysis, design decision, key insight — have the model compress and store it:
-
-```
-"Store this conversation state for later retrieval."
+# ACC MCP server
+curl -fsSL \
+  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-mcp/v0.1.0/acc-mcp-0.1.0-linux-x64.tar.gz \
+  | tar -xz
 ```
 
-The model compresses the current context into a STTP node and calls `store_context`. The server validates the structure and persists it with a unique node ID.
+### ACC VS Code Extension
 
-### 3. Retrieve context in a new session
+Install from a release `.vsix`:
 
-Start a fresh chat, calibrate first, then pull relevant context:
-
-```
-"Retrieve context related to the project kickoff."
+```bash
+code --install-extension acc-vscode-0.3.1.vsix
 ```
 
-The model calls `get_context` with the session ID and its current AVEC state. The server returns the most resonant nodes based on attractor alignment — the model rehydrates directly from them.
+## How To Use STTP-MCP
 
-### 4. Explore stored memory
+Typical flow in an MCP client session:
 
-Check what's in memory across all sessions:
+1. Calibrate at session start with `calibrate_session`.
+2. Persist key milestones with `store_context`.
+3. Rehydrate in new sessions with `get_context`.
+4. Inspect stored state with `list_nodes`.
+5. Shift reasoning posture with `get_moods`, then recalibrate.
 
-```
-"List all stored nodes."
-```
+Primary docs:
 
-Or filter by session:
+- [`src/sttp-mcp/README.md`](./src/sttp-mcp/README.md)
 
-```
-"Show me nodes from the project-kickoff session."
-```
+## How To Use ACC
 
-The model calls `list_nodes` and presents the stored context with timestamps, sessions, and Ψ values.
+ACC exposes four interaction surfaces:
 
-### 5. Apply reasoning mode shifts
+- VS Code extension (`acc-vscode`)
+- Neovim plugin (`acc.nvim`)
+- CLI (`acc-cli`)
+- MCP server (`acc-mcp`)
 
-Need to switch reasoning posture? Pull AVEC mood presets:
+Typical ACC loop:
 
-```
-"Show me available reasoning modes."
-"Switch to defensive mode and recalibrate."
-```
+1. Build or update the dependency graph.
+2. Query risk (`high friction`, `unstable`) and dependencies.
+3. Run pattern searches in AVEC-space.
+4. Feed structured results into planning/review loops.
 
-The model calls `get_moods`, presents options (focused, creative, defensive, analytical, etc.), applies the swap, then recalibrates to measure the shift.
+Primary docs:
 
+- [`src/acc/README.md`](./src/acc/README.md)
+- [`src/acc/acc-vscode/README.md`](./src/acc/acc-vscode/README.md)
+- [`src/acc/acc-nvim/README.md`](./src/acc/acc-nvim/README.md)
+- [`src/acc/acc-cli/AccCli/README.md`](./src/acc/acc-cli/AccCli/README.md)
+- [`src/acc/acc-mcp/AccMcpServer/README.md`](./src/acc/acc-mcp/AccMcpServer/README.md)
 
-### Cross-Model Continuity Demo
+## Demo
 
-### Gemini 3 -->  Claude Sonnet 4.5 --> GPT4o --> GPT5-mini
-[dwhatsapp-demo.webm](https://github.com/user-attachments/assets/9dc532f6-fecc-4df1-bf19-dc050b548b86)
+Cross-model continuity demo:
 
+- [dwhatsapp-demo.webm](https://github.com/user-attachments/assets/9dc532f6-fecc-4df1-bf19-dc050b548b86)
 
+Real-time ACC health tracking (Grafana):
 
-## How to Use ACC
-
-Use ACC when an agent needs compressed architectural perception of a codebase instead of raw file dumps.
-
-### 1. Index and observe repository shape
-
-Point ACC at your repository and language server so entities can be measured and persisted in the graph.
-
-### 2. Query relations and dependencies
-
-Use ACC relation/dependency queries to answer:
-
-- What calls this node?
-- What breaks if this changes?
-- Where are the highest-friction chokepoints?
-
-### 3. Query dimensional patterns
-
-Use AVEC pattern matching to find similarly fragile, complex, or high-impact nodes for planning and refactoring.
-
-### 4. Feed results back into your agent loop
-
-Use ACC output as structured context for planning, review, and change impact analysis, then pair with `sttp-mcp` for long-horizon session continuity.
-
-
-## Real time health analysis of codebase
-### Track your changes as you code within grafana
-<img width="1920" height="1080" alt="screenshot-2026-03-19_21-51-48" src="https://github.com/user-attachments/assets/51b3d2a2-35e8-4eec-a8c3-cb91a1900122" />
-
-
----
-
-## Instruments
-
-| Instrument | Status | Description |
-|---|---|---|
-| [sttp-mcp](./src/sttp-mcp) | `0.1.2-beta` | MCP server for STTP context persistence, retrieval, and session calibration |
-| [acc](./src/acc) | `0.3.0` | Adaptive Codec Context: AVEC-based repository indexing, dependency analysis, and pattern queries for agents |
-
-*More instruments coming as the ecosystem grows.*
-
----
+<img width="1920" height="1080" alt="ACC Grafana Dashboard" src="https://github.com/user-attachments/assets/51b3d2a2-35e8-4eec-a8c3-cb91a1900122" />
 
 ## Philosophy
 
-- **Protocol first.** Every instrument is built on an open, documented protocol. The implementation is replaceable. The contract is not.
-- **Model agnostic.** No instrument assumes a specific model, provider, or architecture. If it speaks the protocol, it works.
-- **Infrastructure, not opinion.** These tools do not decide how you build. They give you the substrate to build on.
+- Protocol first: contracts are open and documented.
+- Model agnostic: tools are provider- and model-independent.
+- Infrastructure, not opinion: instruments provide substrate, not ideology.
 
----
+## Keryx Ecosystem
 
-## The Keryx Ecosystem
-
-KeryxInstrumenta is the public entry point of a larger system:
-
-```
+```text
 KeryxFlux          Herald.   Orchestration layer.
 KeryxMemento       Memory.   Persistence substrate.
 KeryxCortex        Mind.     Multi-agent intelligence.
 KeryxInstrumenta   Tools.    You are here.
 ```
 
-The instruments in this repo are designed to work standalone. They are also the foundation on which the rest of the ecosystem is built.
-
----
-
 ## AVEC Glossary
 
-AVEC (Attractor Vector Encoding Configuration) is the state vector that tracks reasoning posture across four dimensions:
+AVEC (Attractor Vector Encoding Configuration) is the state vector used across STTP/ACC dimensions:
 
-- **Stability** — baseline steadiness vs volatility
-- **Friction** — resistance vs flow
-- **Logic** — structured reasoning vs intuitive association  
-- **Autonomy** — self-directed vs guided execution
-
-- **Psi (Ψ)** — scalar magnitude of the AVEC vector: `√(stability² + friction² + logic² + autonomy²)`
-- **Feel** — shorthand for measured deviation between attractor states (not biological emotion)
-- **Drift class** — interpretation of AVEC movement as `Intentional` or `Uncontrolled` based on deviation thresholds
-
----
+- Stability: baseline steadiness vs volatility
+- Friction: resistance vs flow
+- Logic: structured reasoning vs intuitive association
+- Autonomy: self-directed vs guided execution
+- Psi (`Psi`): vector magnitude `sqrt(stability^2 + friction^2 + logic^2 + autonomy^2)`
+- Drift class: interpretation of attractor movement (`Intentional` vs `Uncontrolled`)
 
 ## Contributing
 
-KeryxInstrumenta is open source. Contributions welcome — new instruments, adapters, compression handlers, storage backends.
+Contributions are welcome across instruments, adapters, and docs.
 
-Each instrument lives in its own directory with its own README, spec, and implementation.
+- See [`CONTRIBUTING.md`](./CONTRIBUTING.md)
+- See [`CHANGELOG.md`](./CHANGELOG.md)
 
-See [CHANGELOG.md](./CHANGELOG.md) for recent changes.
-
----
-
-*Part of the KeryxLabs ecosystem.*  
-*KeryxFlux → KeryxMemento → KeryxCortex*  
-*Herald. Memory. Mind.*
-
+Part of the KeryxLabs ecosystem.

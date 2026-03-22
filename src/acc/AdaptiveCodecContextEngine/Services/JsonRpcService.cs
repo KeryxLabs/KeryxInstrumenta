@@ -35,7 +35,7 @@ public class JsonRpcServer : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var listener = new TcpListener(IPAddress.Loopback, _port);
+        var listener = new TcpListener(IPAddress.Any, _port);
         listener.Start();
 
         _logger.LogInformation($"JSON-RPC server listening on localhost:{_port}");
