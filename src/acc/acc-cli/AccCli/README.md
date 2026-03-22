@@ -15,7 +15,7 @@ curl -fsSL https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-c
 
 ```bash
 git clone https://github.com/KeryxLabs/KeryxInstrumenta
-cd tools/cli
+cd src/acc/acc-cli
 dotnet build -c Release
 ```
 

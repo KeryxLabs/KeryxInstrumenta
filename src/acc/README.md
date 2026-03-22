@@ -36,7 +36,7 @@ ACC provides **exoskeleton architecture** - amplifying developer ability to reas
 ACC can be used through four interfaces:
 
 - **VS Code extension** (`acc-vscode`) for in-editor workflows and graph actions
-- **Neovim plugin** (`acc.nvim`) for terminal-native indexing and queries
+- **Neovim plugin** (`acc-nvim`) for terminal-native indexing and queries
 - **CLI** (`acc-cli`) for scripts, automation, and shell pipelines
 - **MCP server** (`acc-mcp`) for agent/tool integrations over stdio
 
@@ -404,7 +404,7 @@ Have the agent:
 - [x] SurrealDB graph storage
 - [x] Three core query types
 - [x] **VSCode extension** - auto-downloads ACC server binary; auto-installs `lizard` via pip if not present
-- [x] **Neovim plugin (`acc.nvim`)**
+- [x] **Neovim plugin (`acc-nvim`)**
 - [x] **CLI (`acc-cli`)**
 - [x] **MCP server (`acc-mcp`)**
 - [ ] HTTP/gRPC query API
