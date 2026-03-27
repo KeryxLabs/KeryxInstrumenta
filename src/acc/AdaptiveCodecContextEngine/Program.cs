@@ -98,7 +98,7 @@ if (surrealSettings.Remote)
     builder.Services.AddSurreal(options);
 else
     builder.Services.AddSurreal(options).AddSurrealKvProvider();
-
+Console.WriteLine($"Database: {surrealSettings.Database} NameSpace: {surrealSettings.Namespace}");
 builder.Services.Configure<SurrealDbSettings>(builder.Configuration.GetSection("SurrealDb"));
 
 // --- 4. Register Services ---
@@ -106,24 +106,30 @@ builder.Services.Configure<SurrealDbSettings>(builder.Configuration.GetSection("
 builder
     .Services.AddSingleton(_ =>
         Channel.CreateBounded<LspMessageWithContext>(
-            new BoundedChannelOptions(100) { FullMode = BoundedChannelFullMode.Wait }
+            new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait }
         )
     )
     .AddSingleton(_ =>
         Channel.CreateBounded<GitEventWithContext>(
-            new BoundedChannelOptions(500) { FullMode = BoundedChannelFullMode.Wait }
+            new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait }
         )
     )
     .AddSingleton(_ =>
         Channel.CreateBounded<NodeUpdateWithContext>(
-            new BoundedChannelOptions(500) { FullMode = BoundedChannelFullMode.Wait }
+            new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait }
         )
     )
     .AddSingleton(_ =>
         Channel.CreateBounded<DependencyEdgeWithContext>(
-            new BoundedChannelOptions(500) { FullMode = BoundedChannelFullMode.Wait }
+            new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait }
+        )
+    )
+    .AddSingleton(_ =>
+        Channel.CreateBounded<InitialIndexingMessageWithContext>(
+            new BoundedChannelOptions(1000) { FullMode = BoundedChannelFullMode.Wait }
         )
     );
+;
 
 // Logic Services (Using IOptions for AOT safety)
 builder
@@ -133,6 +139,7 @@ builder
     .AddSingleton<LizardAnalyzer>()
     .AddSingleton<MetricsCollector>()
     .AddSingleton<IAccQueryService, AccQueryService>()
+    .AddKeyedTransient<GitClient>(GitClient.ServiceName)
     .AddHostedService<JsonRpcServer>();
 
 builder

@@ -7,6 +7,7 @@
     <SelfContained>true</SelfContained>
     <PublishSingleFile>true</PublishSingleFile>
     <AssemblyName>acc</AssemblyName>
+    <ServerGarbageCollection>true</ServerGarbageCollection>
     <!-- <PublishAot>true</PublishAot> -->
     <!-- <InvariantGlobalization>true</InvariantGlobalization> -->
     <!-- <IsAotCompatible>true</IsAotCompatible> -->

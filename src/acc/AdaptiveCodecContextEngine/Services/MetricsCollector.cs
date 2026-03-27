@@ -11,6 +11,7 @@ using Microsoft.Extensions.Logging;
 
 public class MetricsCollector
 {
+    private readonly Channel<InitialIndexingMessageWithContext> _initialIndexChannel;
     private readonly Channel<LspMessageWithContext> _lspChannel;
     private readonly Channel<GitEventWithContext> _gitChannel;
     private readonly Channel<NodeUpdateWithContext> _updateChannel;
@@ -29,6 +30,7 @@ public class MetricsCollector
         Channel<GitEventWithContext> gitChannel,
         Channel<NodeUpdateWithContext> updateChannel,
         Channel<DependencyEdgeWithContext> dependencyChannel,
+        Channel<InitialIndexingMessageWithContext> initialIndexChannel,
         GitWatcher gitWatcher,
         SurrealDbRepository repository,
         LizardAnalyzer analyzer,
@@ -40,6 +42,7 @@ public class MetricsCollector
         _gitChannel = gitChannel;
         _updateChannel = updateChannel;
         _dependencyChannel = dependencyChannel;
+        _initialIndexChannel = initialIndexChannel;
         _lizard = analyzer;
         _gitWatcher = gitWatcher;
         _repository = repository;
@@ -53,8 +56,25 @@ public class MetricsCollector
         var gitTask = ProcessGitEvents(ct);
         var updateTask = ProcessNodeUpdates(ct);
         var dependencyTask = ProcessDependencies(ct);
+        var initialIndexes = ProcessInitialIndexes(ct);
+        _ = Task.WhenAll(lspTask, gitTask, updateTask, dependencyTask, initialIndexes);
+    }
 
-        _ = Task.WhenAll(lspTask, gitTask, updateTask, dependencyTask);
+    private async Task ProcessInitialIndexes(CancellationToken ct)
+    {
+        await foreach (var request in _initialIndexChannel.Reader.ReadAllAsync(ct))
+        {
+            using var activity = _instrumentation.ActivitySource.StartActivity(
+                nameof(ProcessInitialIndexes)
+            );
+
+            var lizardResult = await _lizard.AnalyzeFileAsync(request.FilePath, ct);
+
+            if (lizardResult?.FunctionList != null)
+            {
+                await ProcessBatchLizardFunctions(lizardResult, request, ct);
+            }
+        }
     }
 
     private async Task ProcessLspMessages(CancellationToken ct)
@@ -531,20 +551,16 @@ public class MetricsCollector
             var lizardResult = await _lizard.AnalyzeFileAsync(gitEvent.FilePath, ct);
 
             // Extract git history
-            var history = _gitWatcher.ExtractHistory(gitEvent.FilePath);
-
-            activity?.SetTag("git.history.commits", history?.TotalCommits);
-            activity?.SetTag("git.history.contributors", history?.Contributors);
-            activity?.SetTag("git.history.frequency", history?.RecentFrequency);
+            var history = await _gitWatcher.ExtractFileHistoryAsync(gitEvent.FilePath, ct);
 
             if (lizardResult?.FunctionList != null)
             {
-                await ProcessLizarFunctions(lizardResult, gitEventWithContext, history, ct);
+                await ProcessLizardFunctions(lizardResult, gitEventWithContext, history, ct);
             }
         }
     }
 
-    private async Task ProcessLizarFunctions(
+    private async Task ProcessLizardFunctions(
         LizardResult lizardResult,
         GitEventWithContext gitEventWithContext,
         GitHistory? history,
@@ -552,7 +568,7 @@ public class MetricsCollector
     )
     {
         using var activity = _instrumentation.ActivitySource.StartActivity(
-            nameof(ProcessLizarFunctions),
+            nameof(ProcessLizardFunctions),
             ActivityKind.Consumer
         );
         var gitEvent = gitEventWithContext.Event;
@@ -601,14 +617,98 @@ public class MetricsCollector
         }
     }
 
+    private async Task ProcessBatchLizardFunctions(
+        LizardResult lizardResult,
+        InitialIndexingMessageWithContext initialMessage,
+        CancellationToken ct
+    )
+    {
+        ConcurrentDictionary<string, string> seenLocations = [];
+
+        foreach (var func in lizardResult.FunctionList)
+        {
+            if (string.IsNullOrEmpty(func.Location))
+            {
+                _logger.LogError("Unable to get location for {function}", func.Name);
+
+                return;
+            }
+
+            if (!seenLocations.TryGetValue(func.Location, out var lastRelativePath))
+            {
+                seenLocations[func.Location] = lastRelativePath = Path.GetRelativePath(
+                        _gitWatcher.RepoPath,
+                        func.Location
+                    )
+                    .Trim();
+            }
+
+            if (!initialMessage.GitHistories.TryGetValue(lastRelativePath, out var gitHistory))
+            {
+                _logger.LogError(
+                    "Unable to get event for {path} {encoding}",
+                    lastRelativePath,
+                    string.Join(
+                        ' ',
+                        Encoding.UTF8.GetBytes(lastRelativePath).Select(b => b.ToString("X2"))
+                    )
+                );
+                continue;
+            }
+
+            var nodeId = GenerateNodeId(lastRelativePath!, func.Name, func.StartLine);
+
+            var update = new NodeUpdate
+            {
+                NodeId = nodeId,
+                Type = "function",
+                Language = DetectLanguage(lastRelativePath!),
+                Name = func.Name,
+                FilePath = lastRelativePath!,
+                LineStart = func.StartLine,
+                LineEnd = func.EndLine,
+                Signature = func.LongName,
+
+                // Lizard metrics
+                LinesOfCode = func.Nloc,
+                CyclomaticComplexity = func.CyclomaticComplexity,
+                Parameters = func.ParameterCount,
+
+                // Git metrics
+                GitHistory = gitHistory,
+            };
+
+            await _updateChannel.Writer.WriteAsync(new(update, initialMessage.Context), ct);
+
+            _instrumentation.ComplexityHistogram.Record(
+                update.CyclomaticComplexity ?? 0,
+                new KeyValuePair<string, object?>("code.language", update.Language)
+            );
+        }
+    }
+
     private async Task ProcessNodeUpdates(CancellationToken ct)
     {
         var batch = new List<NodeUpdateWithContext>();
-        var batchSize = 100;
+        var batchSize = 1000;
         var maxWaitMs = 50;
         var lastBatchProcessedAt = Stopwatch.GetTimestamp();
         await foreach (var updateWithContext in _updateChannel.Reader.ReadAllAsync(ct))
         {
+            using var activity = _instrumentation.ActivitySource.StartActivity(
+                nameof(ProcessNodeUpdates),
+                ActivityKind.Consumer,
+                parentContext: updateWithContext.Context ?? new()
+            );
+
+            activity?.SetTag("code.nloc", updateWithContext.Update.LinesOfCode);
+            activity?.SetTag(
+                "code.cyclomatic_complexity",
+                updateWithContext.Update.CyclomaticComplexity
+            );
+            activity?.SetTag("code.parameter_count", updateWithContext.Update.Parameters);
+            activity?.SetTag("code.signature", updateWithContext.Update.Signature);
+
             batch.Add(updateWithContext);
 
             if (

@@ -1,19 +1,24 @@
+using System.Text;
 using AdaptiveCodecContextEngine.Diagnostics;
 using AdaptiveCodecContextEngine.Models;
 using AdaptiveCodecContextEngine.Models.Git;
 using LibGit2Sharp;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 public class GitWatcher : IDisposable
 {
     private readonly string _repoPath;
     private readonly Channel<GitEventWithContext> _eventChannel;
+    private readonly Channel<InitialIndexingMessageWithContext> _initialIndexChannel;
+
     private readonly FileSystemWatcher _fsWatcher;
     private readonly FileSystemWatcher _gitHeadWatcher;
     private readonly ILogger<GitWatcher> _logger;
     private readonly HashSet<string> _relevantExtensions;
     private readonly SurrealDbRepository _repository;
+    private readonly IServiceProvider _serviceProvider;
 
     private Repository? _repo;
     private string? _trackingBranch;
@@ -22,9 +27,11 @@ public class GitWatcher : IDisposable
 
     public GitWatcher(
         Channel<GitEventWithContext> eventChannel,
+        Channel<InitialIndexingMessageWithContext> initialIndexChannel,
         SurrealDbRepository repository,
         ILogger<GitWatcher> logger,
         IConfiguration configuration,
+        IServiceProvider serviceProvider,
         AdaptiveContextInstrumentation instrumentation
     )
     {
@@ -34,9 +41,11 @@ public class GitWatcher : IDisposable
         _repoPath = accOptions.RepositoryPath;
 
         _eventChannel = eventChannel;
+        _initialIndexChannel = initialIndexChannel;
         _logger = logger;
         _instrumentation = instrumentation;
         _repository = repository;
+        _serviceProvider = serviceProvider;
 
         _fsWatcher = new FileSystemWatcher(_repoPath)
         {
@@ -124,15 +133,15 @@ public class GitWatcher : IDisposable
             {
                 try
                 {
-                    var last = await _repository.GetLastIndexedAtAsync(_repoPath, ct);
-                    if (last.HasValue && (DateTime.UtcNow - last.Value) < TimeSpan.FromSeconds(30))
-                    {
-                        _logger.LogInformation(
-                            "Skipping initial repository index; last indexed at {LastIndexedAt}",
-                            last.Value
-                        );
-                        return;
-                    }
+                    // var last = await _repository.GetLastIndexedAtAsync(_repoPath, ct);
+                    // if (last.HasValue && (DateTime.UtcNow - last.Value) < TimeSpan.FromSeconds(30))
+                    // {
+                    //     _logger.LogInformation(
+                    //         "Skipping initial repository index; last indexed at {LastIndexedAt}",
+                    //         last.Value
+                    //     );
+                    //     return;
+                    // }
 
                     await IndexRepository(ct);
                 }
@@ -239,9 +248,20 @@ public class GitWatcher : IDisposable
 
         try
         {
+            var client = _serviceProvider.GetRequiredKeyedService<GitClient>(GitClient.ServiceName);
+
             var files = Directory
                 .EnumerateFiles(_repoPath, "*.*", SearchOption.AllDirectories)
                 .Where(IsRelevantFile);
+
+            var histories = await client.ExtractHistory(_repoPath, ct: ct);
+            if (histories is null)
+            {
+                _logger.LogWarning("Unable to start indexing.");
+                return;
+            }
+
+            Dictionary<string, GitHistory> events = [];
 
             foreach (var file in files)
             {
@@ -254,25 +274,47 @@ public class GitWatcher : IDisposable
                     break;
 
                 fileActivity?.SetTag("index.file", file);
+                var relativePath = Path.GetRelativePath(_repoPath, file);
 
-                _eventChannel.Writer.TryWrite(
-                    new GitEventWithContext(
-                        new GitEvent
-                        {
-                            Type = GitEventType.Initial,
-                            FilePath = file,
-                            Timestamp = DateTime.UtcNow,
-                        },
-                        fileActivity?.Context
+                _logger.LogInformation(
+                    "Processing {relativePath} {encoding}",
+                    relativePath,
+                    string.Join(
+                        ' ',
+                        Encoding.UTF8.GetBytes(relativePath).Select(b => b.ToString("X2"))
                     )
                 );
 
+                if (histories.TryGetValue(relativePath, out var history))
+                {
+                    events.TryAdd(relativePath, history);
+                }
+                else
+                {
+                    _logger.LogWarning("No git history found for {relativePath}", relativePath);
+                }
+                // if (
+                //     !histories.TryGetValue(relativePath, out var history)
+                //     && !events.TryAdd(relativePath, history!)
+                // )
+                // {
+                //     _logger.LogError(
+                //         "Unable to add {file} {encoding} to initial Git Events.",
+                //         relativePath,
+                //         string.Join(
+                //             ' ',
+                //             Encoding.UTF8.GetBytes(relativePath).Select(b => b.ToString("X2"))
+                //         )
+                //     );
+                // }
                 fileCount++;
-
-                activity?.AddEvent(new("index.progress", tags: new() { ["count"] = fileCount }));
             }
 
             activity?.SetTag("index.total", fileCount);
+
+            var initialRequest = new InitialIndexingMessageWithContext(_repoPath, events, new());
+
+            await _initialIndexChannel.Writer.WriteAsync(initialRequest, cancellationToken: ct);
 
             // Persist last indexed timestamp so restarts are idempotent
             try
@@ -317,9 +359,14 @@ public class GitWatcher : IDisposable
         return _relevantExtensions.Contains(extension);
     }
 
-    public GitHistory ExtractHistory(string filePath)
+    public async Task<GitHistory> ExtractFileHistoryAsync(
+        string relativePath,
+        CancellationToken cancellationToken
+    )
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(ExtractHistory));
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(ExtractFileHistoryAsync)
+        );
 
         if (_repo == null)
         {
@@ -335,70 +382,27 @@ public class GitWatcher : IDisposable
             };
         }
 
-        var relativePath = Path.GetRelativePath(_repoPath, filePath);
+        var filePath = Path.GetFullPath(relativePath, _repoPath);
+
         activity?.SetTag("history.file", relativePath);
 
         try
         {
-            // Get commits that touched this file
-            var commits = _repo.Commits.QueryBy(relativePath).ToList();
+            var client = _serviceProvider.GetRequiredKeyedService<GitClient>(GitClient.ServiceName);
 
-            activity?.SetTag("history.commits.count", commits.Count);
-
-            if (!commits.Any())
+            var clientRes = await client.ExtractHistory(_repoPath, relativePath, cancellationToken);
+            var history = clientRes?.FirstOrDefault();
+            if (history is null)
             {
                 activity?.AddEvent(new("history.none"));
                 return new GitHistory
                 {
                     Created = File.GetCreationTimeUtc(filePath),
                     LastModified = File.GetLastWriteTimeUtc(filePath),
-                    TotalCommits = 0,
-                    Contributors = 0,
-                    AvgDaysBetweenChanges = 0,
-                    RecentFrequency = "low",
                 };
             }
 
-            var firstCommit = commits.Last().Commit;
-            var lastCommit = commits.First().Commit;
-
-            // Count unique contributors
-            var contributors = commits.Select(c => c.Commit.Author.Email).Distinct().Count();
-
-            // Calculate average time between changes
-            var avgDays = 0.0;
-            if (commits.Count > 1)
-            {
-                var totalDays = (lastCommit.Author.When - firstCommit.Author.When).TotalDays;
-                avgDays = totalDays / (commits.Count - 1);
-            }
-
-            // Determine recent frequency (last 30 days)
-            var recentCommits = commits.Count(c =>
-                c.Commit.Author.When > DateTimeOffset.UtcNow.AddDays(-30)
-            );
-
-            var frequency = recentCommits switch
-            {
-                0 => "low",
-                1 => "low",
-                2 or 3 => "medium",
-                _ => "high",
-            };
-
-            activity?.SetTag("history.contributors", contributors);
-            activity?.SetTag("history.commits.recent", recentCommits);
-            activity?.SetTag("history.commits.frequency", frequency);
-
-            return new GitHistory
-            {
-                Created = firstCommit.Author.When.UtcDateTime,
-                LastModified = lastCommit.Author.When.UtcDateTime,
-                TotalCommits = commits.Count,
-                Contributors = contributors,
-                AvgDaysBetweenChanges = avgDays,
-                RecentFrequency = frequency,
-            };
+            return history.Value.Value;
         }
         catch (Exception ex)
         {
