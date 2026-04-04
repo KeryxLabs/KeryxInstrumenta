@@ -25,4 +25,7 @@ public record LizardFunction
 
     [JsonPropertyName("end_line")]
     public int EndLine { get; init; }
+
+    [JsonPropertyName("location")]
+    public string? Location { get; set; }
 }

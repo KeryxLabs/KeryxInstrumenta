@@ -94,7 +94,7 @@ public class LizardAnalyzer
             var startIndex = (int)Headers.StartLine;
             var endIndex = (int)Headers.EndLine;
             var longNameIndex = (int)Headers.LongName;
-
+            var locationIndex = (int)Headers.Location;
             var functions = new List<LizardFunction>();
 
             for (int i = 0; i < lines.Length; i++)
@@ -121,6 +121,7 @@ public class LizardAnalyzer
                     ParameterCount = ParseInt(GetColumn(columns, paramIndex)),
                     StartLine = ParseInt(GetColumn(columns, startIndex)),
                     EndLine = ParseInt(GetColumn(columns, endIndex)),
+                    Location = GetColumn(columns, locationIndex)?.Split('@').LastOrDefault(),
                 };
 
                 functions.Add(function);
