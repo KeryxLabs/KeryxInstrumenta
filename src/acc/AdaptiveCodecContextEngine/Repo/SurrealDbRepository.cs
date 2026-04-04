@@ -39,6 +39,7 @@ public class SurrealDbRepository
     public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Initializing SurrealDB schema...");
+        _logger.LogInformation("{Namespace} {Database}", _settings.Namespace, _settings.Database);
         //await _db.Use(_settings.Namespace, _settings.Database, cancellationToken);
 
         if (!_schemaInitialized)
@@ -50,10 +51,11 @@ public class SurrealDbRepository
         }
     }
 
-    private async Task CreateSchema(CancellationToken cancellationToken = default)
+    public async Task CreateSchema(CancellationToken cancellationToken = default)
     {
         var response = await _db.RawQuery(
             @"
+            DEFINE USER IF NOT EXISTS grafana_viewer ON DATABASE PASSWORD 'secure1234' ROLES VIEWER;
             DEFINE TABLE IF NOT EXISTS node SCHEMAFULL;
             
             -- Core fields
@@ -136,6 +138,19 @@ public class SurrealDbRepository
         );
 
         _logger.LogPossibleDbWriteError(response);
+
+        // Index state table to track last indexing timestamps per repository
+        response = await _db.RawQuery(
+            @"
+                        DEFINE TABLE IF NOT EXISTS index_state SCHEMAFULL;
+                        DEFINE FIELD IF NOT EXISTS repo_path ON index_state TYPE string ASSERT $value != NONE;
+                        DEFINE FIELD IF NOT EXISTS last_indexed_at ON index_state TYPE option<datetime>;
+                        DEFINE INDEX IF NOT EXISTS index_state_repo ON index_state FIELDS repo_path UNIQUE;
+                    ",
+            cancellationToken: cancellationToken
+        );
+
+        _logger.LogPossibleDbWriteError(response);
     }
 
     private async Task CreateEvents(CancellationToken cancellationToken = default)
@@ -151,18 +166,7 @@ public class SurrealDbRepository
         ",
             cancellationToken: cancellationToken
         );
-        // Index state table to track last indexing timestamps per repository
-        response = await _db.RawQuery(
-            @"
-                        DEFINE TABLE IF NOT EXISTS index_state SCHEMAFULL;
-                        DEFINE FIELD IF NOT EXISTS repo_path ON index_state TYPE string ASSERT $value != NONE;
-                        DEFINE FIELD IF NOT EXISTS last_indexed_at ON index_state TYPE option<datetime>;
-                        DEFINE INDEX IF NOT EXISTS index_state_repo ON index_state FIELDS repo_path UNIQUE;
-                    ",
-            cancellationToken: cancellationToken
-        );
 
-        _logger.LogPossibleDbWriteError(response);
         // Event: Recalculate AVEC when metrics change
         response = await _db.RawQuery(
             @"
@@ -298,7 +302,7 @@ public class SurrealDbRepository
         return records is not null ? [.. records!.Select(MapToDto)] : [];
     }
 
-    public async Task BatchRecalculateAsync(
+    private async Task BatchRecalculateAsync(
         IEnumerable<string> nodeIds,
         CancellationToken cancellationToken = default
     )
@@ -307,16 +311,6 @@ public class SurrealDbRepository
             nameof(BatchRecalculateAsync)
         );
 
-        activity?.AddEvent(
-            new ActivityEvent(
-                "batch.started",
-                tags: new ActivityTagsCollection
-                {
-                    { "node.count", nodeIds.Count() },
-                    { "node.ids", string.Join(',', nodeIds) },
-                }
-            )
-        );
         // Use 'IN' to get every node in one round trip
         var query =
             @"SELECT id as Id,
@@ -394,10 +388,22 @@ public class SurrealDbRepository
             return;
         }
 
+        activity?.AddEvent(
+            new ActivityEvent(
+                "batch.started",
+                tags: new ActivityTagsCollection
+                {
+                    { "node.count", nodes.Count() },
+                    { "node.ids", string.Join(',', nodes.Select(n => n.Id)) },
+                }
+            )
+        );
         var updates = new List<object>();
 
         foreach (var node in nodes)
         {
+            using var metricActivity = _instrumentation.ActivitySource.StartActivity("NodeMetric");
+
             var metrics = new NodeMetrics
             {
                 LinesOfCode = node.LinesOfCode,
@@ -414,13 +420,14 @@ public class SurrealDbRepository
             };
             var avec = _avecCalculator.Calculate(metrics);
 
-            activity?.SetTag("code.node.name", node.Name);
-            activity?.SetTag("avec.stability", avec.Stability);
-            activity?.SetTag("avec.logic", avec.Logic);
-            activity?.SetTag("avec.friction", avec.Friction);
-            activity?.SetTag("avec.autonomy", avec.Autonomy);
+            metricActivity?.SetTag("code.node.id", node.NodeId);
+            metricActivity?.SetTag("code.node.name", node.Name);
+            metricActivity?.SetTag("avec.stability", avec.Stability);
+            metricActivity?.SetTag("avec.logic", avec.Logic);
+            metricActivity?.SetTag("avec.friction", avec.Friction);
+            metricActivity?.SetTag("avec.autonomy", avec.Autonomy);
 
-            activity?.AddEvent(
+            metricActivity?.AddEvent(
                 new ActivityEvent(
                     "CalculationComplete",
                     tags: new ActivityTagsCollection

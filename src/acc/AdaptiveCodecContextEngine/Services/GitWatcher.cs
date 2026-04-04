@@ -19,8 +19,6 @@ public class GitWatcher : IDisposable
     private readonly HashSet<string> _relevantExtensions;
     private readonly SurrealDbRepository _repository;
     private readonly IServiceProvider _serviceProvider;
-
-    private Repository? _repo;
     private string? _trackingBranch;
     private readonly AdaptiveContextInstrumentation _instrumentation;
     public string RepoPath => _repoPath;
@@ -87,8 +85,8 @@ public class GitWatcher : IDisposable
     {
         try
         {
-            _repo = new Repository(_repoPath);
-            _trackingBranch = _repo.Head.FriendlyName;
+            var git = _serviceProvider.GetRequiredKeyedService<GitClient>(GitClient.ServiceName);
+            _trackingBranch = await git.GetRepoFriendlyName(_repoPath, ct);
         }
         catch (Exception ex)
         {
@@ -107,10 +105,11 @@ public class GitWatcher : IDisposable
         DateTime _lastRead = DateTime.MinValue;
 
         //Git Head watcher
-        _gitHeadWatcher.Changed += (s, e) =>
+        _gitHeadWatcher.Changed += async (s, e) =>
         {
+            var git = _serviceProvider.GetRequiredKeyedService<GitClient>(GitClient.ServiceName);
             using var repo = new Repository(_repoPath);
-            var currentBranch = repo.Head.FriendlyName;
+            var currentBranch = await git.GetRepoFriendlyName(_repoPath, ct);
 
             if (currentBranch != _trackingBranch)
             {
@@ -133,15 +132,15 @@ public class GitWatcher : IDisposable
             {
                 try
                 {
-                    // var last = await _repository.GetLastIndexedAtAsync(_repoPath, ct);
-                    // if (last.HasValue && (DateTime.UtcNow - last.Value) < TimeSpan.FromSeconds(30))
-                    // {
-                    //     _logger.LogInformation(
-                    //         "Skipping initial repository index; last indexed at {LastIndexedAt}",
-                    //         last.Value
-                    //     );
-                    //     return;
-                    // }
+                    var last = await _repository.GetLastIndexedAtAsync(_repoPath, ct);
+                    if (last.HasValue && (DateTime.UtcNow - last.Value) < TimeSpan.FromSeconds(30))
+                    {
+                        _logger.LogInformation(
+                            "Skipping initial repository index; last indexed at {LastIndexedAt}",
+                            last.Value
+                        );
+                        return;
+                    }
 
                     await IndexRepository(ct);
                 }
@@ -262,28 +261,15 @@ public class GitWatcher : IDisposable
             }
 
             Dictionary<string, GitHistory> events = [];
-
+            var today = DateTime.Now;
             foreach (var file in files)
             {
-                using var fileActivity = _instrumentation.ActivitySource.StartActivity(
-                    "FileIndex",
-                    ActivityKind.Producer,
-                    parentContext: activity?.Context ?? new()
-                );
                 if (ct.IsCancellationRequested)
                     break;
 
-                fileActivity?.SetTag("index.file", file);
                 var relativePath = Path.GetRelativePath(_repoPath, file);
 
-                _logger.LogInformation(
-                    "Processing {relativePath} {encoding}",
-                    relativePath,
-                    string.Join(
-                        ' ',
-                        Encoding.UTF8.GetBytes(relativePath).Select(b => b.ToString("X2"))
-                    )
-                );
+                _logger.LogInformation("Processing {relativePath}", relativePath);
 
                 if (histories.TryGetValue(relativePath, out var history))
                 {
@@ -291,35 +277,37 @@ public class GitWatcher : IDisposable
                 }
                 else
                 {
-                    _logger.LogWarning("No git history found for {relativePath}", relativePath);
+                    var freshHistory = new GitHistory()
+                    {
+                        Created = today,
+                        LastModified = today,
+                        TotalCommits = 0,
+                    };
+                    events.TryAdd(relativePath, freshHistory);
+                    _logger.LogWarning(
+                        "No git history found for {relativePath} starting with {history}",
+                        relativePath,
+                        freshHistory
+                    );
                 }
-                // if (
-                //     !histories.TryGetValue(relativePath, out var history)
-                //     && !events.TryAdd(relativePath, history!)
-                // )
-                // {
-                //     _logger.LogError(
-                //         "Unable to add {file} {encoding} to initial Git Events.",
-                //         relativePath,
-                //         string.Join(
-                //             ' ',
-                //             Encoding.UTF8.GetBytes(relativePath).Select(b => b.ToString("X2"))
-                //         )
-                //     );
-                // }
+
                 fileCount++;
             }
 
             activity?.SetTag("index.total", fileCount);
 
-            var initialRequest = new InitialIndexingMessageWithContext(_repoPath, events, new());
+            var initialRequest = new InitialIndexingMessageWithContext(
+                _repoPath,
+                events,
+                activity?.Context
+            );
 
             await _initialIndexChannel.Writer.WriteAsync(initialRequest, cancellationToken: ct);
 
             // Persist last indexed timestamp so restarts are idempotent
             try
             {
-                await _repository.SetLastIndexedAtAsync(_repoPath, DateTime.UtcNow, ct);
+                await _repository.SetLastIndexedAtAsync(_repoPath, today, ct);
             }
             catch (Exception ex)
             {
@@ -333,30 +321,57 @@ public class GitWatcher : IDisposable
         }
     }
 
+    // private bool IsRelevantFile(string path)
+    // {
+    //     // Ignore git internals, node_modules, bin, obj, etc.
+    //     if (
+    //         path.Contains("/.git/")
+    //         || path.Contains("\\.git\\")
+    //         || path.Contains("/node_modules/")
+    //         || path.Contains("\\node_modules\\")
+    //         || path.Contains("/bin/")
+    //         || path.Contains("\\bin\\")
+    //         || path.Contains("/obj/")
+    //         || path.Contains("\\obj\\")
+    //         || path.Contains("/.vs/")
+    //         || path.Contains("\\.vs\\")
+    //         || path.Contains("/target/")
+    //         || // Rust
+    //         path.Contains("\\target\\")
+    //     )
+    //     {
+    //         return false;
+    //     }
+
+    //     var extension = Path.GetExtension(path);
+    //     return _relevantExtensions.Contains(extension);
+    // }
+
     private bool IsRelevantFile(string path)
     {
-        // Ignore git internals, node_modules, bin, obj, etc.
+        ReadOnlySpan<char> pathSpan = path.AsSpan();
+
         if (
-            path.Contains("/.git/")
-            || path.Contains("\\.git\\")
-            || path.Contains("/node_modules/")
-            || path.Contains("\\node_modules\\")
-            || path.Contains("/bin/")
-            || path.Contains("\\bin\\")
-            || path.Contains("/obj/")
-            || path.Contains("\\obj\\")
-            || path.Contains("/.vs/")
-            || path.Contains("\\.vs\\")
-            || path.Contains("/target/")
-            || // Rust
-            path.Contains("\\target\\")
+            pathSpan.Contains("/.git/", StringComparison.Ordinal)
+            || pathSpan.Contains("\\.git\\", StringComparison.Ordinal)
+            || pathSpan.Contains("/node_modules/", StringComparison.Ordinal)
+            || pathSpan.Contains("\\node_modules\\", StringComparison.Ordinal)
+            || pathSpan.Contains("/bin/", StringComparison.Ordinal)
+            || pathSpan.Contains("\\bin\\", StringComparison.Ordinal)
+            || pathSpan.Contains("/obj/", StringComparison.Ordinal)
+            || pathSpan.Contains("\\obj\\", StringComparison.Ordinal)
+            || pathSpan.Contains("/target/", StringComparison.Ordinal)
+            || pathSpan.Contains("\\target\\", StringComparison.Ordinal)
+            || pathSpan.Contains("/.vs/", StringComparison.Ordinal)
+            || pathSpan.Contains("\\.vs\\", StringComparison.Ordinal)
         )
         {
             return false;
         }
 
-        var extension = Path.GetExtension(path);
-        return _relevantExtensions.Contains(extension);
+        ReadOnlySpan<char> extSpan = Path.GetExtension(pathSpan);
+        var lookup = _relevantExtensions.GetAlternateLookup<ReadOnlySpan<char>>();
+        return lookup.Contains(extSpan);
     }
 
     public async Task<GitHistory> ExtractFileHistoryAsync(
@@ -368,7 +383,7 @@ public class GitWatcher : IDisposable
             nameof(ExtractFileHistoryAsync)
         );
 
-        if (_repo == null)
+        if (string.IsNullOrWhiteSpace(_trackingBranch))
         {
             _logger.LogWarning("Repository not initialized, returning empty history");
             activity?.SetTag("repo.initialized", false);
@@ -422,10 +437,6 @@ public class GitWatcher : IDisposable
 
     public void Dispose()
     {
-        using var activity = _instrumentation.ActivitySource.StartActivity(nameof(Dispose));
-        activity?.AddEvent(new("gitwatcher.dispose"));
-
         _fsWatcher?.Dispose();
-        _repo?.Dispose();
     }
 }

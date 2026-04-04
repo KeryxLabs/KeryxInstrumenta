@@ -21,6 +21,7 @@ public class MetricsCollector
     private readonly SurrealDbRepository _repository;
     private readonly ILogger<MetricsCollector> _logger;
     private readonly AdaptiveContextInstrumentation _instrumentation;
+    private readonly SemaphoreSlim _dbThrottle = new(8);
 
     // Cache symbols by file for reference
     private readonly ConcurrentDictionary<string, List<DocumentSymbol>> _symbolCache = new();
@@ -65,7 +66,9 @@ public class MetricsCollector
         await foreach (var request in _initialIndexChannel.Reader.ReadAllAsync(ct))
         {
             using var activity = _instrumentation.ActivitySource.StartActivity(
-                nameof(ProcessInitialIndexes)
+                nameof(ProcessInitialIndexes),
+                kind: ActivityKind.Consumer,
+                parentContext: request.Context ?? new()
             );
 
             var lizardResult = await _lizard.AnalyzeFileAsync(request.FilePath, ct);
@@ -104,7 +107,10 @@ public class MetricsCollector
         using var activity = _instrumentation.ActivitySource.StartActivity(
             nameof(ProcessLspMessage),
             ActivityKind.Consumer,
-            parentContext: messageWithContext.ParentContext ?? new()
+            parentContext: new(),
+            links: messageWithContext.ParentContext is not null
+                ? [new((ActivityContext)messageWithContext.ParentContext)]
+                : []
         );
         var message = messageWithContext.Message;
         var language = messageWithContext.Language;
@@ -161,7 +167,7 @@ public class MetricsCollector
     )
     {
         // Cache symbols for this file
-        _symbolCache[fileUri] = symbols.ToList();
+        _symbolCache[fileUri] = [.. symbols];
         using var activity = _instrumentation.ActivitySource.StartActivity(
             nameof(ProcessDocumentSymbols)
         );
@@ -398,7 +404,10 @@ public class MetricsCollector
             using var activity = _instrumentation.ActivitySource.StartActivity(
                 nameof(ProcessDependencies),
                 ActivityKind.Consumer,
-                parentContext: edgeWithContext.Context ?? new ActivityContext()
+                parentContext: new ActivityContext(),
+                links: edgeWithContext.Context is not null
+                    ? [new((ActivityContext)edgeWithContext.Context)]
+                    : []
             );
             var edge = edgeWithContext.Edge;
 
@@ -530,7 +539,10 @@ public class MetricsCollector
             using var activity = _instrumentation.ActivitySource.StartActivity(
                 nameof(ProcessGitEvents),
                 ActivityKind.Consumer,
-                gitEventWithContext.Context ?? new()
+                parentContext: new(),
+                links: gitEventWithContext.Context is not null
+                    ? [new((ActivityContext)gitEventWithContext.Context)]
+                    : []
             );
 
             var gitEvent = gitEventWithContext.Event;
@@ -625,104 +637,139 @@ public class MetricsCollector
     {
         ConcurrentDictionary<string, string> seenLocations = [];
 
+        var updates = new List<NodeUpdate>(lizardResult.FunctionList.Count);
+
         foreach (var func in lizardResult.FunctionList)
         {
-            if (string.IsNullOrEmpty(func.Location))
-            {
-                _logger.LogError("Unable to get location for {function}", func.Name);
-
-                return;
-            }
-
-            if (!seenLocations.TryGetValue(func.Location, out var lastRelativePath))
-            {
-                seenLocations[func.Location] = lastRelativePath = Path.GetRelativePath(
-                        _gitWatcher.RepoPath,
-                        func.Location
-                    )
-                    .Trim();
-            }
-
-            if (!initialMessage.GitHistories.TryGetValue(lastRelativePath, out var gitHistory))
-            {
-                _logger.LogError(
-                    "Unable to get event for {path} {encoding}",
-                    lastRelativePath,
-                    string.Join(
-                        ' ',
-                        Encoding.UTF8.GetBytes(lastRelativePath).Select(b => b.ToString("X2"))
-                    )
-                );
-                continue;
-            }
-
-            var nodeId = GenerateNodeId(lastRelativePath!, func.Name, func.StartLine);
-
-            var update = new NodeUpdate
-            {
-                NodeId = nodeId,
-                Type = "function",
-                Language = DetectLanguage(lastRelativePath!),
-                Name = func.Name,
-                FilePath = lastRelativePath!,
-                LineStart = func.StartLine,
-                LineEnd = func.EndLine,
-                Signature = func.LongName,
-
-                // Lizard metrics
-                LinesOfCode = func.Nloc,
-                CyclomaticComplexity = func.CyclomaticComplexity,
-                Parameters = func.ParameterCount,
-
-                // Git metrics
-                GitHistory = gitHistory,
-            };
-
-            await _updateChannel.Writer.WriteAsync(new(update, initialMessage.Context), ct);
-
-            _instrumentation.ComplexityHistogram.Record(
-                update.CyclomaticComplexity ?? 0,
-                new KeyValuePair<string, object?>("code.language", update.Language)
-            );
+            var update = await ProcessLizardFunction(func, initialMessage, seenLocations, ct);
+            if (update is not null)
+                updates.Add(update);
         }
+
+        try
+        {
+            var chunks = updates.Chunk(Math.Min(updates.Count / 3, 15_000));
+
+            foreach (var chunk in chunks)
+            {
+                await _repository.UpsertNodeListAsync(chunk);
+
+                _logger.LogInformation("Completed Chunk Upsert");
+            }
+        }
+        catch (TimeoutException ex)
+        {
+            _logger.LogWarning(ex, "Timeout upserting nodes, will retry");
+        }
+    }
+
+    private async Task<NodeUpdate?> ProcessLizardFunction(
+        LizardFunction func,
+        InitialIndexingMessageWithContext initialMessage,
+        ConcurrentDictionary<string, string> seenLocations,
+        CancellationToken ct
+    )
+    {
+        using var activity = _instrumentation.ActivitySource.StartActivity(
+            nameof(ProcessLizardFunction),
+            kind: ActivityKind.Internal,
+            parentContext: new(),
+            links: initialMessage.Context is not null
+                ? [new((ActivityContext)initialMessage.Context)]
+                : []
+        );
+
+        if (string.IsNullOrEmpty(func.Location))
+        {
+            _logger.LogError("Unable to get location for {function}", func.Name);
+
+            return null;
+        }
+
+        if (!seenLocations.TryGetValue(func.Location, out var lastRelativePath))
+        {
+            lastRelativePath = Path.GetRelativePath(_gitWatcher.RepoPath, func.Location).Trim();
+            seenLocations.TryAdd(func.Location, lastRelativePath);
+        }
+
+        if (!initialMessage.GitHistories.TryGetValue(lastRelativePath, out var gitHistory))
+        {
+            _logger.LogError("Unable to get event for {path}", lastRelativePath);
+            return null;
+        }
+
+        var nodeId = GenerateNodeId(lastRelativePath!, func.Name, func.StartLine);
+
+        var update = new NodeUpdate
+        {
+            NodeId = nodeId,
+            Type = "function",
+            Language = DetectLanguage(lastRelativePath!),
+            Name = func.Name,
+            FilePath = lastRelativePath!,
+            LineStart = func.StartLine,
+            LineEnd = func.EndLine,
+            Signature = func.LongName,
+
+            // Lizard metrics
+            LinesOfCode = func.Nloc,
+            CyclomaticComplexity = func.CyclomaticComplexity,
+            Parameters = func.ParameterCount,
+
+            // Git metrics
+            GitHistory = gitHistory,
+        };
+        activity?.SetTag("code.nloc", update.LinesOfCode);
+        activity?.SetTag("code.cyclomatic_complexity", update.CyclomaticComplexity);
+        activity?.SetTag("code.parameter_count", update.Parameters);
+        activity?.SetTag("code.signature", update.Signature);
+
+        //await _updateChannel.Writer.WriteAsync(new(update, activity?.Context), ct);
+
+        _instrumentation.ComplexityHistogram.Record(
+            update.CyclomaticComplexity ?? 0,
+            new KeyValuePair<string, object?>("code.language", update.Language)
+        );
+        return update;
     }
 
     private async Task ProcessNodeUpdates(CancellationToken ct)
     {
         var batch = new List<NodeUpdateWithContext>();
         var batchSize = 1000;
-        var maxWaitMs = 50;
+        var maxWaitSecs = 5;
         var lastBatchProcessedAt = Stopwatch.GetTimestamp();
         await foreach (var updateWithContext in _updateChannel.Reader.ReadAllAsync(ct))
         {
-            using var activity = _instrumentation.ActivitySource.StartActivity(
-                nameof(ProcessNodeUpdates),
-                ActivityKind.Consumer,
-                parentContext: updateWithContext.Context ?? new()
-            );
-
-            activity?.SetTag("code.nloc", updateWithContext.Update.LinesOfCode);
-            activity?.SetTag(
-                "code.cyclomatic_complexity",
-                updateWithContext.Update.CyclomaticComplexity
-            );
-            activity?.SetTag("code.parameter_count", updateWithContext.Update.Parameters);
-            activity?.SetTag("code.signature", updateWithContext.Update.Signature);
-
             batch.Add(updateWithContext);
 
             if (
                 batch.Count >= batchSize
                 || (
                     batch.Count < batchSize
-                    && Stopwatch.GetElapsedTime(lastBatchProcessedAt).Milliseconds > maxWaitMs
+                    && Stopwatch.GetElapsedTime(lastBatchProcessedAt).Seconds > maxWaitSecs
                 )
             )
             {
-                await ProcessBatch(batch, ct);
+                var batchToProcess = batch.ToList();
                 batch.Clear();
-
                 lastBatchProcessedAt = Stopwatch.GetTimestamp();
+
+                _ = Task.Run(
+                    async () =>
+                    {
+                        await _dbThrottle.WaitAsync(ct);
+                        try
+                        {
+                            await ProcessBatch(batchToProcess, ct);
+                        }
+                        finally
+                        {
+                            _dbThrottle.Release();
+                        }
+                    },
+                    ct
+                );
             }
         }
 
@@ -752,6 +799,7 @@ public class MetricsCollector
         try
         {
             await _repository.UpsertNodeListAsync(updatesWithContext.Select(u => u.Update));
+
             activity?.AddEvent(new("Batch upsert successful"));
         }
         catch (TimeoutException ex)

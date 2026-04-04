@@ -1,12 +1,9 @@
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Collections.Concurrent;
-using System.Globalization;
 using System.IO.Pipelines;
 using System.Text;
 using AdaptiveCodecContextEngine.Diagnostics;
 using AdaptiveCodecContextEngine.Models.Git;
-using Dahomey.Cbor.Util;
 using Microsoft.Extensions.Logging;
 
 public class GitClient
@@ -14,10 +11,10 @@ public class GitClient
     public const string ServiceName = "GitClient";
 
     private const byte _pipeSeparator = (byte)'|';
-    private readonly ConcurrentDictionary<string, int> _emailIntern = new();
+    private readonly ConcurrentDictionary<string, int> _emailIntern = [];
     private int _emailCounter = 0;
     private readonly DateTime _ninetyDaysAgo = DateTime.Now.AddDays(-90);
-    private readonly ConcurrentDictionary<string, FileAccumulator> _collectedFiles = new();
+    private readonly ConcurrentDictionary<string, FileAccumulator> _collectedFiles = [];
 
     private readonly ILogger<GitClient> _logger;
 
@@ -27,6 +24,50 @@ public class GitClient
     {
         _logger = logger;
         _instrumentation = instrumentation;
+    }
+
+    public async Task<string?> GetRepoFriendlyName(string repoPath, CancellationToken ct)
+    {
+        var processStartInfo = new ProcessStartInfo
+        {
+            FileName = GitCLI.Git,
+            Arguments = GitCLI.FriendlyName,
+            WorkingDirectory = repoPath,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+
+        using var process = new Process { StartInfo = processStartInfo };
+
+        try
+        {
+            process.Start();
+
+            var output = await process.StandardOutput.ReadToEndAsync(ct);
+
+            var error = await process.StandardError.ReadToEndAsync(ct);
+
+            await process.WaitForExitAsync(ct);
+
+            if (process.ExitCode != 0)
+            {
+                _logger.LogError(
+                    "Git exited with code {ExitCode}: {Error}",
+                    process.ExitCode,
+                    error
+                );
+                return null;
+            }
+
+            return output;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to run git on {RepoPath}", repoPath);
+            return null;
+        }
     }
 
     public async Task<Dictionary<string, GitHistory>?> ExtractHistory(
@@ -168,79 +209,6 @@ public class GitClient
         await reader.CompleteAsync();
     }
 
-    // async Task ReadPipeAsync(PipeReader reader, CancellationToken ct)
-    // {
-    //     int? currentId = null;
-    //     DateTime? currentDate = null;
-    //     while (true)
-    //     {
-    //         ReadResult result = await reader.ReadAsync();
-    //         ReadOnlySequence<byte> buffer = result.Buffer;
-
-    //         while (TryReadLine(ref buffer, out ReadOnlySequence<byte> line))
-    //         {
-    //             // Process the line.
-
-    //             var firstPipe = line.PositionOf(_pipeSeparator)?.GetInteger();
-
-    //             if (firstPipe is not null)
-    //             {
-    //                 var dateRes = ProcessDateAndEmail(ref line);
-    //                 if (dateRes is null)
-    //                 {
-    //                     break;
-    //                 }
-    //                 (currentId, currentDate) = (dateRes.Value.emailId, dateRes.Value.commitDate);
-    //             }
-    //             else
-    //             {
-    //                 var lookup = _collectedFiles.GetAlternateLookup<ReadOnlySpan<char>>();
-
-    //                 Span<char> keyBuffer = stackalloc char[(int)line.Length];
-
-    //                 int charsWritten = Encoding.UTF8.GetChars(line, keyBuffer);
-
-    //                 ReadOnlySpan<char> lookupKey = keyBuffer[..charsWritten];
-
-    //                 if (!lookup.TryGetValue(lookupKey, out var accumulator))
-    //                 {
-    //                     var fileName = Encoding.UTF8.GetString(line);
-    //                     _logger.LogInformation("FileName: {fileName}", fileName);
-    //                     _collectedFiles[fileName] = accumulator = new() { FileName = fileName };
-    //                 }
-
-    //                 var date = (DateTime)currentDate!;
-    //                 accumulator.Contributors.Add((int)currentId!);
-    //                 accumulator.Created ??= date;
-
-    //                 accumulator.TotalCommits++;
-    //                 if (accumulator.PrevCommitDate.HasValue)
-    //                     accumulator.TotalDaysBetween += (
-    //                         date - accumulator.PrevCommitDate.Value
-    //                     ).TotalDays;
-
-    //                 accumulator.PrevCommitDate = accumulator.LastModified;
-    //                 accumulator.LastModified = date;
-
-    //                 if (date >= _ninetyDaysAgo)
-    //                     accumulator.RecentCommits++;
-    //             }
-    //         }
-
-    //         // Tell the PipeReader how much of the buffer has been consumed.
-    //         reader.AdvanceTo(buffer.Start, buffer.End);
-
-    //         // Stop reading if there's no more data coming.
-    //         if (result.IsCompleted)
-    //         {
-    //             break;
-    //         }
-    //     }
-
-    //     // Mark the PipeReader as complete.
-    //     await reader.CompleteAsync();
-    // }
-
     bool TryReadLine(ref ReadOnlySequence<byte> buffer, out ReadOnlySequence<byte> line)
     {
         // Look for a EOL in the buffer.
@@ -257,46 +225,6 @@ public class GitClient
         buffer = buffer.Slice(buffer.GetPosition(1, position.Value));
         return true;
     }
-
-    // private (int emailId, DateTime commitDate)? ProcessDateAndEmail(
-    //     ref ReadOnlySequence<byte> line,
-    //     int firstPipe
-    // )
-    // {
-    //     if (line.Length <= firstPipe)
-    //     {
-    //         _logger.LogInformation(
-    //             "We are equal here... for {line} we have {firstPipe} with {lineLength}",
-    //             Encoding.UTF8.GetString(line),
-    //             firstPipe,
-    //             line
-    //         );
-    //     }
-    //     var secondPipe = line.Slice(firstPipe + 1).PositionOf(_pipeSeparator)?.GetInteger();
-
-    //     if (secondPipe is null)
-    //         return null;
-
-    //     var date = line.Slice(firstPipe + 1, secondPipe.Value - firstPipe - 1);
-    //     var email = line.Slice(secondPipe.Value + 1);
-
-    //     var lookup = _emailIntern.GetAlternateLookup<ReadOnlySpan<char>>();
-
-    //     Span<char> keyBuffer = stackalloc char[(int)line.Length];
-
-    //     int charsWritten = Encoding.UTF8.GetChars(line, keyBuffer);
-
-    //     ReadOnlySpan<char> lookupKey = keyBuffer[..charsWritten];
-
-    //     if (!lookup.TryGetValue(lookupKey, out var id))
-    //     {
-    //         var emailStr = Encoding.UTF8.GetString(email);
-    //         _logger.LogInformation("Email: {emailStr}", emailStr);
-    //         _emailIntern[emailStr] = id = Interlocked.Increment(ref _emailCounter);
-    //     }
-    //     var dateStr = Encoding.UTF8.GetString(date);
-    //     return (id, DateTime.Parse(dateStr));
-    // }
 
     private (int emailId, DateTime commitDate)? ProcessDateAndEmail(ref ReadOnlySequence<byte> line)
     {

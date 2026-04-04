@@ -76,13 +76,30 @@ var accOptions =
 
 if (accOptions.UseGitBranchNaming)
 {
-    using var repo = new Repository(accOptions.RepositoryPath);
+    var repo = new GitClient(
+        LoggerFactory
+            .Create(
+                (x) =>
+                {
+                    x.AddSimpleConsole();
+                    x.SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Information);
+                }
+            )
+            .CreateLogger<GitClient>(),
+        new()
+    );
+
+    var friendlyName = await repo.GetRepoFriendlyName(
+        accOptions.RepositoryPath,
+        CancellationToken.None
+    );
     // Get the current branch name using the Head.FriendlyName property
-    string branchName = repo.Head.FriendlyName.Replace("/", "_");
+    string branchName =
+        friendlyName?.Trim().Replace("/", "_") ?? throw new Exception("Repo does not exist");
     DirectoryInfo info = new(accOptions.RepositoryPath);
 
-    surrealSettings.Namespace = $"{surrealSettings.Namespace}_{info.Name}";
-    surrealSettings.Database = $"{surrealSettings.Database}_{branchName}";
+    surrealSettings.Namespace = $"repo_{info.Name.Trim()}";
+    surrealSettings.Database = $"branch_{branchName}";
 }
 
 var options = SurrealDbOptions
@@ -98,8 +115,10 @@ if (surrealSettings.Remote)
     builder.Services.AddSurreal(options);
 else
     builder.Services.AddSurreal(options).AddSurrealKvProvider();
-Console.WriteLine($"Database: {surrealSettings.Database} NameSpace: {surrealSettings.Namespace}");
+
 builder.Services.Configure<SurrealDbSettings>(builder.Configuration.GetSection("SurrealDb"));
+
+Console.WriteLine($"Database: {surrealSettings.Database} NameSpace: {surrealSettings.Namespace}");
 
 // --- 4. Register Services ---
 // Channels

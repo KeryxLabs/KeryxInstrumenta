@@ -5,4 +5,5 @@ public readonly record struct GitCLI
         "log --reverse --format=\"COMMIT|%aI|%ae\" --name-only -M90 -- ";
     public const string PerRepoLogSearch =
         "log --reverse --format=\"COMMIT|%aI|%ae\" --name-only -M90";
+    public const string FriendlyName = "symbolic-ref --short HEAD";
 }
