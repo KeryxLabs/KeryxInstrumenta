@@ -1,4 +1,5 @@
 using Shouldly;
+using SttpMcp.Application.Validation;
 using SttpMcp.Parsing;
 using SttpMcp.Domain.Models;
 
@@ -38,6 +39,7 @@ public class EndToEndParsingTests
         // Assert - All AVEC blocks should be non-zero
         node.UserAvec.Psi.ShouldBeGreaterThan(0, "user_avec psi should be > 0");
         node.ModelAvec.Psi.ShouldBeGreaterThan(0, "model_avec psi should be > 0");
+        node.CompressionAvec.ShouldNotBeNull();
         node.CompressionAvec.Psi.ShouldBeGreaterThan(0, "compression_avec psi should be > 0");
 
         // Assert - Specific values match

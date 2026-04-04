@@ -42,6 +42,7 @@ public class SttpNodeParserTests
         parsed.ModelAvec.Psi.ShouldBe(2.60f, 0.01f);
         
         // Check compression_avec
+        parsed.CompressionAvec.ShouldNotBeNull();
         parsed.CompressionAvec.Stability.ShouldBe(0.85f);
         parsed.CompressionAvec.Friction.ShouldBe(0.25f);
         parsed.CompressionAvec.Logic.ShouldBe(0.80f);
@@ -114,10 +115,26 @@ public class SttpNodeParserTests
 
         // Assert
         result.Success.ShouldBeTrue($"Parse failed: {result.Error}");
+        result.Node!.CompressionAvec.ShouldNotBeNull();
         result.Node!.CompressionAvec.Stability.ShouldBe(0.86f);
         result.Node!.CompressionAvec.Friction.ShouldBe(0.24f);
         result.Node!.CompressionAvec.Logic.ShouldBe(0.93f);
         result.Node!.CompressionAvec.Autonomy.ShouldBe(0.84f);
         result.Node!.CompressionAvec.Psi.ShouldBeGreaterThan(0);
+    }
+
+    [Fact]
+    public void Should_Parse_Generic_Parent_Reference()
+    {
+        var result = _parser.TryParse(
+            "⊕⟨ { trigger: manual, response_format: temporal_node, origin_session: \"test\", compression_depth: 1, parent_node: ref:parent-fix-check-2026-03-05 } ⟩\n" +
+            "⦿⟨ { timestamp: \"2026-03-05T00:00:00Z\", tier: monthly, session_id: \"test\", user_avec: { stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70 }, model_avec: { stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70 } } ⟩\n" +
+            "◈⟨ { test(.99): monthly_parent_ref } ⟩\n" +
+            "⍉⟨ { rho: 0.96, kappa: 0.94, psi: 2.60, compression_avec: { stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70 } } ⟩",
+            "test"
+        );
+
+        result.Success.ShouldBeTrue($"Parse failed: {result.Error}");
+        result.Node!.ParentNodeId.ShouldBe("parent-fix-check-2026-03-05");
     }
 }

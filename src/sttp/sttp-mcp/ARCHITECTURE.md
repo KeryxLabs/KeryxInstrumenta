@@ -1,25 +1,13 @@
 ```
 src/
-└── sttp-mcp/
-    ├── Domain/
-    │   ├── Models/
-    │   │   ├── SttpNode.cs          ← parsed ⏣ node
-    │   │   ├── AvecState.cs         ← attractor vector
-    │   │   ├── CalibrationResult.cs ← response from calibrate_session
-    │   │   ├── StoreResult.cs       ← response from store_context
-    │   │   └── RetrieveResult.cs    ← response from get_context
-    │   └── Contracts/
-    │       ├── INodeStore.cs        ← read/write nodes
-    │       └── INodeValidator.cs    ← tree-sitter validation
-    ├── Application/
-    │   ├── Tools/
-    │   │   ├── CalibrateSession.cs
-    │   │   ├── StoreContext.cs
-    │   │   └── GetContext.cs
-    │   └── Validation/
-    │       └── TreeSitterValidator.cs
-    ├── Storage/
-    │   └── SurrealDbNodeStore.cs
-    └── Host/
-        └── Program.cs
+└── sttp/
+    ├── sttp-core/
+    │   ├── Domain/                  ← reusable STTP models and contracts
+    │   ├── Parsing/                 ← node parser
+    │   ├── Application/Services/    ← core STTP use-cases
+    │   ├── Application/Validation/  ← structural validation
+    │   └── Storage/                 ← in-memory and SurrealDB storage adapters
+    └── sttp-mcp/
+        ├── Application/Tools/       ← MCP wrapper surface only
+        └── Program.cs               ← MCP composition root
 ```

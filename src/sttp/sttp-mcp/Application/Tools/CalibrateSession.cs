@@ -1,10 +1,10 @@
-using SttpMcp.Domain.Contracts;
+using SttpMcp.Application.Services;
 using SttpMcp.Domain.Models;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
 
 namespace SttpMcp.Application.Tools;
-public sealed class CalibrateSessionTool(INodeStore store)
+public sealed class CalibrateSessionTool(CalibrationService service)
 {
     [McpServerTool(Name = "calibrate_session"), Description("""
         Call this tool at session start and any time your reasoning state
@@ -28,7 +28,7 @@ public sealed class CalibrateSessionTool(INodeStore store)
         is your drift signal. Large delta after heavy tasks is intentional.
         Large delta with no clear cause is uncontrolled — worth noting.
         """)]
-    public async Task<CalibrationResult> CalibrateAsync(
+    public Task<CalibrationResult> CalibrateAsync(
         [Description("Unique session identifier for calibration history lookup and storage.")]
         string sessionId,
         [Description("Stability weighting (0.0 to 1.0). Use a decimal value.")]
@@ -42,33 +42,6 @@ public sealed class CalibrateSessionTool(INodeStore store)
         [Description("session_start | post_code | post_analysis | post_creative | manual")]
         string trigger,
         CancellationToken ct = default)
-    {
-        var current = new AvecState
-        {
-            Stability = stability,
-            Friction = friction,
-            Logic = logic,
-            Autonomy = autonomy
-        };
-
-        var previous = await store.GetLastAvecAsync(sessionId, ct);
-        var history = await store.GetTriggerHistoryAsync(sessionId, ct);
-        var isFirst = previous is null;
-
-        // on first calibration use current as baseline — zero drift
-        var baseline = previous ?? current;
-
-        await store.StoreCalibrationAsync(sessionId, current, trigger, ct);
-
-        return new CalibrationResult
-        {
-            PreviousAvec = baseline,
-            Delta = current.DriftFrom(baseline),
-            DriftClassification = current.ClassifyDrift(baseline),
-            Trigger = trigger,
-            TriggerHistory = [..history, trigger],
-            IsFirstCalibration = isFirst
-        };
-    }
+        => service.CalibrateAsync(sessionId, stability, friction, logic, autonomy, trigger, ct);
 }
 

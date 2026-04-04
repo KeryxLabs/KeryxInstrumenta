@@ -145,7 +145,7 @@ dotnet run --project ./sttp-mcp.csproj
 
 ## Tools
 
-sttp-mcp provides five MCP tools that enable models to persist and retrieve conversational state:
+sttp-mcp provides six MCP tools that enable models to persist, retrieve, and roll up conversational state:
 
 ### `calibrate_session`
 
@@ -184,6 +184,17 @@ Supports optional swap preview by passing:
 
 Use case: pull presets, choose mode, apply hard/soft swap, then call `calibrate_session` after meaningful reasoning shifts.
 
+### `create_monthly_rollup`
+
+Call to aggregate a date range of stored STTP nodes into a new monthly node. The rollup computes:
+
+- average user/model/compression AVEC values
+- `rho`, `kappa`, and `psi` ranges
+- low/medium/high confidence band counts
+- a first-node parent anchor by default
+
+This is useful when a project has accumulated many raw and daily nodes and you want a compact checkpoint for later retrieval or cross-model handoff.
+
 ---
 
 ## Cross-Model Persistence
@@ -210,7 +221,7 @@ Model compresses current context → produces ⏣ node
 Model calls store_context(node) → server validates + stores
 ```
 
-The server does three things only: validate structure, persist the node, retrieve on resonance. The intelligence stays in the model.
+The server is now a wrapper over the reusable `sttp-core` library. The core library handles STTP parsing, validation, calibration, retrieval, mood state transforms, rollup generation, and storage adapters. The MCP host adds stdio transport, tool descriptions, and the composition root.
 
 ---
 

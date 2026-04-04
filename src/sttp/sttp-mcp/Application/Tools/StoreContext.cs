@@ -1,16 +1,12 @@
-using SttpMcp.Domain.Contracts;
+using SttpMcp.Application.Services;
 using SttpMcp.Domain.Models;
 using System.ComponentModel;
 using ModelContextProtocol.Server;
-using SttpMcp.Parsing;
-using Microsoft.Extensions.Logging;
 
 namespace SttpMcp.Application.Tools;
 
-public sealed class StoreContextTool(INodeStore store, INodeValidator validator, ILogger<StoreContextTool> logger)
+public sealed class StoreContextTool(StoreContextService service)
 {
-    private readonly SttpNodeParser _parser = new();
-    
     [McpServerTool(Name = "store_context"), Description("""
         Call this tool when context should be preserved.
 
@@ -47,81 +43,11 @@ public sealed class StoreContextTool(INodeStore store, INodeValidator validator,
           ⍉⟨ ⏣0{ rho: float, kappa: float, psi: float,
             compression_avec: { stability, friction, logic, autonomy, psi } } ⟩
         """)]
-    public async Task<StoreResult> StoreAsync(
+    public Task<StoreResult> StoreAsync(
         [Description("The complete valid ⏣ node you have compressed without any JSON wrappers.")]
         string node,
         [Description("Session identifier to associate with the stored node.")]
         string sessionId,
         CancellationToken ct = default)
-    {
-        var validation = validator.Validate(node);
-
-        if (!validation.IsValid)
-            return new StoreResult
-            {
-                NodeId = string.Empty,
-                Psi = 0f,
-                Valid = false,
-                ValidationError = $"{validation.Reason}: {validation.Error}"
-            };
-
-        var parseResult = _parser.TryParse(node, sessionId);
-        if (!parseResult.Success)
-            return new StoreResult
-            {
-                NodeId = string.Empty,
-                Psi = 0f,
-                Valid = false,
-                ValidationError = $"ParseFailure: {parseResult.Error}"
-            };
-        var parsed = parseResult.Node!;
-        
-        // Debug logging
-        logger.LogInformation("Parsed node - UserAvec.Psi: {UserPsi}, ModelAvec.Psi: {ModelPsi}, CompressionAvec.Psi: {CompPsi}",
-            parsed.UserAvec.Psi, parsed.ModelAvec.Psi, parsed.CompressionAvec?.Psi);
-        logger.LogInformation("CompressionAvec: S={S}, F={F}, L={L}, A={A}",
-            parsed.CompressionAvec?.Stability, parsed.CompressionAvec?.Friction, 
-            parsed.CompressionAvec?.Logic, parsed.CompressionAvec?.Autonomy);
-        
-        try
-        {
-            var nodeId = await store.StoreAsync(parsed, ct);
-
-            return new StoreResult
-            {
-                NodeId = nodeId,
-                Psi = parsed.Psi,
-                Valid = true
-            };
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Store operation failed");
-            return new StoreResult
-            {
-                NodeId = string.Empty,
-                Psi = 0f,
-                Valid = false,
-                ValidationError = $"StoreFailure: {ex.Message}"
-            };
-        }
-    }
-
-    // minimal parser — extracts envelope fields from raw ⏣ text
-    // tree-sitter full parse happens in validator before this runs
-    private static SttpNode Parse(string raw, string sessionId) => new()
-    {
-        Raw = raw,
-        SessionId = sessionId,
-        Tier = "raw",
-        Timestamp = DateTime.UtcNow,
-        CompressionDepth = 0,
-        ParentNodeId = null,
-        UserAvec = new AvecState { Stability = 0, Friction = 0, Logic = 0, Autonomy = 0 },
-        ModelAvec = new AvecState { Stability = 0, Friction = 0, Logic = 0, Autonomy = 0 },
-        CompressionAvec = new AvecState { Stability = 0, Friction = 0, Logic = 0, Autonomy = 0 },
-        Rho = 0f,
-        Kappa = 0f,
-        Psi = 0f
-    };
+        => service.StoreAsync(node, sessionId, ct);
 }

@@ -1,4 +1,5 @@
 using Shouldly;
+using SttpMcp.Application.Validation;
 
 namespace SttpMcp.Tests.Validation;
 
@@ -39,6 +40,7 @@ public class TreeSitterValidatorTests
 
         // Assert
         result.IsValid.ShouldBeFalse();
+        result.Error.ShouldNotBeNull();
         result.Error.ShouldContain("Missing required layer");
     }
 
@@ -58,6 +60,7 @@ public class TreeSitterValidatorTests
 
         // Assert
         result.IsValid.ShouldBeFalse();
+        result.Error.ShouldNotBeNull();
         result.Error.ShouldContain("Layer order violation");
     }
 }

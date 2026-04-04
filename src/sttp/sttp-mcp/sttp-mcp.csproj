@@ -25,7 +25,7 @@
     <PackageVersion>0.1.0-beta</PackageVersion>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/KeryxLabs/KeryxInstrumenta</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/KeryxLabs/KeryxInstrumenta/tree/main/src/sttp-mcp</PackageProjectUrl>
+    <PackageProjectUrl>https://github.com/KeryxLabs/KeryxInstrumenta/tree/main/src/sttp/sttp-mcp</PackageProjectUrl>
     <PackageTags>AI; MCP; server; stdio</PackageTags>
     <Description>Spatio-Temporal Transfer Protocol (STTP) is a typed intermediate representation
       that encodes conversational state into a compressed, confidence-weighted structure any model
@@ -42,17 +42,21 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Remove="Domain/**/*.cs" />
+    <Compile Remove="Parsing/**/*.cs" />
+    <Compile Remove="Application/Validation/**/*.cs" />
+    <Compile Remove="Storage/InMemoryNodeStore.cs" />
+    <Compile Remove="Storage/SurrealDb/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.3" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
     <PackageReference Include="ModelContextProtocol" Version="0.7.0-preview.1" />
-    <!-- <PackageReference Include="SurrealDb.Embedded.SurrealKv" Version="0.9.0" /> -->
-    <!-- <PackageReference Include="SurrealDb.Net" Version="0.9.0" /> -->
-  
   </ItemGroup>
 <ItemGroup>
-    <ProjectReference Include="../../_deps/surrealdb.net/SurrealDb.Net/SurrealDb.Net.csproj " />
-    <ProjectReference Include="../../_deps/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
+  <ProjectReference Include="../sttp-core/sttp-core.csproj" />
 </ItemGroup>
 
 <!-- Native SurrealKv library from NuGet cache. The ProjectReference above

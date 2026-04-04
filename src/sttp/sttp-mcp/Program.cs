@@ -2,11 +2,9 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using ModelContextProtocol.Protocol;
+using SttpMcp.Application.Validation;
 using SttpMcp.Application.Tools;
 using SttpMcp.Domain.Contracts;
-using SttpMcp.Storage.SurrealDb;
-using SttpMcp.Storage.SurrealDb.Models;
 
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -39,66 +37,29 @@ var switchMappings = new Dictionary<string, string>
 var configArgs = args.Where(a => !string.Equals(a, "--remote", StringComparison.OrdinalIgnoreCase)).ToArray();
 builder.Configuration.AddCommandLine(configArgs, switchMappings);
 
-var useRemote = Array.Exists(args, a => string.Equals(a, "--remote", StringComparison.OrdinalIgnoreCase));
-
-
 // Configure all logs to go to stderr (stdout is used for the MCP protocol messages).
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
-
-var surrealSettings = builder.Configuration.GetSection("SurrealDB").Get<SurrealDbSettings>() ?? throw new Exception("SurrealDb settings not passed");
-
-var dbEndpoint = surrealSettings.Endpoint(useRemote);
-
-if (!useRemote)
-{
-    const string scheme = "surrealkv://";
-    var endpointPath = dbEndpoint[scheme.Length..];
-
-    if (!Path.IsPathRooted(endpointPath))
-    {
-        endpointPath = Path.GetFullPath(Path.Combine(rootDir, endpointPath));
-    }
-
-    var dataDirectory = Path.GetDirectoryName(endpointPath);
-    if (!string.IsNullOrWhiteSpace(dataDirectory))
-        Directory.CreateDirectory(dataDirectory);
-}
-
-var options = SurrealDbOptions.Create()
-    .WithEndpoint(dbEndpoint)
-    .WithNamespace(surrealSettings.Namespace)
-    .WithDatabase(surrealSettings.Database);
-    
-
-if (useRemote){
-    options
-    .WithUsername(surrealSettings.User)
-    .WithPassword(surrealSettings.Password);
-}
-    
-
-var surrealServices = builder.Services.AddSurreal(options.Build());
-//allow provider when not remote
-if (!useRemote)
-    surrealServices.AddSurrealKvProvider();
+var storageRuntime = builder.Services.AddSttpSurrealDbStorage(builder.Configuration, args);
 
 // Add the MCP services: the transport to use (stdio) and the tools to register.
 builder.Services   
-    .AddSingleton<INodeStore, SurrealDbNodeStore>()
     .AddSingleton<INodeValidator, TreeSitterValidator>()
+    .AddSttpCore()
     .AddSingleton<CalibrateSessionTool>()
     .AddSingleton<StoreContextTool>()
     .AddSingleton<GetContextTool>()
     .AddSingleton<ListNodesTool>()
     .AddSingleton<GetMoodsTool>()
+    .AddSingleton<CreateMonthlyRollupTool>()
     .AddMcpServer()
     .WithStdioServerTransport()
     .WithTools<CalibrateSessionTool>()
     .WithTools<StoreContextTool>()
     .WithTools<GetContextTool>()
     .WithTools<ListNodesTool>()
-    .WithTools<GetMoodsTool>();
+    .WithTools<GetMoodsTool>()
+    .WithTools<CreateMonthlyRollupTool>();
 
 
 var app = builder.Build();
@@ -107,16 +68,16 @@ var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogg
 startupLogger.LogInformation(
     "STTP startup path resolution | PID={Pid} | BaseDirectory={BaseDirectory} | CWD={Cwd} | Mode={Mode} | Endpoint={Endpoint} | Namespace={Namespace} | Database={Database}",
     Environment.ProcessId,
-    rootDir,
+    storageRuntime.RootDir,
     Environment.CurrentDirectory,
-    useRemote ? "remote" : "embedded",
-    dbEndpoint,
-    surrealSettings.Namespace,
-    surrealSettings.Database);
+    storageRuntime.UseRemote ? "remote" : "embedded",
+    storageRuntime.Endpoint,
+    storageRuntime.Namespace,
+    storageRuntime.Database);
 
 // bootstrap schema on startup
-var store = app.Services.GetRequiredService<INodeStore>();
-if (store is SurrealDbNodeStore surrealStore)
-    await surrealStore.InitializeAsync();
+var storeInitializer = app.Services.GetService<INodeStoreInitializer>();
+if (storeInitializer is not null)
+    await storeInitializer.InitializeAsync();
 
 await app.RunAsync();

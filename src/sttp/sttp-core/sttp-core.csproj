@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Description>Reusable core services, models, parsing, and validation for STTP.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.1" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="10.0.3" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../../_deps/surrealdb.net/SurrealDb.Net/SurrealDb.Net.csproj" />
+    <ProjectReference Include="../../../_deps/surrealdb.net/SurrealDb.Embedded.SurrealKv/SurrealDb.Embedded.SurrealKv.csproj" />
+  </ItemGroup>
+
+</Project>
