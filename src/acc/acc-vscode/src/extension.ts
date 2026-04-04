@@ -740,13 +740,23 @@ function showSearchResults(results: any[] | undefined) {
     })
     .then((selected) => {
       if (selected) {
+
         const filePath = selected.node.file_path;
         // line_start from ACC is already 0-indexed (from LSP), no adjustment needed
         const line = selected.node.line_start;
+        // 1. Get the workspace root path
+        const workspaceFolders = vscode.workspace.workspaceFolders;
 
-        console.log("Opening file:", filePath, "at line:", line);
+        if (!workspaceFolders) {
+          vscode.window.showErrorMessage("No workspace folder open.");
+          return;
+        }
 
-        const fileUri = vscode.Uri.file(filePath);
+        const rootPath = workspaceFolders[0].uri.fsPath;
+        const absolutePath = path.join(rootPath, filePath);
+
+
+        const fileUri = vscode.Uri.file(absolutePath);
 
         vscode.workspace.openTextDocument(fileUri).then(
           (doc) => {
