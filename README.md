@@ -19,7 +19,7 @@ Each instrument is standalone and can be used independently.
 
 | Instrument | Current Line | What It Does |
 |---|---|---|
-| [`sttp-mcp`](./src/sttp-mcp) | `0.1.x-beta` | Stores and retrieves compressed conversational state as STTP nodes via MCP tools |
+| [`sttp-mcp`](./src/sttp-mcp) | `1.0.0` | Stores and retrieves compressed conversational state as STTP nodes via MCP tools |
 | [`acc`](./src/acc) | `0.3.x` | Indexes repositories into AVEC-space and exposes dependency/risk/pattern queries |
 
 ## Quick Start
