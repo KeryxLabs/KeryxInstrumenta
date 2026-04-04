@@ -3,7 +3,7 @@
 # Usage: ./build.sh [--publish]
 set -e
 
-VERSION="0.3.1"
+VERSION="0.3.2"
 TAG_PREFIX="acc-engine"
 RELEASE="${TAG_PREFIX}/v$VERSION"
 NAME="acc"

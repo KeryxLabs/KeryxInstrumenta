@@ -3,7 +3,7 @@
 
 local M = {}
 
-local ACC_VERSION = "0.3.1"
+local ACC_VERSION = "0.3.2"
 local GITHUB_RELEASES_URL = "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download"
 local ACC_RELEASE_TAG = "acc-engine/v" .. ACC_VERSION
 

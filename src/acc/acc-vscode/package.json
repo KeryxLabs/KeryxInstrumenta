@@ -1,7 +1,7 @@
 {
   "name": "acc-vscode",
   "displayName": "ACC - Adaptive Codec Context",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "KeryxLabs",
   "repository": {
     "type": "git",

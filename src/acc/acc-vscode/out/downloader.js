@@ -41,8 +41,9 @@ const fs = __importStar(require("fs"));
 const path = __importStar(require("path"));
 const tar = __importStar(require("tar"));
 const child_process = __importStar(require("child_process"));
-const ACC_VERSION = '0.3.1'; // Update this with releases
+const ACC_VERSION = '0.3.2'; // Update this with releases
 const GITHUB_RELEASES_URL = `https://github.com/KeryxLabs/KeryxInstrumenta/releases/download`;
+const ACC_RELEASE_TAG = `acc-engine/v${ACC_VERSION}`;
 class AccServerDownloader {
     constructor(context, outputChannel) {
         this.context = context;
@@ -169,7 +170,7 @@ class AccServerDownloader {
             vscode.window.showErrorMessage(`ACC: Unsupported platform ${process.platform}-${process.arch}`);
             return null;
         }
-        const downloadUrl = `${GITHUB_RELEASES_URL}/v${ACC_VERSION}/${platformInfo.assetName}`;
+        const downloadUrl = `${GITHUB_RELEASES_URL}/${ACC_RELEASE_TAG}/${platformInfo.assetName}`;
         const serverDir = path.join(this.context.globalStorageUri.fsPath, 'server');
         // Ensure directory exists
         if (!fs.existsSync(serverDir)) {
