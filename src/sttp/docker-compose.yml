@@ -19,11 +19,13 @@ services:
     restart: unless-stopped
 
   ui:
-    image: ghcr.io/keryxlabs/sttp-ui:1.0.1
+    image: ghcr.io/keryxlabs/sttp-ui:1.2.0
     ports:
       - "5257:8080"
     environment:
       - Gateway__BaseUrl=http://gateway:8080
+      - Ollama__BaseUrl=http://ollama:11434
+      - Ollama_Model=sttp-encoder  # build from gemma4 2B    
     depends_on:
       - gateway
     networks:
