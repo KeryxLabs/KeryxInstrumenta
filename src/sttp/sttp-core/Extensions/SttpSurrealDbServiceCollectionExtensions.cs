@@ -12,11 +12,13 @@ public static class SttpSurrealDbServiceCollectionExtensions
     public static SttpSurrealDbRuntimeOptions AddSttpSurrealDbStorage(
         this IServiceCollection services,
         IConfiguration configuration,
-        string[] args)
+        string[] args,
+        string rootDirectoryName = ".sttp-mcp")
     {
         var useRemote = Array.Exists(args, a => string.Equals(a, "--remote", StringComparison.OrdinalIgnoreCase));
         var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        var rootDir = Path.Combine(home, ".sttp-mcp");
+        var configuredRoot = string.IsNullOrWhiteSpace(rootDirectoryName) ? ".sttp-mcp" : rootDirectoryName;
+        var rootDir = Path.Combine(home, configuredRoot);
 
         var surrealSettings = configuration.GetSection("SurrealDb").Get<SurrealDbSettings>()
             ?? throw new Exception("SurrealDb settings not passed");

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Description>Deployable STTP network gateway exposing HTTP Minimal API and gRPC endpoints.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.67.0" />
+    <PackageReference Include="Grpc.AspNetCore.Server.Reflection" Version="2.67.0" />
+    <PackageReference Include="Grpc.Tools" Version="2.67.0" PrivateAssets="All" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../sttp-core/sttp-core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Protobuf Include="Protos/sttp.proto" GrpcServices="Server" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!-- Keep embedded SurrealKv runtime behavior consistent with sttp-mcp. -->
+  <ItemGroup>
+    <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-x64/native/libsurreal_surrealkv.so"
+             Condition="'$(RuntimeIdentifier)' == 'linux-x64' Or '$(RuntimeIdentifier)' == ''"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="libsurreal_surrealkv.so" />
+    <Content Include="$(NuGetPackageRoot)surrealdb.embedded.surrealkv/0.9.0/runtimes/linux-arm64/native/libsurreal_surrealkv.so"
+             Condition="'$(RuntimeIdentifier)' == 'linux-arm64'"
+             CopyToOutputDirectory="PreserveNewest"
+             Link="libsurreal_surrealkv.so" />
+  </ItemGroup>
+</Project>
