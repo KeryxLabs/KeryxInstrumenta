@@ -2,6 +2,96 @@
 
 All notable changes across STTP components are documented in this file.
 
+## [0.3.0-beta] - 2026-04-05
+
+### Added
+
+- **`sttp-ui` — AI Summary via Ollama**
+  - `OllamaService` (typed `HttpClient`) integrates a local Ollama instance for per-node AI summarization
+  - `OllamaOptions` config section (`BaseUrl`, `Model`) registered in `Program.cs`
+  - UI surface: trigger pill with dot-pulse loading indicator, dismissable error state, five-section summary card
+  - Per-node in-memory cache keyed by session + timestamp; cache cleared on swipe navigation, node select, and explicit clear-all
+  - Structured `ILogger` instrumentation covering request dispatch, elapsed time, parse failures, and missing sections
+- **`sttp-ui` — Unwinder helper (`Helpers/Unwinder.cs`)**
+  - Deterministic signal interpreter; introduces no new information, only surfaces what is present in the node
+  - Score formula: `(logic + stability + autonomy) / 3 − friction`
+  - Status levels: **Great** (≥ 0.75), **Good** (≥ 0.50), **Friction** (≥ 0.25), **Stuck** (< 0.25)
+  - Outputs: status icon, label, CSS class, plain-language summary, interpretation, and next-action recommendation
+  - Interpretation matrix: 4-quadrant friction × logic grid
+  - Next-action decision tree: 4 cases
+  - Summary extraction via regex against raw node content; fallback converts session ID (snake_case → sentence)
+- **`sttp-ui` — Session Directory**
+  - "Browse Sessions" button triggers a popup listing up to 50 sessions from the gateway graph endpoint
+  - Columns: session ID, node count, avg score, last modified
+  - Tap behavior: jump to session if already loaded; otherwise filter and reload
+
+### Changed
+
+- **`sttp-ui` — Non-technical UX layer**
+  - Graph terms replaced with plain language: "session map", "moments", "signal strength", "consistency", "overall score"
+  - Score-related technical sections renamed to "Advanced" / "Score Breakdown"
+  - Error messages rewritten as action-oriented, friendly copy
+  - Quick actions added to cards: "Show Moment List" and "Show Details"
+  - Navigation arrows made always-visible
+- **`sttp-ui` — Visual & color system**
+  - Unwinder status pill treatment applied globally: 18% fill / 40% border per level; `great` → `#2d6b49`, `good` → `#7a5a1e`, `friction` → `#9c5410`, `stuck` → `#a83820`
+  - Tag pills: node count = blue, date = amber, tier = green; tag fills at 26% bg / 52% border globally
+  - `rho` → amber, `kappa` → blue full pill treatment everywhere
+  - Timestamps: amber (`#8a6828`) across all surfaces
+  - Panel labels elevated to `ink2` (no longer muted)
+  - AI summary readability: smaller gray supporting-context style aligned to unwinder visual language
+- **`sttp-ui` — Detail panel**
+  - Unwind card leads with: status → psi → summary → interpretation → next action
+  - Tech details hidden behind `showTechDetails` toggle (`false` by default); metrics grid and AVEC grid collapsed when toggled off
+- **`sttp-ui` — Responsive layout**
+  - Desktop: flow grid, full-width, single column
+  - Widescreen (≥ 1400 px): detail body two-column dense mode
+  - Mobile: card-top stacked, node aside reflows; rho/kappa wrap with fixed spacing
+- **`sttp-ui` — Overflow fixes**
+  - Score breakdown, metrics, and AVEC grids switch to `minmax(0, 1fr)` + `overflow-wrap: anywhere` to eliminate horizontal blowout when metrics are visible
+- **`sttp-ui` — AI summary cache key strategy**
+  - Cache key changed from a reuse-prone strategy to a deterministic fingerprint: `session + timestamp + tier + depth + SHA-256(raw)`
+- **`docker-compose.yml`**
+  - Compose updated to reference published images: `ghcr.io/keryxlabs/sttp-gateway:1.0.0` + `ghcr.io/keryxlabs/sttp-ui:1.0.0`
+  - Both services placed on `sttp-bridge` network; `sttp-ui` exposed on port `5257`
+  - Gateway invoked with `--remote` + `--remote-endpoint` args for SurrealDB connectivity
+
+### Fixed
+
+- **`appsettings.Development.json` override bug**: development config was overriding the real Ollama server URL; synced to match `appsettings.json` (server: `http://10.27.27.57:11434`, model: `sttp-encoder`)
+- **Blazor 10.6 publish artifact blowout**: excluded publish output directory via `<Content Remove="..." />` in `sttp-ui.csproj` to prevent spurious files being included in build output
+
+### Validated
+
+- `dotnet build` passed after each major patch (`src/sttp/sttp-ui/sttp-ui.csproj`)
+- Docker image build: `ghcr.io/keryxlabs/sttp-ui:1.2.0`
+
+### Documentation
+
+- `src/sttp/README.md` expanded:
+  - Four-layer format overview
+  - AVEC architecture diagram/tree
+  - Per-component docs section
+  - Build-from-source instructions
+
+### Session Coverage
+
+- Session: `sttp-ui-improvements` (2026-04-05)
+- 3 nodes retrieved across 3 compression passes (rho: 0.95–0.97, kappa: 0.97–0.98)
+- Changed files confirmed across nodes:
+  - `src/sttp/sttp-ui/Helpers/Unwinder.cs`
+  - `src/sttp/sttp-ui/Services/OllamaService.cs`
+  - `src/sttp/sttp-ui/Services/OllamaOptions.cs`
+  - `src/sttp/sttp-ui/Models/GatewayDtos.cs`
+  - `src/sttp/sttp-ui/Components/Pages/Home.razor`
+  - `src/sttp/sttp-ui/Components/Pages/Home.razor.css`
+  - `src/sttp/sttp-ui/Program.cs`
+  - `src/sttp/sttp-ui/appsettings.json`
+  - `src/sttp/sttp-ui/appsettings.Development.json`
+  - `src/sttp/sttp-ui/sttp-ui.csproj`
+  - `src/sttp/docker-compose.yml`
+  - `src/sttp/README.md`
+
 ## [0.2.0-beta] - 2026-04-04
 
 ### Added
