@@ -69,3 +69,10 @@ public sealed record SttpNodeDto(
     float Rho,
     float Kappa,
     float Psi);
+
+public sealed record AiSummary(
+    string Topic,
+    string WhatHappened,
+    string WhereWeLeftOff,
+    string Vibe,
+    string PickBackUpWith);
