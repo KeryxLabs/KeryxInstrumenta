@@ -1,0 +1,35 @@
+services:
+  gateway:
+    image: ghcr.io/keryxlabs/sttp-gateway:1.0.0
+    command:
+      - --remote
+      - --remote-endpoint
+      - "ws://10.12.0.11:9096/rpc"
+      - --username
+      - root
+      - --password
+      - root
+      - --database
+      - sttp_mcp
+    ports:
+      - "8080:8080"   # HTTP API
+      - "8081:8081"   # gRPC
+    networks:
+      - sttp
+    restart: unless-stopped
+
+  ui:
+    image: ghcr.io/keryxlabs/sttp-ui:1.0.1
+    ports:
+      - "5257:8080"
+    environment:
+      - Gateway__BaseUrl=http://gateway:8080
+    depends_on:
+      - gateway
+    networks:
+      - sttp
+    restart: unless-stopped
+
+networks:
+  sttp:
+    driver: bridge

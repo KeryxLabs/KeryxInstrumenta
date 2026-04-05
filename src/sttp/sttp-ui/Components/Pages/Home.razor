@@ -1,0 +1,908 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Rendering
+@using sttp_ui.Models
+@using sttp_ui.Services
+@implements IAsyncDisposable
+@inject SttpGatewayApiClient Gateway
+@inject IJSRuntime JS
+
+<PageTitle>sttp</PageTitle>
+
+<section class="flow-shell">
+	<div class="tab-bar">
+		<div class="view-switch" role="group" aria-label="View">
+			<button class="view-chip @(activeView == "nodes" ? "active" : string.Empty)" @onclick="SetNodesView">Sessions</button>
+			<button class="view-chip @(activeView == "graph" ? "active" : string.Empty)" @onclick="SetGraphViewAsync">Graph</button>
+		</div>
+	</div>
+
+	<div class="flow-grid">
+		<article class="panel-nodes">
+			@if (activeView == "graph")
+			{
+				<div class="panel panel-graph">
+					<div class="panel-head graph-head">
+						<span class="panel-label">Session Web</span>
+						<div class="panel-actions">
+							<button class="action" @onclick="ApplyGraphControlsAsync" disabled="@isWorking">Apply</button>
+							<button class="action" @onclick="LoadNodesAsync" disabled="@isWorking">Refresh</button>
+						</div>
+					</div>
+					<div class="graph-controls">
+						<div class="graph-control-group">
+							<label>Graph Limit</label>
+							<input type="number" min="50" max="5000" step="50" @bind="graphLimit" />
+						</div>
+						<div class="graph-control-group">
+							<label>Psi Min</label>
+							<input type="number" min="0" max="4" step="0.05" @bind="graphPsiMin" />
+						</div>
+						<div class="graph-control-group">
+							<label>Psi Max</label>
+							<input type="number" min="0" max="4" step="0.05" @bind="graphPsiMax" />
+						</div>
+					</div>
+					<div class="graph-toggles">
+						<label><input type="checkbox" @bind="graphShowTimeline" /> timeline</label>
+						<label><input type="checkbox" @bind="graphShowSimilarity" /> similarity</label>
+						<label><input type="checkbox" @bind="graphShowMembership" /> membership</label>
+						<label><input type="checkbox" @bind="graphShowNodeTimeline" /> node timeline</label>
+						<label><input type="checkbox" @bind="graphShowLineage" /> lineage</label>
+					</div>
+					<div class="graph-meta">
+						<span>@sessions.Count sessions</span>
+						<span>@nodes.Count nodes loaded in deck</span>
+						<span>Tap session to expand/collapse node cloud</span>
+						<span>Tap STTP node to jump to details</span>
+					</div>
+					<div id="sttp-graph" class="graph-canvas"></div>
+				</div>
+			}
+			else
+			{
+			<div class="deck-topbar">
+				<input class="filter-input" @bind="listSessionId" placeholder="Filter by session…" />
+				<div class="deck-controls">
+					<button class="action" @onclick="LoadNodesAsync" disabled="@isWorking">Refresh</button>
+					@if (sessions.Count > 0)
+					{
+						<span class="pos-counter">@(currentSessionIndex + 1)<span class="pos-of"> / @sessions.Count</span></span>
+					}
+				</div>
+			</div>
+
+			@if (sessions.Count == 0)
+			{
+				<div class="empty-card">
+					<p class="muted">No sessions yet — compose&nbsp;one.</p>
+				</div>
+			}
+			else
+			{
+				var session = sessions[currentSessionIndex];
+				var node = session.Nodes[currentSessionNodeIndex];
+				var latestNode = session.LatestNode;
+				<div class="deck-stage">
+					<div id="sttp-card" class="node-card @slideClass" @key="nodeKey">
+						<div class="hint hint-left">← older</div>
+						<div class="hint hint-right">newer →</div>
+						<div class="hint hint-up">↑ nodes</div>
+						<div class="hint hint-down">↓ details</div>
+
+						<div class="card-body">
+							<div class="card-top">
+								<div class="node-meta">
+									<p class="node-session">@session.SessionId</p>
+									<div class="node-tags">
+										<span class="tag">@session.Nodes.Count nodes</span>
+										<span class="tag">@session.LastModified.ToLocalTime().ToString("MMM d, HH:mm")</span>
+										<span class="tag">latest: @latestNode.Tier</span>
+									</div>
+								</div>
+								<div class="node-aside">
+									<span class="psi-badge">@latestNode.Psi.ToString("0.00")</span>
+									<div class="rho-kappa">
+										<span>ρ&nbsp;@latestNode.Rho.ToString("0.00")</span>
+										<span>κ&nbsp;@latestNode.Kappa.ToString("0.00")</span>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					@if (showReferences)
+					{
+						<div class="ref-panel">
+							<div class="ref-header">
+								<span class="panel-label">@session.SessionId — @session.Nodes.Count nodes</span>
+								<button class="toggle-btn" @onclick="() => showReferences = false">×</button>
+							</div>
+							<div class="ref-list">
+								@foreach (var (refNode, refIdx) in session.Nodes.Select((n, i) => (n, i)))
+								{
+									<button class="ref-chip @(refIdx == currentSessionNodeIndex ? "ref-chip-current" : string.Empty)" @onclick="() => SelectSessionNode(refIdx)">
+										<span class="ref-psi">ψ&nbsp;@refNode.Psi.ToString("0.00")</span>
+										<span class="ref-time">@refNode.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</span>
+									</button>
+								}
+							</div>
+						</div>
+					}
+
+					@if (showDetail)
+					{
+						<div class="detail-panel">
+							<div class="detail-head">
+								<span class="panel-label">Nodes In Session</span>
+								<button class="toggle-btn" @onclick="() => showDetail = false">×</button>
+							</div>
+
+							<div class="detail-body">
+								<div class="detail-node-strip">
+									@foreach (var (refNode, refIdx) in session.Nodes.Select((n, i) => (n, i)))
+									{
+										<button class="detail-node-tile @(refIdx == currentSessionNodeIndex ? "detail-node-current" : string.Empty)" @onclick="() => SelectSessionNode(refIdx, false)">
+											<span class="detail-node-tier">@refNode.Tier</span>
+											<span class="detail-node-time">@refNode.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</span>
+											<span class="detail-node-psi">ψ @refNode.Psi.ToString("0.00")</span>
+										</button>
+									}
+								</div>
+
+								<div class="detail-popout" @key="GetNodeDetailKey(node)">
+									<div class="detail-popout-meta">
+										<span class="panel-label">Selected Node</span>
+										<span class="detail-popout-stamp">@node.Timestamp.ToLocalTime().ToString("MMM d, yyyy HH:mm:ss")</span>
+									</div>
+
+									<div class="metrics-grid">
+										<div><span>Depth</span><strong>@node.CompressionDepth</strong></div>
+										<div><span>Rho</span><strong>@node.Rho.ToString("0.000")</strong></div>
+										<div><span>Kappa</span><strong>@node.Kappa.ToString("0.000")</strong></div>
+										<div><span>Psi</span><strong>@node.Psi.ToString("0.000")</strong></div>
+									</div>
+
+									<div class="avec-grid">
+										@RenderAvec("User", node.UserAvec)
+										@RenderAvec("Model", node.ModelAvec)
+										@RenderAvec("Compression", node.CompressionAvec)
+									</div>
+
+									@if (!string.IsNullOrWhiteSpace(node.ParentNodeId))
+									{
+										<p class="muted inline-meta">Parent: @node.ParentNodeId</p>
+									}
+
+									<div class="raw-wrap">
+											<div class="raw-head">
+												<p class="raw-title">Raw</p>
+												<button class="raw-copy @(rawCopied ? "raw-copy-success" : string.Empty)" @onclick="() => CopyRawAsync(node.Raw)" title="Copy raw">
+													@if (rawCopied)
+													{
+														<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>copied</span>
+													}
+													else
+													{
+														<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><span>copy</span>
+													}
+												</button>
+											</div>
+										<pre class="node-raw">@FormatRaw(node.Raw)</pre>
+									</div>
+								</div>
+							</div>
+						</div>
+					}
+
+					<div class="nav-arrows">
+						<button class="nav-arrow" @onclick="GoOlder" disabled="@(currentSessionIndex >= sessions.Count - 1)" title="Older">←</button>
+						<button class="nav-arrow" @onclick="GoNewer" disabled="@(currentSessionIndex <= 0)" title="Newer">→</button>
+					</div>
+				</div>
+			}
+			}
+		</article>
+
+	</div>
+
+	@if (composeOpen)
+	{
+		<div class="compose-backdrop" @onclick="CloseCompose"></div>
+		<div class="compose-drawer">
+			<div class="compose-drawer-head">
+				<span class="panel-label">Compose</span>
+				<button class="compose-close" @onclick="CloseCompose" aria-label="Close">×</button>
+			</div>
+
+			<article class="panel panel-compose">
+				<label>Session</label>
+				<input @bind="storeSessionId" placeholder="sttp-mobile" />
+
+				<label>Node Payload</label>
+				<textarea rows="10" @bind="storeNode" placeholder="Paste a valid STTP node block here"></textarea>
+
+				<div class="compose-footer">
+					<span class="char-count muted">@storeNode.Length chars</span>
+					@if (!string.IsNullOrWhiteSpace(storeFeedback))
+					{
+						<span class="feedback">@storeFeedback</span>
+					}
+					<button class="action action-store" @onclick="StoreNodeAsync" disabled="@isWorking || string.IsNullOrWhiteSpace(storeNode)">Store</button>
+				</div>
+			</article>
+
+			<details class="panel panel-utility">
+				<summary>Utilities</summary>
+
+				<div class="utility-block">
+					<div class="panel-head utility-head">
+						<h4>Gateway Health</h4>
+						<button class="action" @onclick="CheckHealthAsync" disabled="@isWorking">Refresh</button>
+					</div>
+					<p class="status-line @healthClass">@healthText</p>
+				</div>
+
+				<div class="utility-block">
+					<div class="panel-head utility-head">
+						<h4>Calibrate</h4>
+						<button class="action" @onclick="CalibrateAsync" disabled="@isWorking">Run</button>
+					</div>
+
+					<label>Session ID</label>
+					<input @bind="calSessionId" />
+
+					<div class="split">
+						<div>
+							<label>Stability</label>
+							<input type="number" step="0.01" min="0" max="1" @bind="calStability" />
+						</div>
+						<div>
+							<label>Friction</label>
+							<input type="number" step="0.01" min="0" max="1" @bind="calFriction" />
+						</div>
+						<div>
+							<label>Logic</label>
+							<input type="number" step="0.01" min="0" max="1" @bind="calLogic" />
+						</div>
+						<div>
+							<label>Autonomy</label>
+							<input type="number" step="0.01" min="0" max="1" @bind="calAutonomy" />
+						</div>
+					</div>
+
+					<label>Trigger</label>
+					<input @bind="calTrigger" />
+					@if (!string.IsNullOrWhiteSpace(calFeedback))
+					{
+						<p class="feedback">@calFeedback</p>
+					}
+				</div>
+			</details>
+		</div>
+	}
+
+	<button class="fab" @onclick="OpenCompose" aria-label="Compose">+</button>
+</section>
+
+@code {
+	private bool isWorking;
+
+	private string healthText = "unknown";
+	private string healthClass = "status-unknown";
+
+	private string storeSessionId = "sttp-mobile";
+	private string storeNode = string.Empty;
+	private string storeFeedback = string.Empty;
+
+	private string calSessionId = "sttp-mobile";
+	private float calStability = 0.9f;
+	private float calFriction = 0.2f;
+	private float calLogic = 0.9f;
+	private float calAutonomy = 0.8f;
+	private string calTrigger = "manual";
+	private string calFeedback = string.Empty;
+
+	private string listSessionId = string.Empty;
+	private readonly List<SttpNodeDto> nodes = [];
+	private readonly List<SessionGroup> sessions = [];
+	private string activeView = "nodes";
+	private bool composeOpen;
+	private bool rawCopied;
+
+	// Card deck state
+	private int currentSessionIndex;
+	private int currentSessionNodeIndex;
+	private bool showReferences;
+	private bool showDetail;
+	private string slideClass = string.Empty;
+	private string nodeKey = string.Empty;
+	private bool shouldAttachSwipe;
+	private bool shouldRenderGraph;
+	private GraphResponse? graphData;
+	private string? graphExpandedSessionId;
+	private int graphLimit = 1200;
+	private float graphPsiMin = 0f;
+	private float graphPsiMax = 4f;
+	private bool graphShowTimeline = true;
+	private bool graphShowSimilarity = true;
+	private bool graphShowMembership = true;
+	private bool graphShowNodeTimeline = true;
+	private bool graphShowLineage = true;
+	private DotNetObjectReference<Home>? _dotNetRef;
+	private IJSObjectReference? _swipeModule;
+	private IJSObjectReference? _graphModule;
+
+	protected override async Task OnInitializedAsync()
+	{
+		await CheckHealthAsync();
+		await LoadNodesAsync();
+	}
+
+	protected override async Task OnAfterRenderAsync(bool firstRender)
+	{
+		if (firstRender)
+		{
+			_dotNetRef = DotNetObjectReference.Create(this);
+			_swipeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./swipe.js");
+			_graphModule = await JS.InvokeAsync<IJSObjectReference>("import", "./graph.js");
+		}
+		if (shouldAttachSwipe && sessions.Count > 0 && _swipeModule is not null && _dotNetRef is not null)
+		{
+			shouldAttachSwipe = false;
+			await _swipeModule.InvokeVoidAsync("attach", "sttp-card", _dotNetRef);
+		}
+		if (shouldRenderGraph && _graphModule is not null && _dotNetRef is not null)
+		{
+			shouldRenderGraph = false;
+			await _graphModule.InvokeVoidAsync("renderSessionGraph", "sttp-graph", BuildGraphPayload(), _dotNetRef);
+		}
+	}
+
+	[JSInvokable]
+	public async Task OnSwipeLeft()
+	{
+		if (currentSessionIndex < sessions.Count - 1)
+		{
+			currentSessionIndex++;
+			currentSessionNodeIndex = 0;
+			slideClass = "from-right";
+			showReferences = false;
+			showDetail = false;
+			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
+			shouldAttachSwipe = true;
+		}
+		await InvokeAsync(StateHasChanged);
+	}
+
+	[JSInvokable]
+	public async Task OnSwipeRight()
+	{
+		if (currentSessionIndex > 0)
+		{
+			currentSessionIndex--;
+			currentSessionNodeIndex = 0;
+			slideClass = "from-left";
+			showReferences = false;
+			showDetail = false;
+			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
+			shouldAttachSwipe = true;
+		}
+		await InvokeAsync(StateHasChanged);
+	}
+
+	[JSInvokable]
+	public async Task OnSwipeUp()
+	{
+		showReferences = !showReferences;
+		if (showReferences) showDetail = false;
+		await InvokeAsync(StateHasChanged);
+	}
+
+	[JSInvokable]
+	public async Task OnSwipeDown()
+	{
+		showDetail = !showDetail;
+		if (showDetail) showReferences = false;
+		await InvokeAsync(StateHasChanged);
+	}
+
+	private void GoOlder()
+	{
+		if (currentSessionIndex >= sessions.Count - 1) return;
+		currentSessionIndex++;
+		currentSessionNodeIndex = 0;
+		slideClass = "from-right";
+		showReferences = false;
+		showDetail = false;
+		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
+		shouldAttachSwipe = true;
+	}
+
+	private void GoNewer()
+	{
+		if (currentSessionIndex <= 0) return;
+		currentSessionIndex--;
+		currentSessionNodeIndex = 0;
+		slideClass = "from-left";
+		showReferences = false;
+		showDetail = false;
+		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
+		shouldAttachSwipe = true;
+	}
+
+	private void SelectSessionNode(int idx, bool hideReferences = true)
+	{
+		if (sessions.Count == 0) return;
+		var session = sessions[currentSessionIndex];
+		if (idx < 0 || idx >= session.Nodes.Count) return;
+		currentSessionNodeIndex = idx;
+		showDetail = true;
+		if (hideReferences)
+			showReferences = false;
+	}
+
+	private async Task CheckHealthAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			var health = await Gateway.GetHealthAsync();
+			if (health is null)
+			{
+				healthText = "gateway unreachable";
+				healthClass = "status-bad";
+				return;
+			}
+
+			healthText = $"{health.Status} ({health.Transport})";
+			healthClass = health.Status.Equals("ok", StringComparison.OrdinalIgnoreCase)
+				? "status-good"
+				: "status-bad";
+		});
+	}
+
+	private async Task StoreNodeAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			var response = await Gateway.StoreAsync(new StoreContextRequest(storeNode, storeSessionId));
+			if (response is null)
+			{
+				storeFeedback = "No response from gateway.";
+				return;
+			}
+
+			storeFeedback = response.Valid
+				? $"Stored · Psi {response.Psi:0.00}"
+				: $"Rejected: {response.ValidationError}";
+
+			if (response.Valid)
+			{
+				storeNode = string.Empty;
+				composeOpen = false;
+				await LoadNodesAsync();
+				currentSessionIndex = 0;
+				currentSessionNodeIndex = 0;
+				slideClass = "from-right";
+				nodeKey = sessions.Count > 0 ? GetSessionKey(sessions[0]) : string.Empty;
+				shouldAttachSwipe = sessions.Count > 0;
+				activeView = "nodes";
+			}
+		});
+	}
+
+	private async Task CalibrateAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			var response = await Gateway.CalibrateAsync(new CalibrateSessionRequest(
+				calSessionId,
+				calStability,
+				calFriction,
+				calLogic,
+				calAutonomy,
+				calTrigger));
+
+			if (response is null)
+			{
+				calFeedback = "No response from gateway.";
+				return;
+			}
+
+			calFeedback = $"Delta: {response.Delta:0.00} | Drift: {response.DriftClassification}";
+		});
+	}
+
+	private async Task LoadNodesAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			var sid = listSessionId.Trim().Length > 0 ? listSessionId.Trim() : null;
+			var response = await Gateway.ListNodesAsync(100, sid, default);
+			nodes.Clear();
+
+			if (response?.Nodes is not null)
+				nodes.AddRange(response.Nodes.OrderByDescending(n => n.Timestamp));
+
+			RebuildSessions();
+			currentSessionIndex = 0;
+			currentSessionNodeIndex = 0;
+			showReferences = false;
+			showDetail = false;
+			nodeKey = sessions.Count > 0 ? GetSessionKey(sessions[0]) : string.Empty;
+			shouldAttachSwipe = sessions.Count > 0;
+			if (activeView == "graph")
+			{
+				await LoadGraphDataAsync();
+				shouldRenderGraph = true;
+			}
+		});
+	}
+
+	private async Task LoadGraphDataAsync()
+	{
+		var sid = listSessionId.Trim().Length > 0 ? listSessionId.Trim() : null;
+		graphData = await Gateway.GetGraphAsync(Math.Clamp(graphLimit, 50, 5000), sid, default);
+	}
+
+	private async Task ApplyGraphControlsAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			if (graphPsiMin > graphPsiMax)
+				(graphPsiMin, graphPsiMax) = (graphPsiMax, graphPsiMin);
+
+			await LoadGraphDataAsync();
+			shouldRenderGraph = true;
+		});
+	}
+
+	[JSInvokable]
+	public Task OnGraphSessionSelected(string sessionId)
+	{
+		var idx = sessions.FindIndex(s => s.SessionId == sessionId);
+		if (idx >= 0)
+		{
+			currentSessionIndex = idx;
+			currentSessionNodeIndex = 0;
+			graphExpandedSessionId = graphExpandedSessionId == sessionId ? null : sessionId;
+			shouldRenderGraph = true;
+		}
+		return InvokeAsync(StateHasChanged);
+	}
+
+	[JSInvokable]
+	public Task OnGraphNodeSelected(string sessionId, int nodeIndex)
+	{
+		var sessionIdx = sessions.FindIndex(s => s.SessionId == sessionId);
+		if (sessionIdx < 0)
+			return InvokeAsync(StateHasChanged);
+
+		currentSessionIndex = sessionIdx;
+		var maxIdx = sessions[sessionIdx].Nodes.Count - 1;
+		currentSessionNodeIndex = Math.Clamp(nodeIndex, 0, Math.Max(0, maxIdx));
+		slideClass = "from-left";
+		showReferences = false;
+		showDetail = true;
+		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
+		shouldAttachSwipe = true;
+		activeView = "nodes";
+		return InvokeAsync(StateHasChanged);
+	}
+
+	private object BuildGraphPayload()
+	{
+		if (sessions.Count == 0)
+			return new { nodes = Array.Empty<object>(), edges = Array.Empty<object>(), selectedSessionId = string.Empty };
+
+		var psiMin = Math.Clamp(graphPsiMin, 0f, 4f);
+		var psiMax = Math.Clamp(graphPsiMax, 0f, 4f);
+		if (psiMin > psiMax)
+			(psiMin, psiMax) = (psiMax, psiMin);
+
+		var graphSessions = graphData?.Sessions is { Count: > 0 }
+			? graphData.Sessions
+			: sessions.Select(s => new GraphSessionDto(
+				$"s:{s.SessionId}",
+				s.SessionId,
+				s.Nodes.Count,
+				(float)s.Nodes.Average(n => n.Psi),
+				s.LastModified,
+				16 + Math.Min(28, s.Nodes.Count * 2))).ToList();
+
+		var localExpandedSession = graphExpandedSessionId
+			?? sessions[Math.Clamp(currentSessionIndex, 0, sessions.Count - 1)].SessionId;
+
+		var filteredSessions = graphSessions
+			.Where(s => s.AvgPsi >= psiMin && s.AvgPsi <= psiMax)
+			.OrderByDescending(s => s.LastModified)
+			.ToList();
+
+		if (filteredSessions.Count == 0)
+			return new { nodes = Array.Empty<object>(), edges = Array.Empty<object>(), selectedSessionId = string.Empty };
+
+		if (!filteredSessions.Any(s => s.Label == localExpandedSession))
+			localExpandedSession = filteredSessions[0].Label;
+
+		var sessionGraphNodes = filteredSessions.Select(s =>
+		{
+			return (object)new
+			{
+				id = s.Id,
+				nodeType = "session",
+				sessionId = s.Label,
+				label = s.Label,
+				nodeCount = s.NodeCount,
+				avgPsi = s.AvgPsi,
+				size = s.Size
+			};
+		}).ToList();
+
+		var edges = new List<object>();
+		if (graphShowTimeline)
+		{
+			for (var i = 0; i < filteredSessions.Count - 1; i++)
+			{
+				edges.Add(new
+				{
+					id = $"t-{i}",
+					source = filteredSessions[i].Id,
+					target = filteredSessions[i + 1].Id,
+					kind = "timeline"
+				});
+			}
+		}
+
+		if (graphShowSimilarity)
+		{
+			for (var i = 0; i < filteredSessions.Count; i++)
+			{
+				var from = filteredSessions[i];
+				var nearest = -1;
+				var nearestDistance = float.MaxValue;
+				for (var j = 0; j < filteredSessions.Count; j++)
+				{
+					if (i == j) continue;
+					var distance = MathF.Abs(from.AvgPsi - filteredSessions[j].AvgPsi);
+					if (distance < nearestDistance)
+					{
+						nearestDistance = distance;
+						nearest = j;
+					}
+				}
+
+				if (nearest >= 0 && i < nearest)
+				{
+					edges.Add(new
+					{
+						id = $"s-{i}-{nearest}",
+						source = from.Id,
+						target = filteredSessions[nearest].Id,
+						kind = "similarity"
+					});
+				}
+			}
+		}
+
+		var expandedSession = sessions.FirstOrDefault(s => s.SessionId == localExpandedSession);
+		var sessionGraphId = filteredSessions.FirstOrDefault(s => s.Label == localExpandedSession)?.Id;
+		var expandedNodeMap = new Dictionary<string, int>();
+		var expandedNodeGraphNodes = new List<object>();
+		if (expandedSession is not null)
+		{
+			for (var i = 0; i < expandedSession.Nodes.Count; i++)
+			{
+				var n = expandedSession.Nodes[i];
+				if (n.Psi < psiMin || n.Psi > psiMax)
+					continue;
+
+				var id = GetGraphNodeId(n);
+				expandedNodeMap[id] = i;
+				expandedNodeGraphNodes.Add(new
+				{
+					id,
+					nodeType = "sttp",
+					sessionId = expandedSession.SessionId,
+					label = $"{n.Tier} {n.Timestamp:MM-dd HH:mm}",
+					nodeIndex = i,
+					psi = n.Psi,
+					size = 9
+				});
+			}
+
+			if (!string.IsNullOrWhiteSpace(sessionGraphId) && graphShowMembership)
+			{
+				foreach (var kv in expandedNodeMap)
+				{
+					edges.Add(new
+					{
+						id = $"m-{sessionGraphId}-{kv.Value}",
+						source = sessionGraphId,
+						target = kv.Key,
+						kind = "membership"
+					});
+				}
+			}
+
+			if (graphShowNodeTimeline)
+			{
+				var keys = expandedNodeMap.Keys.ToHashSet();
+				for (var i = 0; i < expandedSession.Nodes.Count - 1; i++)
+				{
+					var newerId = GetGraphNodeId(expandedSession.Nodes[i]);
+					var olderId = GetGraphNodeId(expandedSession.Nodes[i + 1]);
+					if (!keys.Contains(newerId) || !keys.Contains(olderId))
+						continue;
+					edges.Add(new
+					{
+						id = $"nt-{expandedSession.SessionId}-{i}",
+						source = newerId,
+						target = olderId,
+						kind = "node_timeline"
+					});
+				}
+			}
+
+			if (graphShowLineage)
+			{
+				var keys = expandedNodeMap.Keys.ToHashSet();
+				for (var i = 0; i < expandedSession.Nodes.Count; i++)
+				{
+					var current = expandedSession.Nodes[i];
+					var currentId = GetGraphNodeId(current);
+					if (!keys.Contains(currentId) || string.IsNullOrWhiteSpace(current.ParentNodeId))
+						continue;
+					if (!keys.Contains(current.ParentNodeId))
+						continue;
+					edges.Add(new
+					{
+						id = $"l-{expandedSession.SessionId}-{i}",
+						source = currentId,
+						target = current.ParentNodeId,
+						kind = "lineage"
+					});
+				}
+			}
+		}
+
+		return new
+		{
+			nodes = sessionGraphNodes.Concat(expandedNodeGraphNodes).ToList(),
+			edges,
+			selectedSessionId = $"s:{localExpandedSession}"
+		};
+	}
+
+	private void RebuildSessions()
+	{
+		sessions.Clear();
+		sessions.AddRange(
+			nodes.GroupBy(n => n.SessionId)
+				 .Select(g => new SessionGroup(g.Key, g.OrderByDescending(n => n.Timestamp).ToList()))
+				 .OrderByDescending(s => s.LastModified));
+	}
+
+	private void SetView(string view) => activeView = view;
+	private void SetNodesView() => activeView = "nodes";
+	private void OpenCompose() => composeOpen = true;
+	private void CloseCompose() => composeOpen = false;
+
+	private async Task SetGraphViewAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			activeView = "graph";
+			await LoadGraphDataAsync();
+			graphExpandedSessionId ??= sessions.Count > 0
+				? sessions[Math.Clamp(currentSessionIndex, 0, sessions.Count - 1)].SessionId
+				: null;
+			shouldRenderGraph = true;
+		});
+	}
+
+	private static string GetSessionKey(SessionGroup session)
+		=> $"{session.SessionId}|{session.LastModified:O}|{session.Nodes.Count}";
+
+	private static string GetNodeDetailKey(SttpNodeDto node)
+		=> $"{node.SessionId}|{node.Timestamp:O}|{node.CompressionDepth}|{node.Psi:0.0000}";
+
+	private static string GetGraphNodeId(SttpNodeDto node)
+		=> $"n:{GetNodeDetailKey(node)}";
+
+	private static string FormatRaw(string? raw)
+		=> string.IsNullOrWhiteSpace(raw) ? "(empty)" : raw.Replace("\r\n", "\n").Trim();
+
+	private async Task CopyRawAsync(string? raw)
+	{
+		if (string.IsNullOrWhiteSpace(raw)) return;
+		await JS.InvokeVoidAsync("navigator.clipboard.writeText", FormatRaw(raw));
+		rawCopied = true;
+		StateHasChanged();
+		await Task.Delay(1800);
+		rawCopied = false;
+		StateHasChanged();
+	}
+
+	private static RenderFragment RenderAvec(string title, AvecState? avec) => builder =>
+	{
+		builder.OpenElement(0, "div");
+		builder.AddAttribute(1, "class", "avec-card");
+
+		builder.OpenElement(2, "p");
+		builder.AddAttribute(3, "class", "avec-title");
+		builder.AddContent(4, title);
+		builder.CloseElement();
+
+		if (avec is null)
+		{
+			builder.OpenElement(5, "p");
+			builder.AddAttribute(6, "class", "muted inline-meta");
+			builder.AddContent(7, "Not available");
+			builder.CloseElement();
+		}
+		else
+		{
+			builder.OpenElement(8, "div");
+			builder.AddAttribute(9, "class", "avec-rows");
+			AddAvecRow(builder, 10, "Stability", avec.Stability);
+			AddAvecRow(builder, 20, "Friction", avec.Friction);
+			AddAvecRow(builder, 30, "Logic", avec.Logic);
+			AddAvecRow(builder, 40, "Autonomy", avec.Autonomy);
+			AddAvecRow(builder, 50, "Psi", avec.Psi);
+			builder.CloseElement();
+		}
+
+		builder.CloseElement();
+	};
+
+	private static void AddAvecRow(RenderTreeBuilder builder, int sequence, string label, float value)
+	{
+		builder.OpenElement(sequence, "div");
+		builder.AddAttribute(sequence + 1, "class", "avec-row");
+		builder.OpenElement(sequence + 2, "span");
+		builder.AddContent(sequence + 3, label);
+		builder.CloseElement();
+		builder.OpenElement(sequence + 4, "strong");
+		builder.AddContent(sequence + 5, value.ToString("0.000"));
+		builder.CloseElement();
+		builder.CloseElement();
+	}
+
+	private sealed class SessionGroup(string sessionId, List<SttpNodeDto> nodes)
+	{
+		public string SessionId { get; } = sessionId;
+		public List<SttpNodeDto> Nodes { get; } = nodes;
+		public SttpNodeDto LatestNode => Nodes[0];
+		public DateTime LastModified => LatestNode.Timestamp;
+	}
+
+	private async Task RunSafeAsync(Func<Task> work)
+	{
+		isWorking = true;
+		try
+		{
+			await work();
+		}
+		catch (Exception ex)
+		{
+			healthText = $"error: {ex.Message}";
+			healthClass = "status-bad";
+		}
+		finally
+		{
+			isWorking = false;
+		}
+	}
+
+	public async ValueTask DisposeAsync()
+	{
+		_dotNetRef?.Dispose();
+		if (_swipeModule is not null)
+			await _swipeModule.DisposeAsync();
+		if (_graphModule is not null)
+		{
+			await _graphModule.InvokeVoidAsync("destroySessionGraph", "sttp-graph");
+			await _graphModule.DisposeAsync();
+		}
+	}
+}

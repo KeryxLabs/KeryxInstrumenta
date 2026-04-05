@@ -1,0 +1,65 @@
+.page-shell {
+    min-height: 100vh;
+    background:
+        radial-gradient(circle at 120% -10%, rgba(200, 82, 42, 0.12) 0%, transparent 36%),
+        radial-gradient(circle at -15% 20%, rgba(232, 168, 124, 0.16) 0%, transparent 42%),
+        var(--bg);
+}
+
+.top-bar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 90%, transparent);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+}
+
+.flow-brand {
+    font-family: var(--serif);
+    font-size: 1.08rem;
+    font-weight: 700;
+    color: var(--ink);
+    letter-spacing: -0.02em;
+}
+
+.content-shell {
+    padding: 1rem;
+    max-width: 980px;
+    margin: 0 auto;
+}
+
+@media (min-width: 900px) {
+    .top-bar {
+        padding: 0.7rem 1.5rem;
+    }
+
+    .content-shell {
+        padding: 1.25rem 1.5rem;
+    }
+}
+
+#blazor-error-ui {
+    color-scheme: light only;
+    background: #fbe9df;
+    color: #41261c;
+    bottom: 0;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    box-sizing: border-box;
+    display: none;
+    left: 0;
+    padding: 0.6rem 1.25rem 0.7rem 1.25rem;
+    position: fixed;
+    width: 100%;
+    z-index: 1000;
+}
+
+    #blazor-error-ui .dismiss {
+        cursor: pointer;
+        position: absolute;
+        right: 0.75rem;
+        top: 0.5rem;
+    }
