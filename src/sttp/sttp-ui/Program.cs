@@ -4,16 +4,29 @@ using sttp_ui.Services;
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
+builder.Services.AddRazorComponents().AddInteractiveServerComponents();
 
 builder.Services.Configure<GatewayOptions>(builder.Configuration.GetSection("Gateway"));
-builder.Services.AddHttpClient<SttpGatewayApiClient>((sp, client) =>
-{
-    var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<GatewayOptions>>().Value;
-    client.BaseAddress = new Uri(options.BaseUrl);
-    client.Timeout = TimeSpan.FromSeconds(20);
-});
+builder.Services.AddHttpClient<SttpGatewayApiClient>(
+    (sp, client) =>
+    {
+        var options =
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<GatewayOptions>>().Value;
+        client.BaseAddress = new Uri(options.BaseUrl);
+        client.Timeout = TimeSpan.FromSeconds(20);
+    }
+);
+
+builder.Services.Configure<OllamaOptions>(builder.Configuration.GetSection("Ollama"));
+builder.Services.AddHttpClient<OllamaService>(
+    (sp, client) =>
+    {
+        var opts =
+            sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<OllamaOptions>>().Value;
+        client.BaseAddress = new Uri(opts.BaseUrl);
+        client.Timeout = TimeSpan.FromSeconds(120);
+    }
+);
 
 var app = builder.Build();
 
@@ -30,7 +43,6 @@ app.UseHttpsRedirection();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
-app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+app.MapRazorComponents<App>().AddInteractiveServerRenderMode();
 
 app.Run();

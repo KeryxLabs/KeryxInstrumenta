@@ -1,10 +1,14 @@
 ﻿@page "/"
 @rendermode InteractiveServer
+@using System.Security.Cryptography
+@using System.Text
 @using Microsoft.AspNetCore.Components.Rendering
 @using sttp_ui.Models
 @using sttp_ui.Services
+@using sttp_ui.Helpers
 @implements IAsyncDisposable
 @inject SttpGatewayApiClient Gateway
+@inject OllamaService Ollama
 @inject IJSRuntime JS
 
 <PageTitle>sttp</PageTitle>
@@ -23,7 +27,7 @@
 			{
 				<div class="panel panel-graph">
 					<div class="panel-head graph-head">
-						<span class="panel-label">Session Web</span>
+						<span class="panel-label">Session Map</span>
 						<div class="panel-actions">
 							<button class="action" @onclick="ApplyGraphControlsAsync" disabled="@isWorking">Apply</button>
 							<button class="action" @onclick="LoadNodesAsync" disabled="@isWorking">Refresh</button>
@@ -31,30 +35,33 @@
 					</div>
 					<div class="graph-controls">
 						<div class="graph-control-group">
-							<label>Graph Limit</label>
+							<label>Session Limit</label>
 							<input type="number" min="50" max="5000" step="50" @bind="graphLimit" />
 						</div>
 						<div class="graph-control-group">
-							<label>Psi Min</label>
+							<label>Health Score Min</label>
 							<input type="number" min="0" max="4" step="0.05" @bind="graphPsiMin" />
 						</div>
 						<div class="graph-control-group">
-							<label>Psi Max</label>
+							<label>Health Score Max</label>
 							<input type="number" min="0" max="4" step="0.05" @bind="graphPsiMax" />
 						</div>
 					</div>
-					<div class="graph-toggles">
-						<label><input type="checkbox" @bind="graphShowTimeline" /> timeline</label>
-						<label><input type="checkbox" @bind="graphShowSimilarity" /> similarity</label>
-						<label><input type="checkbox" @bind="graphShowMembership" /> membership</label>
-						<label><input type="checkbox" @bind="graphShowNodeTimeline" /> node timeline</label>
-						<label><input type="checkbox" @bind="graphShowLineage" /> lineage</label>
-					</div>
+					<details class="graph-advanced">
+						<summary>Advanced Graph Links</summary>
+						<div class="graph-toggles">
+							<label title="Connect sessions in time order"><input type="checkbox" @bind="graphShowTimeline" /> time order</label>
+							<label title="Connect sessions with similar score patterns"><input type="checkbox" @bind="graphShowSimilarity" /> similar sessions</label>
+							<label title="Show links from a session to its nodes"><input type="checkbox" @bind="graphShowMembership" /> session membership</label>
+							<label title="Show sequence of nodes inside one session"><input type="checkbox" @bind="graphShowNodeTimeline" /> node order</label>
+							<label title="Show parent-child links between nodes"><input type="checkbox" @bind="graphShowLineage" /> parent links</label>
+						</div>
+					</details>
 					<div class="graph-meta">
 						<span>@sessions.Count sessions</span>
-						<span>@nodes.Count nodes loaded in deck</span>
-						<span>Tap session to expand/collapse node cloud</span>
-						<span>Tap STTP node to jump to details</span>
+						<span>@nodes.Count moments loaded</span>
+						<span>Tap a session to open or close its moments</span>
+						<span>Tap a moment to jump to details</span>
 					</div>
 					<div id="sttp-graph" class="graph-canvas"></div>
 				</div>
@@ -72,10 +79,17 @@
 				</div>
 			</div>
 
+			<div class="deck-quick-actions">
+				<button class="action action-muted" @onclick="OpenSessionPickerAsync" disabled="@isWorking">Browse sessions</button>
+				<button class="action action-muted" @onclick="ToggleReferences" disabled="@(sessions.Count == 0)">@(showReferences ? "Hide moment list" : "Show moment list")</button>
+				<button class="action action-muted" @onclick="ToggleDetail" disabled="@(sessions.Count == 0)">@(showDetail ? "Hide details" : "Show details")</button>
+				<span class="deck-guide">Swipe left or right to switch sessions.</span>
+			</div>
+
 			@if (sessions.Count == 0)
 			{
 				<div class="empty-card">
-					<p class="muted">No sessions yet — compose&nbsp;one.</p>
+					<p class="muted">No sessions yet. Use Compose to add one.</p>
 				</div>
 			}
 			else
@@ -97,14 +111,15 @@
 									<div class="node-tags">
 										<span class="tag">@session.Nodes.Count nodes</span>
 										<span class="tag">@session.LastModified.ToLocalTime().ToString("MMM d, HH:mm")</span>
-										<span class="tag">latest: @latestNode.Tier</span>
+										<span class="tag">latest layer: @latestNode.Tier</span>
 									</div>
 								</div>
 								<div class="node-aside">
-									<span class="psi-badge">@latestNode.Psi.ToString("0.00")</span>
+									<span class="psi-label">Health score</span>
+									<span class="psi-badge" title="Overall health score">@latestNode.Psi.ToString("0.00")</span>
 									<div class="rho-kappa">
-										<span>ρ&nbsp;@latestNode.Rho.ToString("0.00")</span>
-										<span>κ&nbsp;@latestNode.Kappa.ToString("0.00")</span>
+										<span>Signal strength&nbsp;@latestNode.Rho.ToString("0.00")</span>
+										<span>Consistency&nbsp;@latestNode.Kappa.ToString("0.00")</span>
 									</div>
 								</div>
 							</div>
@@ -122,7 +137,7 @@
 								@foreach (var (refNode, refIdx) in session.Nodes.Select((n, i) => (n, i)))
 								{
 									<button class="ref-chip @(refIdx == currentSessionNodeIndex ? "ref-chip-current" : string.Empty)" @onclick="() => SelectSessionNode(refIdx)">
-										<span class="ref-psi">ψ&nbsp;@refNode.Psi.ToString("0.00")</span>
+										<span class="ref-psi">Score&nbsp;@refNode.Psi.ToString("0.00")</span>
 										<span class="ref-time">@refNode.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</span>
 									</button>
 								}
@@ -134,7 +149,7 @@
 					{
 						<div class="detail-panel">
 							<div class="detail-head">
-								<span class="panel-label">Nodes In Session</span>
+									<span class="panel-label">Session Moments</span>
 								<button class="toggle-btn" @onclick="() => showDetail = false">×</button>
 							</div>
 
@@ -143,31 +158,94 @@
 									@foreach (var (refNode, refIdx) in session.Nodes.Select((n, i) => (n, i)))
 									{
 										<button class="detail-node-tile @(refIdx == currentSessionNodeIndex ? "detail-node-current" : string.Empty)" @onclick="() => SelectSessionNode(refIdx, false)">
-											<span class="detail-node-tier">@refNode.Tier</span>
+											<span class="detail-node-tier">Layer: @refNode.Tier</span>
 											<span class="detail-node-time">@refNode.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</span>
-											<span class="detail-node-psi">ψ @refNode.Psi.ToString("0.00")</span>
+											<span class="detail-node-psi">Score @refNode.Psi.ToString("0.00")</span>
 										</button>
 									}
 								</div>
 
 								<div class="detail-popout" @key="GetNodeDetailKey(node)">
 									<div class="detail-popout-meta">
-										<span class="panel-label">Selected Node</span>
+										<span class="panel-label">Selected Moment</span>
 										<span class="detail-popout-stamp">@node.Timestamp.ToLocalTime().ToString("MMM d, yyyy HH:mm:ss")</span>
 									</div>
 
-									<div class="metrics-grid">
-										<div><span>Depth</span><strong>@node.CompressionDepth</strong></div>
-										<div><span>Rho</span><strong>@node.Rho.ToString("0.000")</strong></div>
-										<div><span>Kappa</span><strong>@node.Kappa.ToString("0.000")</strong></div>
-										<div><span>Psi</span><strong>@node.Psi.ToString("0.000")</strong></div>
+									@{ var nodeUw = Unwinder.Unwind(node); }
+									<div class="detail-unwind">
+										<div class="detail-unwind-top">
+											<span class="unwind-status @nodeUw.StatusClass">@nodeUw.StatusIcon @nodeUw.StatusLabel</span>
+											<span class="detail-unwind-psi">Score @node.Psi.ToString("0.00")</span>
+										</div>
+										<p class="unwind-summary">@nodeUw.Summary</p>
+										<p class="detail-unwind-interp">@nodeUw.Interpretation</p>
+										<p class="unwind-next">▶ @nodeUw.NextAction</p>
 									</div>
+								<div class="ai-summary-section">
+									@{ var aiKey = NodeCacheKey(node); var hasSummary = _aiSummaryCache.ContainsKey(aiKey); }
+									<button class="ai-summary-trigger @(showAiSummary ? "ai-summary-trigger-open" : string.Empty)"
+										@onclick="async () => await TriggerAiSummaryAsync(node)"
+										disabled="@isLoadingAiSummary">
+										@if (isLoadingAiSummary)
+										{
+											<span class="ai-dot-pulse"></span><span>generating…</span>
+										}
+										else
+										{
+											<span>✶</span><span>@(showAiSummary && hasSummary ? "hide summary" : "ai summary")</span>
+										}
+									</button>
+
+									@if (showAiSummary)
+									{
+										@if (isLoadingAiSummary)
+										{
+											<div class="ai-summary-loading">
+												<span class="ai-dot-pulse"></span>
+												<span>Generating a plain-language summary…</span>
+											</div>
+										}
+										else if (aiSummaryError is not null)
+										{
+											<div class="ai-summary-error">
+												<span>@aiSummaryError</span>
+												<button @onclick="() => { showAiSummary = false; aiSummaryError = null; }">dismiss</button>
+											</div>
+										}
+										else if (_aiSummaryCache.TryGetValue(aiKey, out var sum))
+										{
+											<div class="ai-summary-card">
+												<dl class="ai-summary-rows">
+													<dt>Topic</dt><dd>@sum.Topic</dd>
+													<dt>What happened</dt><dd>@sum.WhatHappened</dd>
+													<dt>Where we left off</dt><dd>@sum.WhereWeLeftOff</dd>
+													<dt>Vibe</dt><dd>@sum.Vibe</dd>
+													<dt>Pick back up with</dt><dd>@sum.PickBackUpWith</dd>
+												</dl>
+											</div>
+										}
+									}
+								</div>
+									<button class="tech-toggle" @onclick="() => showTechDetails = !showTechDetails">
+										@(showTechDetails ? "▲ hide score breakdown" : "▼ show score breakdown")
+									</button>
+
+									@if (showTechDetails)
+									{
+									<div class="metrics-grid">
+										<div><span>Detail Level</span><strong>@node.CompressionDepth</strong></div>
+										<div><span>Signal Strength</span><strong>@node.Rho.ToString("0.000")</strong></div>
+										<div><span>Consistency</span><strong>@node.Kappa.ToString("0.000")</strong></div>
+										<div><span>Overall Score</span><strong>@node.Psi.ToString("0.000")</strong></div>
+									</div>
+									<p class="metrics-note">Higher overall score usually means this session is easier to continue from.</p>
 
 									<div class="avec-grid">
-										@RenderAvec("User", node.UserAvec)
-										@RenderAvec("Model", node.ModelAvec)
-										@RenderAvec("Compression", node.CompressionAvec)
+										@RenderAvec("You", node.UserAvec)
+										@RenderAvec("Assistant", node.ModelAvec)
+										@RenderAvec("Compressed Snapshot", node.CompressionAvec)
 									</div>
+									}
 
 									@if (!string.IsNullOrWhiteSpace(node.ParentNodeId))
 									{
@@ -176,7 +254,7 @@
 
 									<div class="raw-wrap">
 											<div class="raw-head">
-												<p class="raw-title">Raw</p>
+												<p class="raw-title">Raw Node (Advanced)</p>
 												<button class="raw-copy @(rawCopied ? "raw-copy-success" : string.Empty)" @onclick="() => CopyRawAsync(node.Raw)" title="Copy raw">
 													@if (rawCopied)
 													{
@@ -206,12 +284,49 @@
 
 	</div>
 
+	@if (sessionPickerOpen)
+	{
+		<div class="session-picker-backdrop" @onclick="CloseSessionPicker"></div>
+		<div class="session-picker-drawer" role="dialog" aria-label="Session directory">
+			<div class="session-picker-head">
+				<span class="panel-label">Session Directory</span>
+				<button class="compose-close" @onclick="CloseSessionPicker" aria-label="Close">×</button>
+			</div>
+
+			@if (isLoadingSessionPicker)
+			{
+				<p class="muted">Loading recent sessions…</p>
+			}
+			else if (!string.IsNullOrWhiteSpace(sessionPickerError))
+			{
+				<p class="feedback">@sessionPickerError</p>
+			}
+			else if (sessionDirectory.Count == 0)
+			{
+				<p class="muted">No sessions found.</p>
+			}
+			else
+			{
+				<p class="session-picker-note">Showing up to 50 most recent sessions.</p>
+				<div class="session-picker-list">
+					@foreach (var item in sessionDirectory)
+					{
+						<button class="session-picker-item" @onclick="async () => await SelectSessionFromPickerAsync(item.Label)">
+							<span class="session-picker-id">@item.Label</span>
+							<span class="session-picker-meta">@item.NodeCount moments · score @item.AvgPsi.ToString("0.00") · @item.LastModified.ToLocalTime().ToString("MMM d, HH:mm")</span>
+						</button>
+					}
+				</div>
+			}
+		</div>
+	}
+
 	@if (composeOpen)
 	{
 		<div class="compose-backdrop" @onclick="CloseCompose"></div>
 		<div class="compose-drawer">
 			<div class="compose-drawer-head">
-				<span class="panel-label">Compose</span>
+				<span class="panel-label">Compose (Advanced)</span>
 				<button class="compose-close" @onclick="CloseCompose" aria-label="Close">×</button>
 			</div>
 
@@ -219,8 +334,8 @@
 				<label>Session</label>
 				<input @bind="storeSessionId" placeholder="sttp-mobile" />
 
-				<label>Node Payload</label>
-				<textarea rows="10" @bind="storeNode" placeholder="Paste a valid STTP node block here"></textarea>
+				<label>Node Payload (advanced)</label>
+				<textarea rows="10" @bind="storeNode" placeholder="Paste a valid STTP node block here (advanced)."></textarea>
 
 				<div class="compose-footer">
 					<span class="char-count muted">@storeNode.Length chars</span>
@@ -233,7 +348,7 @@
 			</article>
 
 			<details class="panel panel-utility">
-				<summary>Utilities</summary>
+				<summary>Advanced Tools</summary>
 
 				<div class="utility-block">
 					<div class="panel-head utility-head">
@@ -245,7 +360,7 @@
 
 				<div class="utility-block">
 					<div class="panel-head utility-head">
-						<h4>Calibrate</h4>
+						<h4>Calibrate (Advanced)</h4>
 						<button class="action" @onclick="CalibrateAsync" disabled="@isWorking">Run</button>
 					</div>
 
@@ -282,7 +397,10 @@
 		</div>
 	}
 
-	<button class="fab" @onclick="OpenCompose" aria-label="Compose">+</button>
+	<button class="fab" @onclick="OpenCompose" aria-label="Compose advanced node" title="Compose advanced node">
+		<span class="fab-plus">+</span>
+		<span class="fab-label">Compose</span>
+	</button>
 </section>
 
 @code {
@@ -315,10 +433,22 @@
 	private int currentSessionNodeIndex;
 	private bool showReferences;
 	private bool showDetail;
+	private bool showTechDetails;
+
+	// AI summary
+	private bool showAiSummary;
+	private bool isLoadingAiSummary;
+	private string? aiSummaryError;
+	private readonly Dictionary<string, AiSummary> _aiSummaryCache = [];
+
 	private string slideClass = string.Empty;
 	private string nodeKey = string.Empty;
 	private bool shouldAttachSwipe;
 	private bool shouldRenderGraph;
+	private bool sessionPickerOpen;
+	private bool isLoadingSessionPicker;
+	private string? sessionPickerError;
+	private readonly List<GraphSessionDto> sessionDirectory = [];
 	private GraphResponse? graphData;
 	private string? graphExpandedSessionId;
 	private int graphLimit = 1200;
@@ -369,6 +499,8 @@
 			slideClass = "from-right";
 			showReferences = false;
 			showDetail = false;
+			showAiSummary = false;
+			aiSummaryError = null;
 			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
 			shouldAttachSwipe = true;
 		}
@@ -385,6 +517,8 @@
 			slideClass = "from-left";
 			showReferences = false;
 			showDetail = false;
+			showAiSummary = false;
+			aiSummaryError = null;
 			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
 			shouldAttachSwipe = true;
 		}
@@ -415,6 +549,8 @@
 		slideClass = "from-right";
 		showReferences = false;
 		showDetail = false;
+		showAiSummary = false;
+		aiSummaryError = null;
 		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
 		shouldAttachSwipe = true;
 	}
@@ -427,8 +563,24 @@
 		slideClass = "from-left";
 		showReferences = false;
 		showDetail = false;
+		showAiSummary = false;
+		aiSummaryError = null;
 		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
 		shouldAttachSwipe = true;
+	}
+
+	private void ToggleReferences()
+	{
+		showReferences = !showReferences;
+		if (showReferences)
+			showDetail = false;
+	}
+
+	private void ToggleDetail()
+	{
+		showDetail = !showDetail;
+		if (showDetail)
+			showReferences = false;
 	}
 
 	private void SelectSessionNode(int idx, bool hideReferences = true)
@@ -437,6 +589,8 @@
 		var session = sessions[currentSessionIndex];
 		if (idx < 0 || idx >= session.Nodes.Count) return;
 		currentSessionNodeIndex = idx;
+		showAiSummary = false;
+		aiSummaryError = null;
 		showDetail = true;
 		if (hideReferences)
 			showReferences = false;
@@ -529,6 +683,8 @@
 			currentSessionNodeIndex = 0;
 			showReferences = false;
 			showDetail = false;
+			showAiSummary = false;
+			aiSummaryError = null;
 			nodeKey = sessions.Count > 0 ? GetSessionKey(sessions[0]) : string.Empty;
 			shouldAttachSwipe = sessions.Count > 0;
 			if (activeView == "graph")
@@ -784,6 +940,56 @@
 
 	private void SetView(string view) => activeView = view;
 	private void SetNodesView() => activeView = "nodes";
+	private async Task OpenSessionPickerAsync()
+	{
+		sessionPickerOpen = true;
+		sessionPickerError = null;
+		isLoadingSessionPicker = true;
+		try
+		{
+			var response = await Gateway.GetGraphAsync(50, null, default);
+			sessionDirectory.Clear();
+			if (response?.Sessions is not null)
+				sessionDirectory.AddRange(response.Sessions.OrderByDescending(s => s.LastModified).Take(50));
+			if (sessionDirectory.Count == 0)
+				sessionPickerError = "No recent sessions are available.";
+		}
+		catch
+		{
+			sessionPickerError = "Could not load sessions right now. Please try again.";
+		}
+		finally
+		{
+			isLoadingSessionPicker = false;
+		}
+	}
+
+	private void CloseSessionPicker() => sessionPickerOpen = false;
+
+	private async Task SelectSessionFromPickerAsync(string sessionId)
+	{
+		CloseSessionPicker();
+		activeView = "nodes";
+
+		var idx = sessions.FindIndex(s => s.SessionId == sessionId);
+		if (idx >= 0)
+		{
+			currentSessionIndex = idx;
+			currentSessionNodeIndex = 0;
+			slideClass = "from-left";
+			showReferences = false;
+			showDetail = false;
+			showAiSummary = false;
+			aiSummaryError = null;
+			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
+			shouldAttachSwipe = true;
+			return;
+		}
+
+		listSessionId = sessionId;
+		await LoadNodesAsync();
+	}
+
 	private void OpenCompose() => composeOpen = true;
 	private void CloseCompose() => composeOpen = false;
 
@@ -798,6 +1004,45 @@
 				: null;
 			shouldRenderGraph = true;
 		});
+	}
+
+	private static string NodeCacheKey(SttpNodeDto n)
+	{
+		// Gateway list response currently has no nodeId field, so cache by a deterministic
+		// node fingerprint to avoid summary bleed between nodes in the same session.
+		var rawHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(n.Raw)));
+		return $"{n.SessionId}|{n.Timestamp:O}|{n.Tier}|{n.CompressionDepth}|{rawHash}";
+	}
+
+	private async Task TriggerAiSummaryAsync(SttpNodeDto node)
+	{
+		var key = NodeCacheKey(node);
+		if (_aiSummaryCache.ContainsKey(key))
+		{
+			showAiSummary = !showAiSummary;
+			return;
+		}
+
+		showAiSummary = true;
+		isLoadingAiSummary = true;
+		aiSummaryError = null;
+
+		try
+		{
+			var summary = await Ollama.SummarizeAsync(node.Raw);
+			if (summary is not null)
+				_aiSummaryCache[key] = summary;
+			else
+				aiSummaryError = "Summary is unavailable for this moment. Please try again.";
+		}
+		catch (Exception)
+		{
+			aiSummaryError = "AI summary is unavailable right now. Check that the local model service is running.";
+		}
+		finally
+		{
+			isLoadingAiSummary = false;
+		}
 	}
 
 	private static string GetSessionKey(SessionGroup session)
@@ -844,11 +1089,11 @@
 		{
 			builder.OpenElement(8, "div");
 			builder.AddAttribute(9, "class", "avec-rows");
-			AddAvecRow(builder, 10, "Stability", avec.Stability);
-			AddAvecRow(builder, 20, "Friction", avec.Friction);
-			AddAvecRow(builder, 30, "Logic", avec.Logic);
-			AddAvecRow(builder, 40, "Autonomy", avec.Autonomy);
-			AddAvecRow(builder, 50, "Psi", avec.Psi);
+			AddAvecRow(builder, 10, "Steadiness", avec.Stability);
+			AddAvecRow(builder, 20, "Resistance", avec.Friction);
+			AddAvecRow(builder, 30, "Clarity", avec.Logic);
+			AddAvecRow(builder, 40, "Independence", avec.Autonomy);
+			AddAvecRow(builder, 50, "Overall Score", avec.Psi);
 			builder.CloseElement();
 		}
 
