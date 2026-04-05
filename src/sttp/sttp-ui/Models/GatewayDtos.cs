@@ -26,6 +26,36 @@ public sealed record CalibrateSessionResponse(
 
 public sealed record ListNodesResponse(IReadOnlyList<SttpNodeDto> Nodes, int Retrieved);
 
+public sealed record GraphResponse(
+    IReadOnlyList<GraphSessionDto> Sessions,
+    IReadOnlyList<GraphNodeDto> Nodes,
+    IReadOnlyList<GraphEdgeDto> Edges,
+    int Retrieved);
+
+public sealed record GraphSessionDto(
+    string Id,
+    string Label,
+    int NodeCount,
+    float AvgPsi,
+    DateTime LastModified,
+    int Size);
+
+public sealed record GraphNodeDto(
+    string Id,
+    string SessionId,
+    string Label,
+    string Tier,
+    DateTime Timestamp,
+    float Psi,
+    string? ParentNodeId,
+    int Size);
+
+public sealed record GraphEdgeDto(
+    string Id,
+    string Source,
+    string Target,
+    string Kind);
+
 public sealed record SttpNodeDto(
     string Raw,
     string SessionId,

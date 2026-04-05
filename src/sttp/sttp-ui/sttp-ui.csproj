@@ -9,4 +9,9 @@
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
   </PropertyGroup>
 
+  <ItemGroup>
+    <Content Remove="publish\**" />
+    <None Remove="publish\**" />
+  </ItemGroup>
+
 </Project>

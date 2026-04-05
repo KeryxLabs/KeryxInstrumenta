@@ -1,0 +1,10 @@
+.git
+.github
+.vscode
+bin
+obj
+publish
+*.user
+*.suo
+*.swp
+*.tmp

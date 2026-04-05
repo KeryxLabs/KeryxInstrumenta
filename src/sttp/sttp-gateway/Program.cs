@@ -119,6 +119,154 @@ app.MapGet("/api/v1/nodes", async (int? limit, string? sessionId, ContextQuerySe
     return Results.Ok(result);
 });
 
+app.MapGet("/api/v1/graph", async (int? limit, string? sessionId, ContextQueryService service, CancellationToken ct) =>
+{
+    var cappedLimit = Math.Clamp(limit ?? 1000, 1, 5000);
+    var result = await service.ListNodesAsync(cappedLimit, sessionId, ct);
+
+    var orderedNodes = result.Nodes
+        .OrderByDescending(n => n.Timestamp)
+        .ToList();
+
+    var grouped = orderedNodes
+        .GroupBy(n => n.SessionId)
+        .Select(g =>
+        {
+            var sessionNodes = g.OrderByDescending(n => n.Timestamp).ToList();
+            return new
+            {
+                Id = g.Key,
+                Label = g.Key,
+                Nodes = sessionNodes,
+                NodeCount = sessionNodes.Count,
+                AvgPsi = sessionNodes.Average(n => n.Psi),
+                LastModified = sessionNodes[0].Timestamp,
+                Size = 16 + Math.Min(28, sessionNodes.Count * 2)
+            };
+        })
+        .OrderByDescending(s => s.LastModified)
+        .ToList();
+
+    static string GetNodeId(SttpNode node)
+        => $"n:{node.SessionId}|{node.Timestamp:O}|{node.CompressionDepth}|{node.Psi:0.0000}";
+
+    var nodeById = orderedNodes
+        .Select(n => new { Id = GetNodeId(n), Node = n })
+        .GroupBy(x => x.Id)
+        .ToDictionary(g => g.Key, g => g.First().Node);
+
+    var sessions = grouped.Select(s => new
+    {
+        id = $"s:{s.Id}",
+        label = s.Label,
+        nodeCount = s.NodeCount,
+        avgPsi = s.AvgPsi,
+        lastModified = s.LastModified,
+        size = s.Size
+    }).ToList();
+
+    var nodes = orderedNodes.Select(n => new
+    {
+        id = GetNodeId(n),
+        sessionId = n.SessionId,
+        label = $"{n.Tier} {n.Timestamp:MM-dd HH:mm}",
+        tier = n.Tier,
+        timestamp = n.Timestamp,
+        psi = n.Psi,
+        parentNodeId = n.ParentNodeId,
+        size = 9
+    }).ToList();
+
+    var edges = new List<object>();
+
+    for (var i = 0; i < grouped.Count - 1; i++)
+    {
+        edges.Add(new
+        {
+            id = $"t-{i}",
+            source = $"s:{grouped[i].Id}",
+            target = $"s:{grouped[i + 1].Id}",
+            kind = "timeline"
+        });
+    }
+
+    for (var i = 0; i < grouped.Count; i++)
+    {
+        var from = grouped[i];
+        var nearest = -1;
+        var nearestDistance = float.MaxValue;
+        for (var j = 0; j < grouped.Count; j++)
+        {
+            if (i == j) continue;
+            var distance = MathF.Abs(from.AvgPsi - grouped[j].AvgPsi);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                nearest = j;
+            }
+        }
+
+        if (nearest >= 0 && i < nearest)
+        {
+            edges.Add(new
+            {
+                id = $"s-{i}-{nearest}",
+                source = $"s:{from.Id}",
+                target = $"s:{grouped[nearest].Id}",
+                kind = "similarity"
+            });
+        }
+    }
+
+    foreach (var session in grouped)
+    {
+        for (var i = 0; i < session.Nodes.Count; i++)
+        {
+            var current = session.Nodes[i];
+            var currentId = GetNodeId(current);
+
+            edges.Add(new
+            {
+                id = $"m-{session.Id}-{i}",
+                source = $"s:{session.Id}",
+                target = currentId,
+                kind = "membership"
+            });
+
+            if (i < session.Nodes.Count - 1)
+            {
+                var older = session.Nodes[i + 1];
+                edges.Add(new
+                {
+                    id = $"nt-{session.Id}-{i}",
+                    source = currentId,
+                    target = GetNodeId(older),
+                    kind = "node_timeline"
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(current.ParentNodeId) && nodeById.ContainsKey(current.ParentNodeId))
+            {
+                edges.Add(new
+                {
+                    id = $"l-{session.Id}-{i}",
+                    source = currentId,
+                    target = current.ParentNodeId,
+                    kind = "lineage"
+                });
+            }
+        }
+    }
+
+    return Results.Ok(new
+    {
+        sessions,
+        nodes,
+        edges,
+        retrieved = orderedNodes.Count
+    });
+});
+
 app.MapGet("/api/v1/moods", async (
     string? targetMood,
     float? blend,

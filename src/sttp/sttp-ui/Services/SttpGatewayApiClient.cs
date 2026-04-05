@@ -17,6 +17,15 @@ public sealed class SttpGatewayApiClient(HttpClient http)
         return await http.GetFromJsonAsync<ListNodesResponse>(qs, ct);
     }
 
+    public async Task<GraphResponse?> GetGraphAsync(int limit, string? sessionId, CancellationToken ct = default)
+    {
+        var qs = string.IsNullOrWhiteSpace(sessionId)
+            ? $"/api/v1/graph?limit={limit}"
+            : $"/api/v1/graph?limit={limit}&sessionId={Uri.EscapeDataString(sessionId)}";
+
+        return await http.GetFromJsonAsync<GraphResponse>(qs, ct);
+    }
+
     public async Task<StoreContextResponse?> StoreAsync(StoreContextRequest request, CancellationToken ct = default)
     {
         using var response = await http.PostAsJsonAsync("/api/v1/store", request, ct);
