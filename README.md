@@ -200,9 +200,19 @@ Primary docs:
 
 ## Demo
 
-Cross-model continuity demo:
+### STTP-UI 
+**Track your sessions on the go:**
+<img width="1867" height="982" alt="image" src="https://github.com/user-attachments/assets/92309f55-1f4b-4272-8c67-d8a3fc5106fa" />
 
-- [dwhatsapp-demo.webm](https://github.com/user-attachments/assets/9dc532f6-fecc-4df1-bf19-dc050b548b86)
+**Visualize your thoughts as a spider web**
+<img width="1867" height="990" alt="image" src="https://github.com/user-attachments/assets/079cb12c-467f-4880-a9c0-79d540181eeb" />
+
+**Add nodes on the go**
+<img width="772" height="886" alt="image" src="https://github.com/user-attachments/assets/898515dc-9bca-4afc-9d75-d770fddefa2e" />
+
+**Get a summary of where your mind was during that moment**
+<img width="1299" height="885" alt="image" src="https://github.com/user-attachments/assets/3b54d22d-0e75-430a-9e68-fd60d74a10c1" />
+
 
 Real-time ACC health tracking (Grafana):
 
