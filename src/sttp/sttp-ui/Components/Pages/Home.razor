@@ -1,0 +1,378 @@
+﻿@page "/"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Components.Rendering
+@using sttp_ui.Models
+@using sttp_ui.Services
+@inject SttpGatewayApiClient Gateway
+
+<PageTitle>sttp</PageTitle>
+
+<section class="flow-shell">
+	<div class="tab-bar">
+		<div class="view-switch" role="group" aria-label="View">
+			<button class="view-chip @(activeView == "nodes" ? "active" : string.Empty)" @onclick="SetNodesView">Nodes</button>
+			<button class="view-chip @(activeView == "compose" ? "active" : string.Empty)" @onclick="SetComposeView">Compose</button>
+		</div>
+	</div>
+
+	<div class="flow-grid">
+		<article class="panel panel-nodes @(activeView == "compose" ? "mobile-hidden" : string.Empty)">
+			<div class="panel-head">
+				<span class="panel-label">Recent</span>
+				<div class="panel-actions">
+					<button class="action action-muted" @onclick="ToggleAllNodes">@(allExpanded ? "Collapse All" : "Expand All")</button>
+					<button class="action" @onclick="LoadNodesAsync" disabled="@isWorking">Refresh</button>
+				</div>
+			</div>
+
+			<div class="filter-bar">
+				<input class="filter-input" @bind="listSessionId" placeholder="Filter by session…" />
+				<input class="filter-num" type="number" min="1" max="200" @bind="listLimit" title="Limit" />
+			</div>
+
+			@if (nodes.Count == 0)
+			{
+				<p class="muted empty-state">No nodes loaded yet. Store your first node on the right.</p>
+			}
+			else
+			{
+				<ul class="node-list clean-list">
+					@foreach (var node in nodes)
+					{
+						<li class="node-card">
+							<div class="node-head">
+							<div class="node-meta">
+								<p class="node-session">@node.SessionId</p>
+								<div class="node-tags">
+									<span class="tag">@node.Tier</span>
+									<span class="tag">@node.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</span>
+								</div>
+							</div>
+							<div class="node-aside">
+								<span class="psi-badge">@node.Psi.ToString("0.00")</span>
+								<button class="toggle-btn" @onclick="() => ToggleNode(node)">
+									@(IsExpanded(node) ? "▴" : "▾")
+								</button>
+							</div>
+
+							@if (IsExpanded(node))
+							{
+								<div class="node-body">
+									<div class="metrics-grid">
+										<div><span>Compression</span><strong>@node.CompressionDepth</strong></div>
+										<div><span>Rho</span><strong>@node.Rho.ToString("0.000")</strong></div>
+										<div><span>Kappa</span><strong>@node.Kappa.ToString("0.000")</strong></div>
+										<div><span>Psi</span><strong>@node.Psi.ToString("0.000")</strong></div>
+									</div>
+
+									<div class="avec-grid">
+										@RenderAvec("User AVEC", node.UserAvec)
+										@RenderAvec("Model AVEC", node.ModelAvec)
+										@RenderAvec("Compression AVEC", node.CompressionAvec)
+									</div>
+
+									@if (!string.IsNullOrWhiteSpace(node.ParentNodeId))
+									{
+										<p class="muted inline-meta">Parent: @node.ParentNodeId</p>
+									}
+
+									<div class="raw-wrap">
+										<p class="raw-title">Raw</p>
+										<pre class="node-raw">@FormatRaw(node.Raw)</pre>
+									</div>
+								</div>
+							}
+						</li>
+					}
+				</ul>
+			}
+		</article>
+
+		<aside class="side-stack @(activeView == "nodes" ? "mobile-hidden-compose" : string.Empty)">
+			<article class="panel panel-compose">
+				<label>Session</label>
+				<input @bind="storeSessionId" placeholder="sttp-mobile" />
+
+				<label>Node Payload</label>
+				<textarea rows="13" @bind="storeNode" placeholder="Paste a valid STTP node block here"></textarea>
+
+				<div class="compose-footer">
+					<span class="char-count muted">@storeNode.Length chars</span>
+					@if (!string.IsNullOrWhiteSpace(storeFeedback))
+					{
+						<span class="feedback">@storeFeedback</span>
+					}
+					<button class="action action-store" @onclick="StoreNodeAsync" disabled="@isWorking || string.IsNullOrWhiteSpace(storeNode)">Store</button>
+				</div>
+			</article>
+
+			<details class="panel panel-utility">
+				<summary>Utilities</summary>
+
+				<div class="utility-block">
+					<div class="panel-head utility-head">
+						<h4>Gateway Health</h4>
+						<button class="action" @onclick="CheckHealthAsync" disabled="@isWorking">Refresh</button>
+					</div>
+					<p class="status-line @healthClass">@healthText</p>
+				</div>
+
+				<div class="utility-block">
+					<div class="panel-head utility-head">
+						<h4>Calibrate</h4>
+						<button class="action" @onclick="CalibrateAsync" disabled="@isWorking">Run</button>
+					</div>
+
+					<label>Session ID</label>
+					<input @bind="calSessionId" />
+
+					<div class="split">
+						<div>
+							<label>Stability</label>
+							<input type="number" step="0.01" min="0" max="1" @bind="calStability" />
+						</div>
+						<div>
+							<label>Friction</label>
+							<input type="number" step="0.01" min="0" max="1" @bind="calFriction" />
+						</div>
+						<div>
+							<label>Logic</label>
+							<input type="number" step="0.01" min="0" max="1" @bind="calLogic" />
+						</div>
+						<div>
+							<label>Autonomy</label>
+							<input type="number" step="0.01" min="0" max="1" @bind="calAutonomy" />
+						</div>
+					</div>
+
+					<label>Trigger</label>
+					<input @bind="calTrigger" />
+					@if (!string.IsNullOrWhiteSpace(calFeedback))
+					{
+						<p class="feedback">@calFeedback</p>
+					}
+				</div>
+			</details>
+		</aside>
+	</div>
+</section>
+
+@code {
+	private bool isWorking;
+
+	private string healthText = "unknown";
+	private string healthClass = "status-unknown";
+
+	private string storeSessionId = "sttp-mobile";
+	private string storeNode = string.Empty;
+	private string storeFeedback = string.Empty;
+
+	private string calSessionId = "sttp-mobile";
+	private float calStability = 0.9f;
+	private float calFriction = 0.2f;
+	private float calLogic = 0.9f;
+	private float calAutonomy = 0.8f;
+	private string calTrigger = "manual";
+	private string calFeedback = string.Empty;
+
+	private string listSessionId = string.Empty;
+	private int listLimit = 25;
+	private readonly List<SttpNodeDto> nodes = [];
+	private readonly HashSet<string> expandedNodeKeys = [];
+	private bool allExpanded;
+	private string activeView = "nodes";
+
+	protected override async Task OnInitializedAsync()
+	{
+		await CheckHealthAsync();
+		await LoadNodesAsync();
+	}
+
+	private async Task CheckHealthAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			var health = await Gateway.GetHealthAsync();
+			if (health is null)
+			{
+				healthText = "gateway unreachable";
+				healthClass = "status-bad";
+				return;
+			}
+
+			healthText = $"{health.Status} ({health.Transport})";
+			healthClass = health.Status.Equals("ok", StringComparison.OrdinalIgnoreCase)
+				? "status-good"
+				: "status-bad";
+		});
+	}
+
+	private async Task StoreNodeAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			var response = await Gateway.StoreAsync(new StoreContextRequest(storeNode, storeSessionId));
+			if (response is null)
+			{
+				storeFeedback = "No response from gateway.";
+				return;
+			}
+
+			storeFeedback = response.Valid
+				? $"Stored. NodeId: {response.NodeId} | Psi: {response.Psi:0.00}"
+				: $"Rejected: {response.ValidationError}";
+
+			await LoadNodesAsync();
+
+			if (response.Valid)
+			{
+				storeNode = string.Empty;
+				if (nodes.Count > 0)
+					expandedNodeKeys.Add(GetNodeKey(nodes[0]));
+				activeView = "nodes";
+			}
+		});
+	}
+
+	private async Task CalibrateAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			var response = await Gateway.CalibrateAsync(new CalibrateSessionRequest(
+				calSessionId,
+				calStability,
+				calFriction,
+				calLogic,
+				calAutonomy,
+				calTrigger));
+
+			if (response is null)
+			{
+				calFeedback = "No response from gateway.";
+				return;
+			}
+
+			calFeedback = $"Delta: {response.Delta:0.00} | Drift: {response.DriftClassification}";
+		});
+	}
+
+	private async Task LoadNodesAsync()
+	{
+		await RunSafeAsync(async () =>
+		{
+			var response = await Gateway.ListNodesAsync(Math.Clamp(listLimit, 1, 200), listSessionId, default);
+			nodes.Clear();
+			expandedNodeKeys.Clear();
+			allExpanded = false;
+
+			if (response?.Nodes is not null)
+				nodes.AddRange(response.Nodes.OrderByDescending(n => n.Timestamp));
+		});
+	}
+
+	private void ToggleNode(SttpNodeDto node)
+	{
+		var key = GetNodeKey(node);
+		if (!expandedNodeKeys.Add(key))
+			expandedNodeKeys.Remove(key);
+
+		allExpanded = nodes.Count > 0 && nodes.All(IsExpanded);
+	}
+
+	private bool IsExpanded(SttpNodeDto node)
+		=> expandedNodeKeys.Contains(GetNodeKey(node));
+
+	private void ToggleAllNodes()
+	{
+		if (allExpanded)
+		{
+			expandedNodeKeys.Clear();
+			allExpanded = false;
+			return;
+		}
+
+		expandedNodeKeys.Clear();
+		foreach (var node in nodes)
+			expandedNodeKeys.Add(GetNodeKey(node));
+
+		allExpanded = nodes.Count > 0;
+	}
+
+	private void SetView(string view)
+		=> activeView = view;
+
+	private void SetNodesView()
+		=> activeView = "nodes";
+
+	private void SetComposeView()
+		=> activeView = "compose";
+
+	private static string GetNodeKey(SttpNodeDto node)
+		=> $"{node.SessionId}|{node.Timestamp:O}|{node.Psi:0.0000}|{node.CompressionDepth}";
+
+	private static string FormatRaw(string? raw)
+		=> string.IsNullOrWhiteSpace(raw) ? "(empty)" : raw.Replace("\r\n", "\n").Trim();
+
+	private static RenderFragment RenderAvec(string title, AvecState? avec) => builder =>
+	{
+		builder.OpenElement(0, "div");
+		builder.AddAttribute(1, "class", "avec-card");
+
+		builder.OpenElement(2, "p");
+		builder.AddAttribute(3, "class", "avec-title");
+		builder.AddContent(4, title);
+		builder.CloseElement();
+
+		if (avec is null)
+		{
+			builder.OpenElement(5, "p");
+			builder.AddAttribute(6, "class", "muted inline-meta");
+			builder.AddContent(7, "Not available");
+			builder.CloseElement();
+		}
+		else
+		{
+			builder.OpenElement(8, "div");
+			builder.AddAttribute(9, "class", "avec-rows");
+			AddAvecRow(builder, 10, "Stability", avec.Stability);
+			AddAvecRow(builder, 20, "Friction", avec.Friction);
+			AddAvecRow(builder, 30, "Logic", avec.Logic);
+			AddAvecRow(builder, 40, "Autonomy", avec.Autonomy);
+			AddAvecRow(builder, 50, "Psi", avec.Psi);
+			builder.CloseElement();
+		}
+
+		builder.CloseElement();
+	};
+
+	private static void AddAvecRow(RenderTreeBuilder builder, int sequence, string label, float value)
+	{
+		builder.OpenElement(sequence, "div");
+		builder.AddAttribute(sequence + 1, "class", "avec-row");
+		builder.OpenElement(sequence + 2, "span");
+		builder.AddContent(sequence + 3, label);
+		builder.CloseElement();
+		builder.OpenElement(sequence + 4, "strong");
+		builder.AddContent(sequence + 5, value.ToString("0.000"));
+		builder.CloseElement();
+		builder.CloseElement();
+	}
+
+	private async Task RunSafeAsync(Func<Task> work)
+	{
+		isWorking = true;
+		try
+		{
+			await work();
+		}
+		catch (Exception ex)
+		{
+			healthText = $"error: {ex.Message}";
+			healthClass = "status-bad";
+		}
+		finally
+		{
+			isWorking = false;
+		}
+	}
+}
