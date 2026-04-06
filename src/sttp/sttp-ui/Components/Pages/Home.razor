@@ -335,7 +335,7 @@
 				<input @bind="storeSessionId" placeholder="sttp-mobile" />
 
 				<label>Node Payload (advanced)</label>
-				<textarea rows="10" @bind="storeNode" placeholder="Paste a valid STTP node block here (advanced)."></textarea>
+				<textarea rows="10" @bind="storeNode" @bind:event="oninput" placeholder="Paste a valid STTP node block here (advanced)."></textarea>
 
 				<div class="compose-footer">
 					<span class="char-count muted">@storeNode.Length chars</span>
@@ -343,7 +343,7 @@
 					{
 						<span class="feedback">@storeFeedback</span>
 					}
-					<button class="action action-store" @onclick="StoreNodeAsync" disabled="@isWorking || string.IsNullOrWhiteSpace(storeNode)">Store</button>
+					<button type="button" class="action action-store" @onclick="StoreNodeAsync" disabled="@isWorking">Store</button>
 				</div>
 			</article>
 
@@ -617,9 +617,22 @@
 
 	private async Task StoreNodeAsync()
 	{
-		await RunSafeAsync(async () =>
+		if (string.IsNullOrWhiteSpace(storeNode))
 		{
-			var response = await Gateway.StoreAsync(new StoreContextRequest(storeNode, storeSessionId));
+			storeFeedback = "Paste a node payload before storing.";
+			return;
+		}
+
+		var sessionId = string.IsNullOrWhiteSpace(storeSessionId)
+			? "sttp-mobile"
+			: storeSessionId.Trim();
+		storeSessionId = sessionId;
+
+		storeFeedback = "Storing...";
+		isWorking = true;
+		try
+		{
+			var response = await Gateway.StoreAsync(new StoreContextRequest(storeNode, sessionId));
 			if (response is null)
 			{
 				storeFeedback = "No response from gateway.";
@@ -642,7 +655,15 @@
 				shouldAttachSwipe = sessions.Count > 0;
 				activeView = "nodes";
 			}
-		});
+		}
+		catch (Exception ex)
+		{
+			storeFeedback = $"Error: {ex.Message}";
+		}
+		finally
+		{
+			isWorking = false;
+		}
 	}
 
 	private async Task CalibrateAsync()
@@ -1142,12 +1163,16 @@
 	public async ValueTask DisposeAsync()
 	{
 		_dotNetRef?.Dispose();
-		if (_swipeModule is not null)
-			await _swipeModule.DisposeAsync();
-		if (_graphModule is not null)
+		try
 		{
-			await _graphModule.InvokeVoidAsync("destroySessionGraph", "sttp-graph");
-			await _graphModule.DisposeAsync();
+			if (_swipeModule is not null)
+				await _swipeModule.DisposeAsync();
+			if (_graphModule is not null)
+			{
+				await _graphModule.InvokeVoidAsync("destroySessionGraph", "sttp-graph");
+				await _graphModule.DisposeAsync();
+			}
 		}
+		catch (JSDisconnectedException) { }
 	}
 }
