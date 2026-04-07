@@ -1,5 +1,6 @@
 ﻿@page "/"
 @rendermode InteractiveServer
+@using System.Globalization
 @using System.Security.Cryptography
 @using System.Text
 @using Microsoft.AspNetCore.Components.Rendering
@@ -81,10 +82,48 @@
 
 			<div class="deck-quick-actions">
 				<button class="action action-muted" @onclick="OpenSessionPickerAsync" disabled="@isWorking">Browse sessions</button>
-				<button class="action action-muted" @onclick="ToggleReferences" disabled="@(sessions.Count == 0)">@(showReferences ? "Hide moment list" : "Show moment list")</button>
-				<button class="action action-muted" @onclick="ToggleDetail" disabled="@(sessions.Count == 0)">@(showDetail ? "Hide details" : "Show details")</button>
+				@if (IsInspectMode)
+				{
+					<button class="action action-muted" @onclick="ToggleReferences" disabled="@(sessions.Count == 0)">@(showReferences ? "Hide moment list" : "Show moment list")</button>
+					<button class="action action-muted" @onclick="ToggleDetail" disabled="@(sessions.Count == 0)">@(showDetail ? "Hide diagnostics" : "Show diagnostics")</button>
+				}
+				<div class="experience-mode-switch" role="group" aria-label="Experience mode">
+					<button class="mode-chip @(IsFocusMode ? "active" : string.Empty)" @onclick="SetFocusMode">Focus</button>
+					<button class="mode-chip @(insightMode == "inspect" ? "active" : string.Empty)" @onclick="SetInspectMode">Inspect</button>
+				</div>
 				<span class="deck-guide">Swipe left or right to switch sessions.</span>
+				<div class="theme-drawer-wrap">
+					<button class="action action-muted theme-drawer-trigger @(themeDrawerOpen ? "open" : string.Empty)"
+						type="button"
+						aria-expanded="@themeDrawerOpen"
+						aria-label="Visual Resonance"
+						@onclick="ToggleThemeDrawer">
+						<span class="theme-label">Visual Resonance</span>
+						<span class="theme-current">@GetThemeLabel(selectedThemeKey)</span>
+						<span class="theme-caret">▾</span>
+					</button>
+
+					@if (themeDrawerOpen)
+					{
+						<div class="theme-drawer-panel" role="group" aria-label="Visual resonance themes">
+							@foreach (var theme in themePresets)
+							{
+								<button class="theme-chip @(selectedThemeKey == theme.Key ? "active" : string.Empty)"
+									type="button"
+									title="@theme.Hint"
+									@onclick="() => SelectThemeAsync(theme.Key)">
+									@theme.Label
+								</button>
+							}
+						</div>
+					}
+				</div>
 			</div>
+
+			@if (themeDrawerOpen)
+			{
+				<button class="theme-drawer-backdrop" type="button" aria-label="Close Visual Resonance picker" @onclick="CloseThemeDrawer"></button>
+			}
 
 			@if (sessions.Count == 0)
 			{
@@ -96,7 +135,18 @@
 			{
 				var session = sessions[currentSessionIndex];
 				var node = session.Nodes[currentSessionNodeIndex];
-				var latestNode = session.LatestNode;
+				var psych = BuildPsychLayer(node);
+				var archetypeCard = BuildDailyArchetypeCard(session, psych);
+				var deltaStory = BuildDeltaStory(session, currentSessionNodeIndex);
+				var prompts = BuildAdaptivePrompts(psych, deltaStory);
+				var timelineItems = BuildMoodTimeline(sessions, currentSessionIndex);
+				var preview = BuildFutureSelfPreview(psych, deltaStory);
+				var dialogue = BuildInnerDialogue(psych, deltaStory);
+				var contextTags = BuildLifeContextTags(psych);
+				var blindSpot = BuildBlindSpotLens(psych);
+				var celebration = BuildGentleCelebration(session, psych, deltaStory);
+				var recommendedAction = BuildRecommendedAction(psych, deltaStory, blindSpot, contextTags);
+				var journalExport = BuildJournalExport(session, node, psych, archetypeCard, deltaStory, contextTags, blindSpot);
 				<div class="deck-stage">
 					<div id="sttp-card" class="node-card @slideClass" @key="nodeKey">
 						<div class="hint hint-left">← older</div>
@@ -111,22 +161,225 @@
 									<div class="node-tags">
 										<span class="tag">@session.Nodes.Count nodes</span>
 										<span class="tag">@session.LastModified.ToLocalTime().ToString("MMM d, HH:mm")</span>
-										<span class="tag">latest layer: @latestNode.Tier</span>
+										@if (IsInspectMode)
+										{
+											<span class="tag">moment type: @node.Tier</span>
+										}
 									</div>
 								</div>
 								<div class="node-aside">
-									<span class="psi-label">Health score</span>
-									<span class="psi-badge" title="Overall health score">@latestNode.Psi.ToString("0.00")</span>
-									<div class="rho-kappa">
-										<span>Signal strength&nbsp;@latestNode.Rho.ToString("0.00")</span>
-										<span>Consistency&nbsp;@latestNode.Kappa.ToString("0.00")</span>
+									@if (IsInspectMode)
+									{
+										<span class="psi-label">Read score</span>
+										<span class="psi-badge" title="Overall read score">@node.Psi.ToString("0.00")</span>
+										<div class="rho-kappa">
+											<span>strength&nbsp;@node.Rho.ToString("0.00")</span>
+											<span>steadiness&nbsp;@node.Kappa.ToString("0.00")</span>
+										</div>
+									}
+									else
+									{
+										<span class="psi-label">This moment</span>
+										<p class="focus-summary">@contextTags.MoodNote</p>
+									}
+									<div class="snapshot-badges" aria-label="Session snapshot tags">
+										@foreach (var tag in contextTags.Tags.Take(3))
+										{
+											<span class="snapshot-badge" style="@GetContextTagStyle(tag)">@tag.Label</span>
+										}
 									</div>
 								</div>
 							</div>
+
+							<div class="psych-layer-wrap">
+								<div class="psych-orb-stack">
+									<div class="vibe-orb @psych.OrbClass"
+										style="@GetOrbStyle(psych)"
+										title="Session vibe orb">
+										<span class="orb-core"></span>
+									</div>
+									<p class="orb-caption">@psych.OrbCaption</p>
+								</div>
+
+								<div class="radar-panel" aria-label="Session state radar">
+									<svg class="radar-svg" viewBox="0 0 220 220" role="img">
+										@for (var ring = 1; ring <= 4; ring++)
+										{
+											var radius = 76f * ring / 4f;
+											<polygon class="radar-ring" points="@BuildRadarRingPoints(radius)" />
+										}
+
+										@for (var i = 0; i < psych.Axes.Count; i++)
+										{
+											var axisEnd = PolarPoint(i, 1f, 76f);
+											<line class="radar-axis" x1="110" y1="110" x2="@axisEnd.X" y2="@axisEnd.Y" />
+										}
+
+										<polygon class="radar-shape" points="@psych.RadarPoints" />
+										@for (var i = 0; i < psych.Axes.Count; i++)
+										{
+											var p = PolarPoint(i, psych.Axes[i].Value, 76f);
+											<circle class="radar-node" cx="@p.X" cy="@p.Y" r="3.4" />
+										}
+									</svg>
+									<div class="radar-legend" aria-hidden="true">
+										@foreach (var axis in psych.Axes)
+										{
+											<div class="radar-legend-row">
+												<span class="radar-legend-name">@axis.Name</span>
+												<div class="radar-legend-track">
+													<span class="radar-legend-fill" style="@GetLegendFillStyle(axis.Value)"></span>
+												</div>
+												<span class="radar-legend-value">@ToPercent(axis.Value)%</span>
+											</div>
+										}
+									</div>
+								</div>
+
+								<div class="session-reflection">
+									<p class="reflection-archetype">@psych.Archetype</p>
+									<p class="reflection-archetype-note">@archetypeCard.Description</p>
+									<p class="reflection-text">@psych.Reflection</p>
+									<p class="reflection-next">@psych.NextNudge</p>
+									<p class="reflection-scope">@psych.ScopeNote</p>
+								</div>
+							</div>
+
+							@if (IsFocusMode)
+							{
+							<div class="experience-flow">
+								<section class="experience-section moment-section">
+									<div class="snapshot-group">
+										<p class="insight-kicker">What Changed</p>
+										<p class="delta-line">@deltaStory.Headline</p>
+										<p class="delta-line delta-sub">@deltaStory.SupportingLine</p>
+									</div>
+									<div class="snapshot-group">
+										<p class="insight-kicker">Next Small Move</p>
+										<p class="action-line">@recommendedAction.Action</p>
+										<p class="action-why">@recommendedAction.Why</p>
+									</div>
+									@if (celebration.Show)
+									{
+										<div class="snapshot-group celebration-inline">
+											<span class="celebration-glyph">@celebration.Glyph</span>
+											<div>
+												<p class="celebration-title">@celebration.Title</p>
+												<p class="celebration-body">@celebration.Body</p>
+											</div>
+										</div>
+									}
+									<div class="snapshot-actions">
+										<p class="snapshot-meta">Journal entry ready from this selected moment.</p>
+										<button class="journal-copy-btn @(journalCopied ? "journal-copy-success" : string.Empty)"
+											@onclick="async () => await CopyJournalAsync(journalExport.FullText)"
+											title="Copy journal entry to clipboard">
+											@if (journalCopied)
+											{
+												<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+												<span>copied</span>
+											}
+											else
+											{
+												<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+												<span>copy entry</span>
+											}
+										</button>
+									</div>
+								</section>
+
+								<details class="secondary-drawer">
+									<summary>Context and alternatives</summary>
+									<div class="secondary-grid">
+										<section class="insight-card blindspot-card">
+											<p class="insight-kicker">What To Watch</p>
+											<p class="blindspot-label">@blindSpot.Label</p>
+											<p class="blindspot-obs">@blindSpot.Observation</p>
+											<p class="blindspot-nudge">@blindSpot.Nudge</p>
+										</section>
+
+										<section class="insight-card river-card">
+											<p class="insight-kicker">Mood Timeline</p>
+											<div class="mood-river" role="list" aria-label="Recent mood timeline">
+												@foreach (var item in timelineItems)
+												{
+													<button class="mood-dot @(item.IsCurrent ? "mood-dot-current" : string.Empty)"
+														style="@GetMoodDotStyle(item)"
+														title="@item.Tooltip"
+														@onclick="() => JumpToSession(item.SessionId)"></button>
+												}
+											</div>
+												<p class="river-caption">Tap any point to open that session.</p>
+										</section>
+
+										<section class="insight-card preview-card">
+											<p class="insight-kicker">If This Keeps Going</p>
+											<p class="preview-title">@preview.Title</p>
+												<p class="preview-line">@preview.LikelyPath</p>
+											<p class="preview-line preview-shift">@preview.ShiftPath</p>
+										</section>
+
+										<section class="insight-card dialogue-card">
+											<p class="insight-kicker">Inner Dialogue</p>
+											<div class="dialogue-bubble analyst">
+												<span class="dialogue-role">Analyst</span>
+												<p>@dialogue.Analyst</p>
+											</div>
+											<div class="dialogue-bubble human">
+												<span class="dialogue-role">Human</span>
+												<p>@dialogue.Human</p>
+											</div>
+											<p class="dialogue-synthesis">@dialogue.Synthesis</p>
+										</section>
+
+										<section class="insight-card prompt-card">
+											<p class="insight-kicker">Questions To Sit With</p>
+											<div class="prompt-list">
+												@foreach (var prompt in prompts)
+												{
+													<p class="prompt-item">@prompt</p>
+												}
+											</div>
+										</section>
+
+										<section class="insight-card journal-card">
+											<p class="insight-kicker">Journal Note</p>
+											<div class="journal-preview">
+												<p class="journal-line">@journalExport.Lines[0]</p>
+												<p class="journal-line journal-line-sub">@journalExport.Lines[1]</p>
+												<p class="journal-line journal-line-sub">@journalExport.Lines[2]</p>
+											</div>
+										</section>
+									</div>
+								</details>
+							</div>
+							}
+							else
+							{
+								var inspectSummary = Unwinder.Unwind(node);
+								<div class="inspect-flow">
+									<section class="inspect-card">
+										<p class="insight-kicker">Inspect</p>
+										<p class="inspect-title">@inspectSummary.Summary</p>
+										<p class="inspect-line">@inspectSummary.Interpretation</p>
+										<div class="inspect-metrics">
+											<span>read @node.Psi.ToString("0.00")</span>
+											<span>strength @node.Rho.ToString("0.00")</span>
+											<span>steadiness @node.Kappa.ToString("0.00")</span>
+											<span>depth @node.CompressionDepth</span>
+										</div>
+										<p class="inspect-next">▶ @inspectSummary.NextAction</p>
+										<div class="inspect-actions">
+											<button class="action action-muted" @onclick="ToggleDetail">@(showDetail ? "Hide diagnostics" : "Open diagnostics")</button>
+											<button class="action action-muted" @onclick="ToggleReferences">@(showReferences ? "Hide moment list" : "Show moment list")</button>
+										</div>
+									</section>
+								</div>
+							}
 						</div>
 					</div>
 
-					@if (showReferences)
+					@if (IsInspectMode && showReferences)
 					{
 						<div class="ref-panel">
 							<div class="ref-header">
@@ -145,7 +398,7 @@
 						</div>
 					}
 
-					@if (showDetail)
+					@if (IsInspectMode && showDetail)
 					{
 						<div class="detail-panel">
 							<div class="detail-head">
@@ -335,7 +588,7 @@
 				<input @bind="storeSessionId" placeholder="sttp-mobile" />
 
 				<label>Node Payload (advanced)</label>
-				<textarea rows="10" @bind="storeNode" placeholder="Paste a valid STTP node block here (advanced)."></textarea>
+				<textarea rows="10" @bind="storeNode" @bind:event="oninput" placeholder="Paste a valid STTP node block here (advanced)."></textarea>
 
 				<div class="compose-footer">
 					<span class="char-count muted">@storeNode.Length chars</span>
@@ -343,7 +596,7 @@
 					{
 						<span class="feedback">@storeFeedback</span>
 					}
-					<button class="action action-store" @onclick="StoreNodeAsync" disabled="@isWorking || string.IsNullOrWhiteSpace(storeNode)">Store</button>
+					<button type="button" class="action action-store" @onclick="StoreNodeAsync" disabled="@isWorking">Store</button>
 				</div>
 			</article>
 
@@ -434,12 +687,16 @@
 	private bool showReferences;
 	private bool showDetail;
 	private bool showTechDetails;
+	private string insightMode = "focus";
 
 	// AI summary
 	private bool showAiSummary;
 	private bool isLoadingAiSummary;
 	private string? aiSummaryError;
 	private readonly Dictionary<string, AiSummary> _aiSummaryCache = [];
+
+	// Journal export
+	private bool journalCopied;
 
 	private string slideClass = string.Empty;
 	private string nodeKey = string.Empty;
@@ -459,9 +716,19 @@
 	private bool graphShowMembership = true;
 	private bool graphShowNodeTimeline = true;
 	private bool graphShowLineage = true;
+	private bool themeDrawerOpen;
+	private string selectedThemeKey = "native";
+	private readonly List<ThemePreset> themePresets =
+	[
+		new ThemePreset("native", "Original", "Your original responsive palette and tone"),
+		new ThemePreset("noir-pulse", "Noir Pulse", "High-contrast analytical mode with electric accents"),
+		new ThemePreset("canyon-fire", "Canyon Fire", "Bold terracotta energy and tactile warmth"),
+		new ThemePreset("tidal-ink", "Tidal Ink", "Moody oceanic focus with crisp legibility")
+	];
 	private DotNetObjectReference<Home>? _dotNetRef;
 	private IJSObjectReference? _swipeModule;
 	private IJSObjectReference? _graphModule;
+	private IJSObjectReference? _themeModule;
 
 	protected override async Task OnInitializedAsync()
 	{
@@ -476,6 +743,16 @@
 			_dotNetRef = DotNetObjectReference.Create(this);
 			_swipeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./swipe.js");
 			_graphModule = await JS.InvokeAsync<IJSObjectReference>("import", "./graph.js");
+			_themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./theme.js");
+
+			if (_themeModule is not null)
+			{
+				var restoredTheme = await _themeModule.InvokeAsync<string?>("restoreTheme", selectedThemeKey);
+				if (!string.IsNullOrWhiteSpace(restoredTheme) && themePresets.Any(t => t.Key == restoredTheme))
+					selectedThemeKey = restoredTheme;
+
+				await _themeModule.InvokeVoidAsync("applyTheme", selectedThemeKey, false);
+			}
 		}
 		if (shouldAttachSwipe && sessions.Count > 0 && _swipeModule is not null && _dotNetRef is not null)
 		{
@@ -498,7 +775,7 @@
 			currentSessionNodeIndex = 0;
 			slideClass = "from-right";
 			showReferences = false;
-			showDetail = false;
+			showDetail = IsInspectMode;
 			showAiSummary = false;
 			aiSummaryError = null;
 			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -516,7 +793,7 @@
 			currentSessionNodeIndex = 0;
 			slideClass = "from-left";
 			showReferences = false;
-			showDetail = false;
+			showDetail = IsInspectMode;
 			showAiSummary = false;
 			aiSummaryError = null;
 			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -528,6 +805,8 @@
 	[JSInvokable]
 	public async Task OnSwipeUp()
 	{
+		if (!IsInspectMode)
+			return;
 		showReferences = !showReferences;
 		if (showReferences) showDetail = false;
 		await InvokeAsync(StateHasChanged);
@@ -536,6 +815,8 @@
 	[JSInvokable]
 	public async Task OnSwipeDown()
 	{
+		if (!IsInspectMode)
+			return;
 		showDetail = !showDetail;
 		if (showDetail) showReferences = false;
 		await InvokeAsync(StateHasChanged);
@@ -548,7 +829,7 @@
 		currentSessionNodeIndex = 0;
 		slideClass = "from-right";
 		showReferences = false;
-		showDetail = false;
+		showDetail = IsInspectMode;
 		showAiSummary = false;
 		aiSummaryError = null;
 		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -562,7 +843,7 @@
 		currentSessionNodeIndex = 0;
 		slideClass = "from-left";
 		showReferences = false;
-		showDetail = false;
+		showDetail = IsInspectMode;
 		showAiSummary = false;
 		aiSummaryError = null;
 		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -571,6 +852,8 @@
 
 	private void ToggleReferences()
 	{
+		if (!IsInspectMode)
+			return;
 		showReferences = !showReferences;
 		if (showReferences)
 			showDetail = false;
@@ -578,6 +861,8 @@
 
 	private void ToggleDetail()
 	{
+		if (!IsInspectMode)
+			return;
 		showDetail = !showDetail;
 		if (showDetail)
 			showReferences = false;
@@ -591,7 +876,7 @@
 		currentSessionNodeIndex = idx;
 		showAiSummary = false;
 		aiSummaryError = null;
-		showDetail = true;
+		showDetail = IsInspectMode;
 		if (hideReferences)
 			showReferences = false;
 	}
@@ -617,9 +902,22 @@
 
 	private async Task StoreNodeAsync()
 	{
-		await RunSafeAsync(async () =>
+		if (string.IsNullOrWhiteSpace(storeNode))
 		{
-			var response = await Gateway.StoreAsync(new StoreContextRequest(storeNode, storeSessionId));
+			storeFeedback = "Paste a node payload before storing.";
+			return;
+		}
+
+		var sessionId = string.IsNullOrWhiteSpace(storeSessionId)
+			? "sttp-mobile"
+			: storeSessionId.Trim();
+		storeSessionId = sessionId;
+
+		storeFeedback = "Storing...";
+		isWorking = true;
+		try
+		{
+			var response = await Gateway.StoreAsync(new StoreContextRequest(storeNode, sessionId));
 			if (response is null)
 			{
 				storeFeedback = "No response from gateway.";
@@ -642,7 +940,15 @@
 				shouldAttachSwipe = sessions.Count > 0;
 				activeView = "nodes";
 			}
-		});
+		}
+		catch (Exception ex)
+		{
+			storeFeedback = $"Error: {ex.Message}";
+		}
+		finally
+		{
+			isWorking = false;
+		}
 	}
 
 	private async Task CalibrateAsync()
@@ -682,7 +988,7 @@
 			currentSessionIndex = 0;
 			currentSessionNodeIndex = 0;
 			showReferences = false;
-			showDetail = false;
+			showDetail = IsInspectMode;
 			showAiSummary = false;
 			aiSummaryError = null;
 			nodeKey = sessions.Count > 0 ? GetSessionKey(sessions[0]) : string.Empty;
@@ -739,7 +1045,7 @@
 		currentSessionNodeIndex = Math.Clamp(nodeIndex, 0, Math.Max(0, maxIdx));
 		slideClass = "from-left";
 		showReferences = false;
-		showDetail = true;
+		showDetail = IsInspectMode;
 		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
 		shouldAttachSwipe = true;
 		activeView = "nodes";
@@ -940,6 +1246,47 @@
 
 	private void SetView(string view) => activeView = view;
 	private void SetNodesView() => activeView = "nodes";
+	private bool IsFocusMode => insightMode == "focus";
+	private bool IsInspectMode => insightMode == "inspect";
+
+	private void SetFocusMode()
+	{
+		insightMode = "focus";
+		showDetail = false;
+		showReferences = false;
+		showAiSummary = false;
+		aiSummaryError = null;
+	}
+
+	private void SetInspectMode()
+	{
+		insightMode = "inspect";
+		showDetail = true;
+		showReferences = false;
+	}
+
+	private void ToggleThemeDrawer()
+		=> themeDrawerOpen = !themeDrawerOpen;
+
+	private void CloseThemeDrawer()
+		=> themeDrawerOpen = false;
+
+	private async Task SelectThemeAsync(string themeKey)
+	{
+		if (_themeModule is null)
+			return;
+
+		if (!themePresets.Any(t => t.Key == themeKey))
+			return;
+
+		selectedThemeKey = themeKey;
+		themeDrawerOpen = false;
+		await _themeModule.InvokeVoidAsync("applyTheme", themeKey, true);
+	}
+
+	private string GetThemeLabel(string themeKey)
+		=> themePresets.FirstOrDefault(t => t.Key == themeKey)?.Label ?? "Original";
+
 	private async Task OpenSessionPickerAsync()
 	{
 		sessionPickerOpen = true;
@@ -978,7 +1325,7 @@
 			currentSessionNodeIndex = 0;
 			slideClass = "from-left";
 			showReferences = false;
-			showDetail = false;
+			showDetail = IsInspectMode;
 			showAiSummary = false;
 			aiSummaryError = null;
 			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -1113,6 +1460,540 @@
 		builder.CloseElement();
 	}
 
+	private static PsychLayer BuildPsychLayer(SttpNodeDto node)
+	{
+		var state = ResolveState(node);
+		var curiosity = Clamp01(state.Logic * 0.58f + state.Autonomy * 0.42f);
+		var discipline = Clamp01(state.Stability * 0.64f + (1f - state.Friction) * 0.36f);
+		var socialEnergy = Clamp01(state.Autonomy * 0.56f + (1f - state.Friction) * 0.44f);
+		var flexibility = Clamp01((1f - state.Stability) * 0.34f + state.Logic * 0.36f + state.Autonomy * 0.30f);
+		var stressLoad = Clamp01(state.Friction * 0.74f + (1f - state.Stability) * 0.26f);
+
+		var axes = new List<PsychAxis>
+		{
+			new("Curiosity", curiosity),
+			new("Discipline", discipline),
+			new("Social Energy", socialEnergy),
+			new("Flexibility", flexibility),
+			new("Stress Load", stressLoad)
+		};
+
+		var coherence = (curiosity + discipline + socialEnergy + flexibility + (1f - stressLoad)) / 5f;
+		var leadAxis = HighestAxis(axes);
+		var quietAxis = LowestAxis(axes);
+		var archetype = ResolveArchetype(curiosity, discipline, socialEnergy, flexibility, stressLoad);
+		var reflection = $"Right now, {leadAxis.ToLowerInvariant()} is doing more of the work while {quietAxis.ToLowerInvariant()} is taking a back seat.";
+		var nextNudge = stressLoad >= 0.68f
+			? "Make things lighter first, then choose one small thing you can actually finish."
+			: coherence >= 0.66f
+				? "Use this steadier moment to lock in one real next step before it slips away."
+				: "Help the quieter part of this moment with one tiny, easy step.";
+		var scopeNote = "This is a read of this moment, not a definition of who you are.";
+
+		var orbClass = stressLoad >= 0.68f
+			? "orb-alert"
+			: discipline >= 0.7f && curiosity >= 0.62f
+				? "orb-focused"
+				: socialEnergy >= 0.65f && flexibility >= 0.58f
+					? "orb-connective"
+					: "orb-balanced";
+
+		var hue = Math.Clamp(18f + curiosity * 54f + socialEnergy * 22f - stressLoad * 16f, 12f, 122f);
+		var energy = Clamp01((curiosity + socialEnergy + flexibility) / 3f);
+		var pulse = Math.Clamp(0.35f + stressLoad * 0.9f, 0.35f, 1.2f);
+		var orbCaption = $"{archetype} · {ToPercent(coherence)}% aligned";
+
+		return new PsychLayer(
+			axes,
+			archetype,
+			reflection,
+			nextNudge,
+			scopeNote,
+			orbClass,
+			hue,
+			energy,
+			pulse,
+			BuildRadarDataPoints(axes),
+			coherence,
+			orbCaption);
+	}
+
+	private static AvecState ResolveState(SttpNodeDto node)
+	{
+		if (node.CompressionAvec is not null)
+			return node.CompressionAvec;
+
+		return new AvecState(
+			(node.UserAvec.Stability + node.ModelAvec.Stability) / 2f,
+			(node.UserAvec.Friction + node.ModelAvec.Friction) / 2f,
+			(node.UserAvec.Logic + node.ModelAvec.Logic) / 2f,
+			(node.UserAvec.Autonomy + node.ModelAvec.Autonomy) / 2f,
+			(node.UserAvec.Psi + node.ModelAvec.Psi) / 2f);
+	}
+
+	private static string ResolveArchetype(float curiosity, float discipline, float socialEnergy, float flexibility, float stressLoad)
+	{
+		if (stressLoad >= 0.74f)
+			return "Pressure Navigator";
+		if (discipline >= 0.72f && curiosity >= 0.65f)
+			return "Precision Explorer";
+		if (socialEnergy >= 0.68f && flexibility >= 0.6f)
+			return "Bridge Builder";
+		if (curiosity >= 0.72f && flexibility >= 0.62f)
+			return "Pattern Diver";
+		return "Steady Integrator";
+	}
+
+	private static string HighestAxis(IReadOnlyList<PsychAxis> axes)
+		=> axes.OrderByDescending(a => a.Value).First().Name;
+
+	private static string LowestAxis(IReadOnlyList<PsychAxis> axes)
+		=> axes.OrderBy(a => a.Value).First().Name;
+
+	private static string BuildRadarDataPoints(IReadOnlyList<PsychAxis> axes)
+	{
+		var points = new List<string>(axes.Count);
+		for (var i = 0; i < axes.Count; i++)
+		{
+			var point = PolarPoint(i, axes[i].Value, 76f);
+			points.Add($"{point.X.ToString("0.##", CultureInfo.InvariantCulture)},{point.Y.ToString("0.##", CultureInfo.InvariantCulture)}");
+		}
+		return string.Join(" ", points);
+	}
+
+	private static string BuildRadarRingPoints(float radius)
+	{
+		var points = new List<string>(5);
+		for (var i = 0; i < 5; i++)
+		{
+			var point = PolarPoint(i, 1f, radius);
+			points.Add($"{point.X.ToString("0.##", CultureInfo.InvariantCulture)},{point.Y.ToString("0.##", CultureInfo.InvariantCulture)}");
+		}
+		return string.Join(" ", points);
+	}
+
+	private static string GetOrbStyle(PsychLayer psych)
+		=> string.Create(CultureInfo.InvariantCulture, $"--orb-hue:{psych.OrbHue:0}; --orb-energy:{psych.OrbEnergy:0.00}; --orb-pulse:{psych.OrbPulse:0.00};");
+
+	private static string GetLegendFillStyle(float value)
+		=> string.Create(CultureInfo.InvariantCulture, $"--axis-fill:{Clamp01(value):0.00};");
+
+	private static int ToPercent(float value)
+		=> (int)MathF.Round(Clamp01(value) * 100f);
+
+	private static DailyArchetypeCard BuildDailyArchetypeCard(SessionGroup session, PsychLayer psych)
+	{
+		var title = psych.Archetype;
+		var description = psych.OrbClass switch
+		{
+			"orb-alert" => "This feels heavier than usual. Make the next step easier on yourself.",
+			"orb-focused" => "This is a good moment to finish something that matters.",
+			"orb-connective" => "This moment is open and collaborative. Reaching out could help.",
+			_ => "This moment feels steady. Keep it moving with one simple next step."
+		};
+
+		return new DailyArchetypeCard(title, description, session.SessionId);
+	}
+
+	private static DeltaStory BuildDeltaStory(SessionGroup session, int currentNodeIdx)
+	{
+		if (session.Nodes.Count < 2 || currentNodeIdx >= session.Nodes.Count - 1)
+			return new DeltaStory(
+				"This is the newest moment in this session.",
+				"Add another moment later and this space will show what shifted.");
+
+		var current = ResolveState(session.Nodes[currentNodeIdx]);
+		var previous = ResolveState(session.Nodes[currentNodeIdx + 1]);
+
+		var deltas = new List<(string Name, float Value)>
+		{
+			("curiosity", (current.Logic * 0.58f + current.Autonomy * 0.42f) - (previous.Logic * 0.58f + previous.Autonomy * 0.42f)),
+			("discipline", (current.Stability * 0.64f + (1f - current.Friction) * 0.36f) - (previous.Stability * 0.64f + (1f - previous.Friction) * 0.36f)),
+			("social energy", (current.Autonomy * 0.56f + (1f - current.Friction) * 0.44f) - (previous.Autonomy * 0.56f + (1f - previous.Friction) * 0.44f)),
+			("flexibility", ((1f - current.Stability) * 0.34f + current.Logic * 0.36f + current.Autonomy * 0.30f) - ((1f - previous.Stability) * 0.34f + previous.Logic * 0.36f + previous.Autonomy * 0.30f)),
+			("stress load", (current.Friction * 0.74f + (1f - current.Stability) * 0.26f) - (previous.Friction * 0.74f + (1f - previous.Stability) * 0.26f))
+		};
+
+		var strongestUp = deltas.OrderByDescending(d => d.Value).First();
+		var strongestDown = deltas.OrderBy(d => d.Value).First();
+		var upText = strongestUp.Value > 0.02f ? $"{strongestUp.Name} rose {ToPercent(Math.Abs(strongestUp.Value))}%" : null;
+		var downText = strongestDown.Value < -0.02f ? $"{strongestDown.Name} dropped {ToPercent(Math.Abs(strongestDown.Value))}%" : null;
+
+		var headline = upText is not null && downText is not null
+			? $"{upText}, while {downText}."
+			: upText is not null
+				? upText + "."
+				: downText is not null
+					? downText + "."
+					: "Not much moved between these last two moments.";
+
+		var supporting = upText is not null || downText is not null
+			? "Treat this as direction, not a verdict on you."
+			: "Small changes are normal. Patterns get clearer over time.";
+
+		return new DeltaStory(headline, supporting);
+	}
+
+	private static IReadOnlyList<string> BuildAdaptivePrompts(PsychLayer psych, DeltaStory delta)
+	{
+		var prompts = new List<string>(3);
+
+		if (psych.OrbClass == "orb-alert")
+			prompts.Add("What can I safely remove from my plate in the next 10 minutes?");
+		else if (psych.OrbClass == "orb-focused")
+			prompts.Add("What single commitment will convert this focus into visible progress?");
+		else if (psych.OrbClass == "orb-connective")
+			prompts.Add("Who could make this easier if I reached out right now?");
+		else
+			prompts.Add("What one tiny step would keep this balanced state alive?");
+
+		prompts.Add(delta.Headline.Contains("rose", StringComparison.OrdinalIgnoreCase)
+			? "How can I channel this rising energy without overloading myself?"
+			: "What support would help me lift the quieter part of my state?");
+
+		prompts.Add("If tomorrow felt 15% better, what would I do differently first?");
+
+		return prompts;
+	}
+
+	private static IReadOnlyList<MoodTimelineItem> BuildMoodTimeline(IReadOnlyList<SessionGroup> groups, int currentIdx)
+	{
+		return groups.Take(12).Select((g, idx) =>
+		{
+			var psych = BuildPsychLayer(g.LatestNode);
+			return new MoodTimelineItem(
+				g.SessionId,
+				idx == currentIdx,
+				psych.OrbHue,
+				Math.Clamp(0.42f + psych.OrbEnergy * 0.5f, 0.38f, 0.94f),
+				$"{g.SessionId} · {psych.Archetype}");
+		}).ToList();
+	}
+
+	private static string GetMoodDotStyle(MoodTimelineItem item)
+		=> string.Create(CultureInfo.InvariantCulture, $"--mood-hue:{item.Hue:0}; --mood-alpha:{item.Alpha:0.00};");
+
+	private static FutureSelfPreview BuildFutureSelfPreview(PsychLayer psych, DeltaStory delta)
+	{
+		var title = psych.OrbClass switch
+		{
+			"orb-alert" => "If today keeps feeling this heavy",
+			"orb-focused" => "If this focus keeps holding",
+			"orb-connective" => "If this openness keeps holding",
+			_ => "If this steadiness keeps holding"
+		};
+
+		var likelyPath = psych.OrbClass switch
+		{
+			"orb-alert" => "The day may start to feel crowded, and choices may get harder.",
+			"orb-focused" => "You are likely to get something meaningful across the line.",
+			"orb-connective" => "Talking it through may unlock momentum faster than pushing alone.",
+			_ => "You are likely to keep moving with less friction than usual."
+		};
+
+		var shiftPath = psych.OrbClass == "orb-alert"
+			? "One small shift: remove one obligation and protect a short pocket of recovery."
+			: delta.Headline.Contains("dropped", StringComparison.OrdinalIgnoreCase)
+				? "One small shift: support what dipped with one tiny, concrete action."
+				: "One small shift: decide the next step now while this moment is still with you.";
+
+		return new FutureSelfPreview(title, likelyPath, shiftPath);
+	}
+
+	private static InnerDialogue BuildInnerDialogue(PsychLayer psych, DeltaStory delta)
+	{
+		var analyst = psych.OrbClass switch
+		{
+			"orb-alert" => "This looks like a heavy moment. Make it simpler before you ask more from yourself.",
+			"orb-focused" => "This looks like a good window for finishing one important thing.",
+			"orb-connective" => "This looks like a moment where another person could help unlock progress.",
+			_ => "This looks steady. Keep your rhythm and do not overcomplicate it."
+		};
+
+		var human = psych.OrbClass switch
+		{
+			"orb-alert" => "I want relief and permission to make this simpler.",
+			"orb-focused" => "I want to finish something meaningful and feel proud of it.",
+			"orb-connective" => "I want support and momentum that does not feel lonely.",
+			_ => "I want progress that feels calm, not chaotic."
+		};
+
+		var synthesis = delta.Headline.Contains("stable", StringComparison.OrdinalIgnoreCase)
+			? "Together: protect this steadiness by choosing one visible win and stopping on purpose."
+			: "Together: choose one action that feels both useful and kind to yourself.";
+
+		return new InnerDialogue(analyst, human, synthesis);
+	}
+
+	private static LifeContextTags BuildLifeContextTags(PsychLayer psych)
+	{
+		var curiosity = psych.Axes[0].Value;
+		var discipline = psych.Axes[1].Value;
+		var socialEnergy = psych.Axes[2].Value;
+		var flexibility = psych.Axes[3].Value;
+		var stressLoad = psych.Axes[4].Value;
+
+		var tags = new List<LifeContextTag>();
+
+		if (stressLoad >= 0.68f)
+			tags.Add(new LifeContextTag("Recovery Mode", 0f));
+
+		if (discipline >= 0.70f && stressLoad < 0.55f)
+			tags.Add(new LifeContextTag("Deep Focus", 220f));
+		else if (discipline >= 0.65f && stressLoad >= 0.55f)
+			tags.Add(new LifeContextTag("Work Sprint", 270f));
+
+		if (curiosity >= 0.68f && flexibility >= 0.58f)
+			tags.Add(new LifeContextTag("Creative Flow", 38f));
+		else if (curiosity >= 0.62f && discipline < 0.60f)
+			tags.Add(new LifeContextTag("Exploration Phase", 160f));
+
+		if (socialEnergy >= 0.66f)
+			tags.Add(new LifeContextTag("Social Push", 145f));
+
+		if (flexibility >= 0.62f && stressLoad < 0.48f && discipline >= 0.54f && !tags.Any(t => t.Label == "Deep Focus"))
+			tags.Add(new LifeContextTag("Planning Mode", 200f));
+
+		if (tags.Count == 0)
+			tags.Add(new LifeContextTag("Steady State", 215f));
+
+		string moodNote;
+		if (tags.Count == 1)
+		{
+			moodNote = tags[0].Label switch
+			{
+				"Recovery Mode" => "Load is high — protect your energy and simplify the next move.",
+				"Deep Focus" => "A clear execution window is open right now.",
+				"Work Sprint" => "Pushing through with pressure behind you.",
+				"Creative Flow" => "Curiosity and flexibility are converging — follow it.",
+				"Exploration Phase" => "Curiosity is leading. Good moment to follow without forcing structure.",
+				"Social Push" => "Connection energy is high. Good time to involve someone.",
+				"Planning Mode" => "Adaptive structure available — map before you move.",
+				_ => "Steady momentum — the state is sustainably balanced."
+			};
+		}
+		else if (tags.Count == 2)
+		{
+			moodNote = $"Blending {tags[0].Label.ToLowerInvariant()} with {tags[1].Label.ToLowerInvariant()}.";
+		}
+		else
+		{
+			moodNote = $"Complex state: {string.Join(", ", tags.Take(3).Select(t => t.Label.ToLowerInvariant()))}.";
+		}
+
+		return new LifeContextTags(tags, moodNote);
+	}
+
+	private static BlindSpotLens BuildBlindSpotLens(PsychLayer psych)
+	{
+		var curiosity = psych.Axes[0].Value;
+		var discipline = psych.Axes[1].Value;
+		var socialEnergy = psych.Axes[2].Value;
+		var flexibility = psych.Axes[3].Value;
+		var stressLoad = psych.Axes[4].Value;
+
+		var opportunities = new[]
+		{
+			("curiosity",     1f - curiosity),
+			("discipline",    1f - discipline),
+			("social energy", 1f - socialEnergy),
+			("flexibility",   1f - flexibility),
+			("stress load",   stressLoad)
+		};
+
+		var strongest = opportunities.OrderByDescending(o => o.Item2).First();
+
+		if (strongest.Item2 < 0.18f)
+			return new BlindSpotLens(
+				"Coherence Balance",
+				"Your state is unusually aligned — which makes it easy to drift without noticing.",
+				"Name one priority so this steady moment turns into progress, not drift.");
+
+		return strongest.Item1 switch
+		{
+			"curiosity" => new BlindSpotLens(
+				"Curiosity Gap",
+				"You may be solving the known problem instead of questioning whether it is the right one.",
+				"Ask one question you have not asked yet about this situation."),
+			"discipline" => new BlindSpotLens(
+				"Commitment Gap",
+				"You may be circling without committing. One locked action beats ten open loops.",
+				"Name one specific thing you can finish and hold yourself to."),
+			"social energy" => new BlindSpotLens(
+				"Connection Gap",
+				"You may be going it alone when a conversation would accelerate the work.",
+				"Share one update or ask one question that could help move this forward."),
+			"flexibility" => new BlindSpotLens(
+				"Flexibility Gap",
+				"You may be attached to a path that has already shifted beneath you.",
+				"Name one assumption you may be protecting and test it quickly."),
+			_ => new BlindSpotLens(
+				"Stress Buildup",
+				"You may be carrying more than you are fully noticing.",
+				"Before you add more, finish or drop one thing from your list.")
+		};
+	}
+
+	private static string GetContextTagStyle(LifeContextTag tag)
+		=> string.Create(CultureInfo.InvariantCulture, $"--tag-hue:{tag.Hue:0};");
+
+	private static GentleCelebration BuildGentleCelebration(SessionGroup session, PsychLayer psych, DeltaStory delta)
+	{
+		var curiosity  = psych.Axes[0].Value;
+		var discipline = psych.Axes[1].Value;
+		var stressLoad = psych.Axes[4].Value;
+		var coherence  = psych.Coherence;
+
+		// Milestone: large session (8+ nodes)
+		if (session.Nodes.Count >= 8)
+			return new GentleCelebration(true, "∞",
+				"Deep Continuity",
+				$"This session has {session.Nodes.Count} moments — a rare depth of tracking. That's worth acknowledging.");
+
+		// Coherence spike
+		if (coherence >= 0.78f)
+			return new GentleCelebration(true, "◎",
+				"High Coherence",
+				"Your state is unusually aligned right now. Most people never notice moments like this. You did.");
+
+		// Stress came down noticeably
+		if (delta.Headline.Contains("stress load", StringComparison.OrdinalIgnoreCase)
+			&& delta.Headline.Contains("dropped", StringComparison.OrdinalIgnoreCase))
+			return new GentleCelebration(true, "▽",
+				"Pressure Released",
+				"Your stress signal dropped between moments. That shift took something. It counts.");
+
+		// High discipline + low stress = execution window
+		if (discipline >= 0.74f && stressLoad < 0.40f)
+			return new GentleCelebration(true, "⬡",
+				"Clear Execution Window",
+				"High discipline and low pressure rarely show up together. This is a good moment to do the hard thing.");
+
+		// Curiosity peak
+		if (curiosity >= 0.76f)
+			return new GentleCelebration(true, "✦",
+				"Curiosity Peak",
+				"Your curiosity signal is at a high. Ideas are more accessible now than they usually are.");
+
+		return new GentleCelebration(false, string.Empty, string.Empty, string.Empty);
+	}
+
+	private static JournalExportEntry BuildJournalExport(
+		SessionGroup session,
+		SttpNodeDto focusNode,
+		PsychLayer psych,
+		DailyArchetypeCard archetype,
+		DeltaStory delta,
+		LifeContextTags contextTags,
+		BlindSpotLens blindSpot)
+	{
+		var dateLine = $"{focusNode.Timestamp:yyyy-MM-dd} · {session.SessionId}";
+		var stateLine = $"Moment: {psych.Archetype}";
+		var contextLine = contextTags.Tags.Count > 0
+			? $"What stands out: {string.Join(", ", contextTags.Tags.Select(t => t.Label))}"
+			: "What stands out: Steady State";
+		var deltaLine = $"What changed: {delta.Headline}";
+		var blindSpotLine = $"What to watch: {blindSpot.Label} — {blindSpot.Nudge}";
+		var descLine = archetype.Description;
+
+		var lines = new[] { dateLine, stateLine, contextLine };
+		var fullText = string.Join("\n",
+			dateLine, stateLine, contextLine, deltaLine, descLine, blindSpotLine);
+
+		return new JournalExportEntry(lines, fullText);
+	}
+
+	private static RecommendedAction BuildRecommendedAction(
+		PsychLayer psych,
+		DeltaStory delta,
+		BlindSpotLens blindSpot,
+		LifeContextTags contextTags)
+	{
+		var action = psych.OrbClass switch
+		{
+			"orb-alert" => "Make the day lighter: drop, delay, or hand off one thing.",
+			"orb-focused" => "Pick one meaningful thing and finish it end to end.",
+			"orb-connective" => "Send one clear message that helps this move forward.",
+			_ => "Choose one visible next step and give it a clear finish line."
+		};
+
+		var why = $"This matters most right now because {blindSpot.Label.ToLowerInvariant()} is where the most movement is available. " +
+			(delta.Headline.Contains("stable", StringComparison.OrdinalIgnoreCase)
+				? "It helps this moment turn into progress instead of drift."
+				: "It helps turn this shift into something useful.");
+
+		if (contextTags.Tags.Any(t => t.Label == "Recovery Mode"))
+			why = "This feels like a recovery moment. Make it lighter before you make it bigger.";
+
+		return new RecommendedAction(action, why);
+	}
+
+	private async Task CopyJournalAsync(string text)
+	{
+		if (string.IsNullOrWhiteSpace(text)) return;
+		await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+		journalCopied = true;
+		StateHasChanged();
+		await Task.Delay(1800);
+		journalCopied = false;
+		StateHasChanged();
+	}
+
+	private void JumpToSession(string sessionId)
+	{
+		var idx = sessions.FindIndex(s => s.SessionId == sessionId);
+		if (idx < 0) return;
+		var previousIndex = currentSessionIndex;
+		currentSessionIndex = idx;
+		currentSessionNodeIndex = 0;
+		slideClass = idx > previousIndex ? "from-right" : "from-left";
+		showReferences = false;
+		showDetail = IsInspectMode;
+		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
+		shouldAttachSwipe = true;
+	}
+
+	private static RadarPoint PolarPoint(int index, float value, float radius)
+	{
+		var angle = (-90d + index * 72d) * Math.PI / 180d;
+		var r = radius * Clamp01(value);
+		var x = 110d + Math.Cos(angle) * r;
+		var y = 110d + Math.Sin(angle) * r;
+		return new RadarPoint((float)x, (float)y);
+	}
+
+	private static float Clamp01(float value)
+		=> Math.Clamp(value, 0f, 1f);
+
+	private sealed record PsychLayer(
+		IReadOnlyList<PsychAxis> Axes,
+		string Archetype,
+		string Reflection,
+		string NextNudge,
+		string ScopeNote,
+		string OrbClass,
+		float OrbHue,
+		float OrbEnergy,
+		float OrbPulse,
+		string RadarPoints,
+		float Coherence,
+		string OrbCaption);
+
+	private sealed record PsychAxis(string Name, float Value);
+	private sealed record RadarPoint(float X, float Y);
+	private sealed record DailyArchetypeCard(string Title, string Description, string SessionId);
+	private sealed record DeltaStory(string Headline, string SupportingLine);
+	private sealed record MoodTimelineItem(string SessionId, bool IsCurrent, float Hue, float Alpha, string Tooltip);
+	private sealed record FutureSelfPreview(string Title, string LikelyPath, string ShiftPath);
+	private sealed record InnerDialogue(string Analyst, string Human, string Synthesis);
+	private sealed record LifeContextTag(string Label, float Hue);
+	private sealed record LifeContextTags(IReadOnlyList<LifeContextTag> Tags, string MoodNote);
+	private sealed record BlindSpotLens(string Label, string Observation, string Nudge);
+	private sealed record GentleCelebration(bool Show, string Glyph, string Title, string Body);
+	private sealed record JournalExportEntry(string[] Lines, string FullText);
+	private sealed record RecommendedAction(string Action, string Why);
+	private sealed record ThemePreset(string Key, string Label, string Hint);
+
 	private sealed class SessionGroup(string sessionId, List<SttpNodeDto> nodes)
 	{
 		public string SessionId { get; } = sessionId;
@@ -1142,12 +2023,18 @@
 	public async ValueTask DisposeAsync()
 	{
 		_dotNetRef?.Dispose();
-		if (_swipeModule is not null)
-			await _swipeModule.DisposeAsync();
-		if (_graphModule is not null)
+		try
 		{
-			await _graphModule.InvokeVoidAsync("destroySessionGraph", "sttp-graph");
-			await _graphModule.DisposeAsync();
+			if (_swipeModule is not null)
+				await _swipeModule.DisposeAsync();
+			if (_graphModule is not null)
+			{
+				await _graphModule.InvokeVoidAsync("destroySessionGraph", "sttp-graph");
+				await _graphModule.DisposeAsync();
+			}
+			if (_themeModule is not null)
+				await _themeModule.DisposeAsync();
 		}
+		catch (JSDisconnectedException) { }
 	}
 }
