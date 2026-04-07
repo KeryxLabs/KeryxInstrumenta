@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Alegreya:wght@500;700&family=Bodoni+Moda:opsz,wght@6..96,600;6..96,800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Mono:wght@400;500&family=Instrument+Sans:wght@400;500;700&family=JetBrains+Mono:wght@500&family=Playfair+Display:wght@500;700&family=Space+Grotesk:wght@500;700&display=swap');
+
 :root {
     --ink: #1a1814;
     --ink2: #3d3a34;
@@ -12,8 +14,50 @@
     --sans: "DM Sans", "Segoe UI", sans-serif;
 }
 
+:root.theme-noir-pulse {
+    --ink: #e7f8f4;
+    --ink2: #b3d5cf;
+    --muted: #7aa6a0;
+    --accent: #39d7b2;
+    --accent2: #8de7d2;
+    --bg: #0a1214;
+    --bg2: #111c1f;
+    --line: rgba(124, 201, 186, 0.24);
+    --serif: "Bodoni Moda", "Playfair Display", serif;
+    --mono: "JetBrains Mono", "DM Mono", monospace;
+    --sans: "Space Grotesk", "Instrument Sans", sans-serif;
+}
+
+:root.theme-canyon-fire {
+    --ink: #2d150e;
+    --ink2: #5e2f1f;
+    --muted: #8f6250;
+    --accent: #d2481e;
+    --accent2: #f1a24c;
+    --bg: #f7e6d3;
+    --bg2: #efd8bc;
+    --line: rgba(94, 47, 31, 0.2);
+    --serif: "Fraunces", "Alegreya", serif;
+    --mono: "IBM Plex Mono", "DM Mono", monospace;
+    --sans: "Alegreya", "Instrument Sans", sans-serif;
+}
+
+:root.theme-tidal-ink {
+    --ink: #e9f3f6;
+    --ink2: #b8cfd7;
+    --muted: #86a8b3;
+    --accent: #52a7c9;
+    --accent2: #82d0be;
+    --bg: #10222c;
+    --bg2: #17313d;
+    --line: rgba(130, 187, 204, 0.24);
+    --serif: "Fraunces", "Playfair Display", serif;
+    --mono: "IBM Plex Mono", "DM Mono", monospace;
+    --sans: "Instrument Sans", "Space Grotesk", sans-serif;
+}
+
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not(.theme-noir-pulse):not(.theme-canyon-fire):not(.theme-tidal-ink) {
         --ink: #f0ece4;
         --ink2: #c8c4bc;
         --muted: #888480;

@@ -281,6 +281,117 @@ textarea:focus {
     margin-bottom: 0.62rem;
 }
 
+.theme-drawer-wrap {
+    position: relative;
+    z-index: 210;
+    margin-left: auto;
+}
+
+.theme-label {
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    padding: 0 0.34rem;
+    opacity: 0.74;
+}
+
+.theme-drawer-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.36rem;
+    padding: 0.42rem 0.66rem;
+    border-radius: 10px;
+    opacity: 1;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+
+.theme-drawer-trigger:hover,
+.theme-drawer-trigger:focus-visible,
+.theme-drawer-trigger.open {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.theme-current {
+    font-family: var(--mono);
+    font-size: 0.64rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink2);
+}
+
+.theme-caret {
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    color: var(--muted);
+    line-height: 1;
+    transform: translateY(-1px);
+}
+
+.theme-drawer-trigger.open .theme-caret {
+    transform: rotate(180deg) translateY(1px);
+}
+
+.theme-drawer-panel {
+    position: absolute;
+    top: calc(100% + 0.35rem);
+    left: 0;
+    min-width: 12.8rem;
+    border: 1px solid color-mix(in srgb, var(--line) 86%, transparent);
+    border-radius: 12px;
+    padding: 0.32rem;
+    background: color-mix(in srgb, var(--bg) 88%, #fff);
+    box-shadow: 0 16px 32px rgba(15, 12, 9, 0.12);
+    display: grid;
+    gap: 0.22rem;
+}
+
+@media (max-width: 640px) {
+    .theme-drawer-panel {
+        left: auto;
+        right: 0;
+        min-width: min(12.8rem, calc(100vw - 1.6rem));
+    }
+}
+
+.theme-chip {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    padding: 0.28rem 0.42rem;
+    background: transparent;
+    color: var(--muted);
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    cursor: pointer;
+    opacity: 0.9;
+    text-align: left;
+    transition: background 0.18s, color 0.18s, opacity 0.18s;
+}
+
+.theme-chip.active {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 38%, transparent);
+    color: var(--ink);
+    opacity: 1;
+}
+
+.theme-chip:hover,
+.theme-chip:focus-visible {
+    opacity: 1;
+}
+
+.theme-drawer-backdrop {
+    position: fixed;
+    inset: 0;
+    border: 0;
+    background: transparent;
+    z-index: 200;
+}
+
 .deck-guide {
     font-family: var(--mono);
     font-size: 0.7rem;
@@ -312,6 +423,16 @@ textarea:focus {
 .mode-chip.active {
     background: color-mix(in srgb, var(--bg) 56%, #fff);
     color: var(--ink);
+}
+
+.focus-summary {
+    margin: 0.18rem 0 0;
+    max-width: 16rem;
+    text-align: right;
+    font-family: var(--mono);
+    font-size: 0.6rem;
+    line-height: 1.45;
+    color: var(--ink2);
 }
 
 .session-picker-backdrop {
@@ -2201,6 +2322,11 @@ textarea:focus {
 
     .snapshot-badges {
         justify-content: flex-start;
+    }
+
+    .focus-summary {
+        text-align: left;
+        max-width: none;
     }
 
     .rho-kappa span {

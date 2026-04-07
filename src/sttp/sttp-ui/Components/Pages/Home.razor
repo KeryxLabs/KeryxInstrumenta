@@ -92,7 +92,38 @@
 					<button class="mode-chip @(insightMode == "inspect" ? "active" : string.Empty)" @onclick="SetInspectMode">Inspect</button>
 				</div>
 				<span class="deck-guide">Swipe left or right to switch sessions.</span>
+				<div class="theme-drawer-wrap">
+					<button class="action action-muted theme-drawer-trigger @(themeDrawerOpen ? "open" : string.Empty)"
+						type="button"
+						aria-expanded="@themeDrawerOpen"
+						aria-label="Visual Resonance"
+						@onclick="ToggleThemeDrawer">
+						<span class="theme-label">Visual Resonance</span>
+						<span class="theme-current">@GetThemeLabel(selectedThemeKey)</span>
+						<span class="theme-caret">▾</span>
+					</button>
+
+					@if (themeDrawerOpen)
+					{
+						<div class="theme-drawer-panel" role="group" aria-label="Visual resonance themes">
+							@foreach (var theme in themePresets)
+							{
+								<button class="theme-chip @(selectedThemeKey == theme.Key ? "active" : string.Empty)"
+									type="button"
+									title="@theme.Hint"
+									@onclick="() => SelectThemeAsync(theme.Key)">
+									@theme.Label
+								</button>
+							}
+						</div>
+					}
+				</div>
 			</div>
+
+			@if (themeDrawerOpen)
+			{
+				<button class="theme-drawer-backdrop" type="button" aria-label="Close Visual Resonance picker" @onclick="CloseThemeDrawer"></button>
+			}
 
 			@if (sessions.Count == 0)
 			{
@@ -130,16 +161,27 @@
 									<div class="node-tags">
 										<span class="tag">@session.Nodes.Count nodes</span>
 										<span class="tag">@session.LastModified.ToLocalTime().ToString("MMM d, HH:mm")</span>
-										<span class="tag">selected layer: @node.Tier</span>
+										@if (IsInspectMode)
+										{
+											<span class="tag">moment type: @node.Tier</span>
+										}
 									</div>
 								</div>
 								<div class="node-aside">
-									<span class="psi-label">Health score</span>
-									<span class="psi-badge" title="Overall health score">@node.Psi.ToString("0.00")</span>
-									<div class="rho-kappa">
-										<span>Signal strength&nbsp;@node.Rho.ToString("0.00")</span>
-										<span>Consistency&nbsp;@node.Kappa.ToString("0.00")</span>
-									</div>
+									@if (IsInspectMode)
+									{
+										<span class="psi-label">Read score</span>
+										<span class="psi-badge" title="Overall read score">@node.Psi.ToString("0.00")</span>
+										<div class="rho-kappa">
+											<span>strength&nbsp;@node.Rho.ToString("0.00")</span>
+											<span>steadiness&nbsp;@node.Kappa.ToString("0.00")</span>
+										</div>
+									}
+									else
+									{
+										<span class="psi-label">This moment</span>
+										<p class="focus-summary">@contextTags.MoodNote</p>
+									}
 									<div class="snapshot-badges" aria-label="Session snapshot tags">
 										@foreach (var tag in contextTags.Tags.Take(3))
 										{
@@ -208,12 +250,12 @@
 							<div class="experience-flow">
 								<section class="experience-section moment-section">
 									<div class="snapshot-group">
-										<p class="insight-kicker">Main Shift</p>
+										<p class="insight-kicker">What Changed</p>
 										<p class="delta-line">@deltaStory.Headline</p>
 										<p class="delta-line delta-sub">@deltaStory.SupportingLine</p>
 									</div>
 									<div class="snapshot-group">
-										<p class="insight-kicker">Best Move Now</p>
+										<p class="insight-kicker">Next Small Move</p>
 										<p class="action-line">@recommendedAction.Action</p>
 										<p class="action-why">@recommendedAction.Why</p>
 									</div>
@@ -250,7 +292,7 @@
 									<summary>Context and alternatives</summary>
 									<div class="secondary-grid">
 										<section class="insight-card blindspot-card">
-											<p class="insight-kicker">Pressure Point</p>
+											<p class="insight-kicker">What To Watch</p>
 											<p class="blindspot-label">@blindSpot.Label</p>
 											<p class="blindspot-obs">@blindSpot.Observation</p>
 											<p class="blindspot-nudge">@blindSpot.Nudge</p>
@@ -271,7 +313,7 @@
 										</section>
 
 										<section class="insight-card preview-card">
-											<p class="insight-kicker">Future Shift</p>
+											<p class="insight-kicker">If This Keeps Going</p>
 											<p class="preview-title">@preview.Title</p>
 												<p class="preview-line">@preview.LikelyPath</p>
 											<p class="preview-line preview-shift">@preview.ShiftPath</p>
@@ -291,7 +333,7 @@
 										</section>
 
 										<section class="insight-card prompt-card">
-											<p class="insight-kicker">Prompt Pack</p>
+											<p class="insight-kicker">Questions To Sit With</p>
 											<div class="prompt-list">
 												@foreach (var prompt in prompts)
 												{
@@ -301,7 +343,7 @@
 										</section>
 
 										<section class="insight-card journal-card">
-											<p class="insight-kicker">Journal Entry</p>
+											<p class="insight-kicker">Journal Note</p>
 											<div class="journal-preview">
 												<p class="journal-line">@journalExport.Lines[0]</p>
 												<p class="journal-line journal-line-sub">@journalExport.Lines[1]</p>
@@ -317,14 +359,14 @@
 								var inspectSummary = Unwinder.Unwind(node);
 								<div class="inspect-flow">
 									<section class="inspect-card">
-										<p class="insight-kicker">Inspect View</p>
+										<p class="insight-kicker">Inspect</p>
 										<p class="inspect-title">@inspectSummary.Summary</p>
 										<p class="inspect-line">@inspectSummary.Interpretation</p>
 										<div class="inspect-metrics">
-											<span>score @node.Psi.ToString("0.00")</span>
-											<span>signal @node.Rho.ToString("0.00")</span>
-											<span>consistency @node.Kappa.ToString("0.00")</span>
-											<span>detail @node.CompressionDepth</span>
+											<span>read @node.Psi.ToString("0.00")</span>
+											<span>strength @node.Rho.ToString("0.00")</span>
+											<span>steadiness @node.Kappa.ToString("0.00")</span>
+											<span>depth @node.CompressionDepth</span>
 										</div>
 										<p class="inspect-next">▶ @inspectSummary.NextAction</p>
 										<div class="inspect-actions">
@@ -674,9 +716,19 @@
 	private bool graphShowMembership = true;
 	private bool graphShowNodeTimeline = true;
 	private bool graphShowLineage = true;
+	private bool themeDrawerOpen;
+	private string selectedThemeKey = "native";
+	private readonly List<ThemePreset> themePresets =
+	[
+		new ThemePreset("native", "Original", "Your original responsive palette and tone"),
+		new ThemePreset("noir-pulse", "Noir Pulse", "High-contrast analytical mode with electric accents"),
+		new ThemePreset("canyon-fire", "Canyon Fire", "Bold terracotta energy and tactile warmth"),
+		new ThemePreset("tidal-ink", "Tidal Ink", "Moody oceanic focus with crisp legibility")
+	];
 	private DotNetObjectReference<Home>? _dotNetRef;
 	private IJSObjectReference? _swipeModule;
 	private IJSObjectReference? _graphModule;
+	private IJSObjectReference? _themeModule;
 
 	protected override async Task OnInitializedAsync()
 	{
@@ -691,6 +743,16 @@
 			_dotNetRef = DotNetObjectReference.Create(this);
 			_swipeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./swipe.js");
 			_graphModule = await JS.InvokeAsync<IJSObjectReference>("import", "./graph.js");
+			_themeModule = await JS.InvokeAsync<IJSObjectReference>("import", "./theme.js");
+
+			if (_themeModule is not null)
+			{
+				var restoredTheme = await _themeModule.InvokeAsync<string?>("restoreTheme", selectedThemeKey);
+				if (!string.IsNullOrWhiteSpace(restoredTheme) && themePresets.Any(t => t.Key == restoredTheme))
+					selectedThemeKey = restoredTheme;
+
+				await _themeModule.InvokeVoidAsync("applyTheme", selectedThemeKey, false);
+			}
 		}
 		if (shouldAttachSwipe && sessions.Count > 0 && _swipeModule is not null && _dotNetRef is not null)
 		{
@@ -1203,6 +1265,28 @@
 		showReferences = false;
 	}
 
+	private void ToggleThemeDrawer()
+		=> themeDrawerOpen = !themeDrawerOpen;
+
+	private void CloseThemeDrawer()
+		=> themeDrawerOpen = false;
+
+	private async Task SelectThemeAsync(string themeKey)
+	{
+		if (_themeModule is null)
+			return;
+
+		if (!themePresets.Any(t => t.Key == themeKey))
+			return;
+
+		selectedThemeKey = themeKey;
+		themeDrawerOpen = false;
+		await _themeModule.InvokeVoidAsync("applyTheme", themeKey, true);
+	}
+
+	private string GetThemeLabel(string themeKey)
+		=> themePresets.FirstOrDefault(t => t.Key == themeKey)?.Label ?? "Original";
+
 	private async Task OpenSessionPickerAsync()
 	{
 		sessionPickerOpen = true;
@@ -1398,13 +1482,13 @@
 		var leadAxis = HighestAxis(axes);
 		var quietAxis = LowestAxis(axes);
 		var archetype = ResolveArchetype(curiosity, discipline, socialEnergy, flexibility, stressLoad);
-		var reflection = $"Right now this session leans on {leadAxis.ToLowerInvariant()} while {quietAxis.ToLowerInvariant()} stays quieter.";
+		var reflection = $"Right now, {leadAxis.ToLowerInvariant()} is doing more of the work while {quietAxis.ToLowerInvariant()} is taking a back seat.";
 		var nextNudge = stressLoad >= 0.68f
-			? "Nudge: lower load first, then lock one small move you can finish quickly."
+			? "Make things lighter first, then choose one small thing you can actually finish."
 			: coherence >= 0.66f
-				? "Nudge: convert this stable shape into one concrete next action before context shifts."
-				: "Nudge: lift the quietest axis with a tiny, low-friction step.";
-		var scopeNote = "Session-state snapshot only. This is momentum context, not identity.";
+				? "Use this steadier moment to lock in one real next step before it slips away."
+				: "Help the quieter part of this moment with one tiny, easy step.";
+		var scopeNote = "This is a read of this moment, not a definition of who you are.";
 
 		var orbClass = stressLoad >= 0.68f
 			? "orb-alert"
@@ -1417,7 +1501,7 @@
 		var hue = Math.Clamp(18f + curiosity * 54f + socialEnergy * 22f - stressLoad * 16f, 12f, 122f);
 		var energy = Clamp01((curiosity + socialEnergy + flexibility) / 3f);
 		var pulse = Math.Clamp(0.35f + stressLoad * 0.9f, 0.35f, 1.2f);
-		var orbCaption = $"Coherence {coherence:0.00} · {archetype}";
+		var orbCaption = $"{archetype} · {ToPercent(coherence)}% aligned";
 
 		return new PsychLayer(
 			axes,
@@ -1502,10 +1586,10 @@
 		var title = psych.Archetype;
 		var description = psych.OrbClass switch
 		{
-			"orb-alert" => "You are carrying more load than usual. Protect your energy and simplify your next move.",
-			"orb-focused" => "You are in execution mode. Great moment to commit one meaningful action.",
-			"orb-connective" => "Your state is open and adaptive. Great time for conversation and collaborative progress.",
-			_ => "Your state is balanced. Keep momentum with one clear, low-friction step."
+			"orb-alert" => "This feels heavier than usual. Make the next step easier on yourself.",
+			"orb-focused" => "This is a good moment to finish something that matters.",
+			"orb-connective" => "This moment is open and collaborative. Reaching out could help.",
+			_ => "This moment feels steady. Keep it moving with one simple next step."
 		};
 
 		return new DailyArchetypeCard(title, description, session.SessionId);
@@ -1515,8 +1599,8 @@
 	{
 		if (session.Nodes.Count < 2 || currentNodeIdx >= session.Nodes.Count - 1)
 			return new DeltaStory(
-				"This is your freshest snapshot.",
-				"Add one more session moment to unlock change tracking.");
+				"This is the newest moment in this session.",
+				"Add another moment later and this space will show what shifted.");
 
 		var current = ResolveState(session.Nodes[currentNodeIdx]);
 		var previous = ResolveState(session.Nodes[currentNodeIdx + 1]);
@@ -1538,14 +1622,14 @@
 		var headline = upText is not null && downText is not null
 			? $"{upText}, while {downText}."
 			: upText is not null
-				? $"Main shift: {upText}."
+				? upText + "."
 				: downText is not null
-					? $"Main shift: {downText}."
-					: "Your state is mostly stable across the last two moments.";
+					? downText + "."
+					: "Not much moved between these last two moments.";
 
 		var supporting = upText is not null || downText is not null
-			? "Use this as direction, not judgment: this is momentum, not identity."
-			: "Small movements are normal. Keep tracking and patterns will emerge.";
+			? "Treat this as direction, not a verdict on you."
+			: "Small changes are normal. Patterns get clearer over time.";
 
 		return new DeltaStory(headline, supporting);
 	}
@@ -1582,7 +1666,7 @@
 				idx == currentIdx,
 				psych.OrbHue,
 				Math.Clamp(0.42f + psych.OrbEnergy * 0.5f, 0.38f, 0.94f),
-				$"{g.SessionId} · {psych.Archetype} · score {g.LatestNode.Psi:0.00}");
+				$"{g.SessionId} · {psych.Archetype}");
 		}).ToList();
 	}
 
@@ -1593,25 +1677,25 @@
 	{
 		var title = psych.OrbClass switch
 		{
-			"orb-alert" => "If this pace continues",
-			"orb-focused" => "If this focus continues",
-			"orb-connective" => "If this openness continues",
-			_ => "If this balance continues"
+			"orb-alert" => "If today keeps feeling this heavy",
+			"orb-focused" => "If this focus keeps holding",
+			"orb-connective" => "If this openness keeps holding",
+			_ => "If this steadiness keeps holding"
 		};
 
 		var likelyPath = psych.OrbClass switch
 		{
-			"orb-alert" => "You may feel mentally crowded and decision quality could drop by later sessions.",
-			"orb-focused" => "You will likely produce clear output quickly, with strong follow-through.",
-			"orb-connective" => "You may unlock progress through people and fresh perspectives.",
-			_ => "You may sustain steady progress with lower emotional volatility."
+			"orb-alert" => "The day may start to feel crowded, and choices may get harder.",
+			"orb-focused" => "You are likely to get something meaningful across the line.",
+			"orb-connective" => "Talking it through may unlock momentum faster than pushing alone.",
+			_ => "You are likely to keep moving with less friction than usual."
 		};
 
 		var shiftPath = psych.OrbClass == "orb-alert"
-			? "Small shift: remove one obligation and protect 20 minutes for recovery before the next push."
+			? "One small shift: remove one obligation and protect a short pocket of recovery."
 			: delta.Headline.Contains("dropped", StringComparison.OrdinalIgnoreCase)
-				? "Small shift: restore the dropped axis with one tiny, concrete action in the next hour."
-				: "Small shift: lock a single next step now so this state turns into compounding momentum.";
+				? "One small shift: support what dipped with one tiny, concrete action."
+				: "One small shift: decide the next step now while this moment is still with you.";
 
 		return new FutureSelfPreview(title, likelyPath, shiftPath);
 	}
@@ -1620,10 +1704,10 @@
 	{
 		var analyst = psych.OrbClass switch
 		{
-			"orb-alert" => "Signal says load is high; reduce friction before adding complexity.",
-			"orb-focused" => "Signal says execution window is open; prioritize one high-impact task.",
-			"orb-connective" => "Signal says collaboration leverage is available; involve someone early.",
-			_ => "Signal says system is stable; keep cadence and avoid unnecessary context switching."
+			"orb-alert" => "This looks like a heavy moment. Make it simpler before you ask more from yourself.",
+			"orb-focused" => "This looks like a good window for finishing one important thing.",
+			"orb-connective" => "This looks like a moment where another person could help unlock progress.",
+			_ => "This looks steady. Keep your rhythm and do not overcomplicate it."
 		};
 
 		var human = psych.OrbClass switch
@@ -1635,8 +1719,8 @@
 		};
 
 		var synthesis = delta.Headline.Contains("stable", StringComparison.OrdinalIgnoreCase)
-			? "Synthesis: keep this state by choosing one visible win and ending on purpose."
-			: "Synthesis: honor both signal and emotion by taking one action that is useful and humane.";
+			? "Together: protect this steadiness by choosing one visible win and stopping on purpose."
+			: "Together: choose one action that feels both useful and kind to yourself.";
 
 		return new InnerDialogue(analyst, human, synthesis);
 	}
@@ -1723,30 +1807,30 @@
 			return new BlindSpotLens(
 				"Coherence Balance",
 				"Your state is unusually aligned — which makes it easy to drift without noticing.",
-				"Nudge: name one priority so this balance turns into compounding momentum, not comfortable inertia.");
+				"Name one priority so this steady moment turns into progress, not drift.");
 
 		return strongest.Item1 switch
 		{
 			"curiosity" => new BlindSpotLens(
 				"Curiosity Gap",
 				"You may be solving the known problem instead of questioning whether it is the right one.",
-				"Nudge: ask one question you have not asked yet about this situation."),
+				"Ask one question you have not asked yet about this situation."),
 			"discipline" => new BlindSpotLens(
 				"Commitment Gap",
 				"You may be circling without committing. One locked action beats ten open loops.",
-				"Nudge: name one specific deliverable with a finish line you can hold yourself to."),
+				"Name one specific thing you can finish and hold yourself to."),
 			"social energy" => new BlindSpotLens(
 				"Connection Gap",
 				"You may be going it alone when a conversation would accelerate the work.",
-				"Nudge: share one update or ask one question with someone who would benefit or help."),
+				"Share one update or ask one question that could help move this forward."),
 			"flexibility" => new BlindSpotLens(
 				"Flexibility Gap",
 				"You may be attached to a path that has already shifted beneath you.",
-				"Nudge: identify one assumption you have been protecting and test it quickly."),
+				"Name one assumption you may be protecting and test it quickly."),
 			_ => new BlindSpotLens(
 				"Stress Buildup",
-				"Carrying more than you are registering. The signal is quiet, but the weight is real.",
-				"Nudge: before adding more, finish or drop one thing from your current active list.")
+				"You may be carrying more than you are fully noticing.",
+				"Before you add more, finish or drop one thing from your list.")
 		};
 	}
 
@@ -1804,12 +1888,12 @@
 		BlindSpotLens blindSpot)
 	{
 		var dateLine = $"{focusNode.Timestamp:yyyy-MM-dd} · {session.SessionId}";
-		var stateLine = $"State: {psych.Archetype} · Coherence {psych.Coherence:0.00} · Score {focusNode.Psi:0.00}";
+		var stateLine = $"Moment: {psych.Archetype}";
 		var contextLine = contextTags.Tags.Count > 0
-			? $"Context: {string.Join(", ", contextTags.Tags.Select(t => t.Label))}"
-			: "Context: Steady State";
-		var deltaLine = $"Shift: {delta.Headline}";
-		var blindSpotLine = $"Watch: {blindSpot.Label} — {blindSpot.Nudge}";
+			? $"What stands out: {string.Join(", ", contextTags.Tags.Select(t => t.Label))}"
+			: "What stands out: Steady State";
+		var deltaLine = $"What changed: {delta.Headline}";
+		var blindSpotLine = $"What to watch: {blindSpot.Label} — {blindSpot.Nudge}";
 		var descLine = archetype.Description;
 
 		var lines = new[] { dateLine, stateLine, contextLine };
@@ -1827,19 +1911,19 @@
 	{
 		var action = psych.OrbClass switch
 		{
-			"orb-alert" => "Reduce load now: drop, defer, or delegate one active obligation.",
-			"orb-focused" => "Use this execution window: complete one concrete outcome end-to-end.",
-			"orb-connective" => "Send one high-context message to unlock collaboration momentum.",
-			_ => "Protect continuity: define one visible next step with a clear finish line."
+			"orb-alert" => "Make the day lighter: drop, delay, or hand off one thing.",
+			"orb-focused" => "Pick one meaningful thing and finish it end to end.",
+			"orb-connective" => "Send one clear message that helps this move forward.",
+			_ => "Choose one visible next step and give it a clear finish line."
 		};
 
-		var why = $"{blindSpot.Label} is currently the highest leverage area. " +
+		var why = $"This matters most right now because {blindSpot.Label.ToLowerInvariant()} is where the most movement is available. " +
 			(delta.Headline.Contains("stable", StringComparison.OrdinalIgnoreCase)
-				? "This keeps momentum from becoming drift."
-				: "This converts the current shift into useful progress.");
+				? "It helps this moment turn into progress instead of drift."
+				: "It helps turn this shift into something useful.");
 
 		if (contextTags.Tags.Any(t => t.Label == "Recovery Mode"))
-			why = "Recovery Mode is active. Prioritize reducing pressure before adding complexity.";
+			why = "This feels like a recovery moment. Make it lighter before you make it bigger.";
 
 		return new RecommendedAction(action, why);
 	}
@@ -1908,6 +1992,7 @@
 	private sealed record GentleCelebration(bool Show, string Glyph, string Title, string Body);
 	private sealed record JournalExportEntry(string[] Lines, string FullText);
 	private sealed record RecommendedAction(string Action, string Why);
+	private sealed record ThemePreset(string Key, string Label, string Hint);
 
 	private sealed class SessionGroup(string sessionId, List<SttpNodeDto> nodes)
 	{
@@ -1947,6 +2032,8 @@
 				await _graphModule.InvokeVoidAsync("destroySessionGraph", "sttp-graph");
 				await _graphModule.DisposeAsync();
 			}
+			if (_themeModule is not null)
+				await _themeModule.DisposeAsync();
 		}
 		catch (JSDisconnectedException) { }
 	}
