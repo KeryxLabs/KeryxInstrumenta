@@ -82,8 +82,15 @@
 
 			<div class="deck-quick-actions">
 				<button class="action action-muted" @onclick="OpenSessionPickerAsync" disabled="@isWorking">Browse sessions</button>
-				<button class="action action-muted" @onclick="ToggleReferences" disabled="@(sessions.Count == 0)">@(showReferences ? "Hide moment list" : "Show moment list")</button>
-				<button class="action action-muted" @onclick="ToggleDetail" disabled="@(sessions.Count == 0)">@(showDetail ? "Hide details" : "Show details")</button>
+				@if (IsInspectMode)
+				{
+					<button class="action action-muted" @onclick="ToggleReferences" disabled="@(sessions.Count == 0)">@(showReferences ? "Hide moment list" : "Show moment list")</button>
+					<button class="action action-muted" @onclick="ToggleDetail" disabled="@(sessions.Count == 0)">@(showDetail ? "Hide diagnostics" : "Show diagnostics")</button>
+				}
+				<div class="experience-mode-switch" role="group" aria-label="Experience mode">
+					<button class="mode-chip @(IsFocusMode ? "active" : string.Empty)" @onclick="SetFocusMode">Focus</button>
+					<button class="mode-chip @(insightMode == "inspect" ? "active" : string.Empty)" @onclick="SetInspectMode">Inspect</button>
+				</div>
 				<span class="deck-guide">Swipe left or right to switch sessions.</span>
 			</div>
 
@@ -97,8 +104,18 @@
 			{
 				var session = sessions[currentSessionIndex];
 				var node = session.Nodes[currentSessionNodeIndex];
-				var latestNode = session.LatestNode;
-				var psych = BuildPsychLayer(latestNode);
+				var psych = BuildPsychLayer(node);
+				var archetypeCard = BuildDailyArchetypeCard(session, psych);
+				var deltaStory = BuildDeltaStory(session, currentSessionNodeIndex);
+				var prompts = BuildAdaptivePrompts(psych, deltaStory);
+				var timelineItems = BuildMoodTimeline(sessions, currentSessionIndex);
+				var preview = BuildFutureSelfPreview(psych, deltaStory);
+				var dialogue = BuildInnerDialogue(psych, deltaStory);
+				var contextTags = BuildLifeContextTags(psych);
+				var blindSpot = BuildBlindSpotLens(psych);
+				var celebration = BuildGentleCelebration(session, psych, deltaStory);
+				var recommendedAction = BuildRecommendedAction(psych, deltaStory, blindSpot, contextTags);
+				var journalExport = BuildJournalExport(session, node, psych, archetypeCard, deltaStory, contextTags, blindSpot);
 				<div class="deck-stage">
 					<div id="sttp-card" class="node-card @slideClass" @key="nodeKey">
 						<div class="hint hint-left">← older</div>
@@ -113,15 +130,21 @@
 									<div class="node-tags">
 										<span class="tag">@session.Nodes.Count nodes</span>
 										<span class="tag">@session.LastModified.ToLocalTime().ToString("MMM d, HH:mm")</span>
-										<span class="tag">latest layer: @latestNode.Tier</span>
+										<span class="tag">selected layer: @node.Tier</span>
 									</div>
 								</div>
 								<div class="node-aside">
 									<span class="psi-label">Health score</span>
-									<span class="psi-badge" title="Overall health score">@latestNode.Psi.ToString("0.00")</span>
+									<span class="psi-badge" title="Overall health score">@node.Psi.ToString("0.00")</span>
 									<div class="rho-kappa">
-										<span>Signal strength&nbsp;@latestNode.Rho.ToString("0.00")</span>
-										<span>Consistency&nbsp;@latestNode.Kappa.ToString("0.00")</span>
+										<span>Signal strength&nbsp;@node.Rho.ToString("0.00")</span>
+										<span>Consistency&nbsp;@node.Kappa.ToString("0.00")</span>
+									</div>
+									<div class="snapshot-badges" aria-label="Session snapshot tags">
+										@foreach (var tag in contextTags.Tags.Take(3))
+										{
+											<span class="snapshot-badge" style="@GetContextTagStyle(tag)">@tag.Label</span>
+										}
 									</div>
 								</div>
 							</div>
@@ -173,15 +196,148 @@
 
 								<div class="session-reflection">
 									<p class="reflection-archetype">@psych.Archetype</p>
+									<p class="reflection-archetype-note">@archetypeCard.Description</p>
 									<p class="reflection-text">@psych.Reflection</p>
 									<p class="reflection-next">@psych.NextNudge</p>
 									<p class="reflection-scope">@psych.ScopeNote</p>
 								</div>
 							</div>
+
+							@if (IsFocusMode)
+							{
+							<div class="experience-flow">
+								<section class="experience-section moment-section">
+									<div class="snapshot-group">
+										<p class="insight-kicker">Main Shift</p>
+										<p class="delta-line">@deltaStory.Headline</p>
+										<p class="delta-line delta-sub">@deltaStory.SupportingLine</p>
+									</div>
+									<div class="snapshot-group">
+										<p class="insight-kicker">Best Move Now</p>
+										<p class="action-line">@recommendedAction.Action</p>
+										<p class="action-why">@recommendedAction.Why</p>
+									</div>
+									@if (celebration.Show)
+									{
+										<div class="snapshot-group celebration-inline">
+											<span class="celebration-glyph">@celebration.Glyph</span>
+											<div>
+												<p class="celebration-title">@celebration.Title</p>
+												<p class="celebration-body">@celebration.Body</p>
+											</div>
+										</div>
+									}
+									<div class="snapshot-actions">
+										<p class="snapshot-meta">Journal entry ready from this selected moment.</p>
+										<button class="journal-copy-btn @(journalCopied ? "journal-copy-success" : string.Empty)"
+											@onclick="async () => await CopyJournalAsync(journalExport.FullText)"
+											title="Copy journal entry to clipboard">
+											@if (journalCopied)
+											{
+												<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+												<span>copied</span>
+											}
+											else
+											{
+												<svg xmlns="http://www.w3.org/2000/svg" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+												<span>copy entry</span>
+											}
+										</button>
+									</div>
+								</section>
+
+								<details class="secondary-drawer">
+									<summary>Context and alternatives</summary>
+									<div class="secondary-grid">
+										<section class="insight-card blindspot-card">
+											<p class="insight-kicker">Pressure Point</p>
+											<p class="blindspot-label">@blindSpot.Label</p>
+											<p class="blindspot-obs">@blindSpot.Observation</p>
+											<p class="blindspot-nudge">@blindSpot.Nudge</p>
+										</section>
+
+										<section class="insight-card river-card">
+											<p class="insight-kicker">Mood Timeline</p>
+											<div class="mood-river" role="list" aria-label="Recent mood timeline">
+												@foreach (var item in timelineItems)
+												{
+													<button class="mood-dot @(item.IsCurrent ? "mood-dot-current" : string.Empty)"
+														style="@GetMoodDotStyle(item)"
+														title="@item.Tooltip"
+														@onclick="() => JumpToSession(item.SessionId)"></button>
+												}
+											</div>
+												<p class="river-caption">Tap any point to open that session.</p>
+										</section>
+
+										<section class="insight-card preview-card">
+											<p class="insight-kicker">Future Shift</p>
+											<p class="preview-title">@preview.Title</p>
+												<p class="preview-line">@preview.LikelyPath</p>
+											<p class="preview-line preview-shift">@preview.ShiftPath</p>
+										</section>
+
+										<section class="insight-card dialogue-card">
+											<p class="insight-kicker">Inner Dialogue</p>
+											<div class="dialogue-bubble analyst">
+												<span class="dialogue-role">Analyst</span>
+												<p>@dialogue.Analyst</p>
+											</div>
+											<div class="dialogue-bubble human">
+												<span class="dialogue-role">Human</span>
+												<p>@dialogue.Human</p>
+											</div>
+											<p class="dialogue-synthesis">@dialogue.Synthesis</p>
+										</section>
+
+										<section class="insight-card prompt-card">
+											<p class="insight-kicker">Prompt Pack</p>
+											<div class="prompt-list">
+												@foreach (var prompt in prompts)
+												{
+													<p class="prompt-item">@prompt</p>
+												}
+											</div>
+										</section>
+
+										<section class="insight-card journal-card">
+											<p class="insight-kicker">Journal Entry</p>
+											<div class="journal-preview">
+												<p class="journal-line">@journalExport.Lines[0]</p>
+												<p class="journal-line journal-line-sub">@journalExport.Lines[1]</p>
+												<p class="journal-line journal-line-sub">@journalExport.Lines[2]</p>
+											</div>
+										</section>
+									</div>
+								</details>
+							</div>
+							}
+							else
+							{
+								var inspectSummary = Unwinder.Unwind(node);
+								<div class="inspect-flow">
+									<section class="inspect-card">
+										<p class="insight-kicker">Inspect View</p>
+										<p class="inspect-title">@inspectSummary.Summary</p>
+										<p class="inspect-line">@inspectSummary.Interpretation</p>
+										<div class="inspect-metrics">
+											<span>score @node.Psi.ToString("0.00")</span>
+											<span>signal @node.Rho.ToString("0.00")</span>
+											<span>consistency @node.Kappa.ToString("0.00")</span>
+											<span>detail @node.CompressionDepth</span>
+										</div>
+										<p class="inspect-next">▶ @inspectSummary.NextAction</p>
+										<div class="inspect-actions">
+											<button class="action action-muted" @onclick="ToggleDetail">@(showDetail ? "Hide diagnostics" : "Open diagnostics")</button>
+											<button class="action action-muted" @onclick="ToggleReferences">@(showReferences ? "Hide moment list" : "Show moment list")</button>
+										</div>
+									</section>
+								</div>
+							}
 						</div>
 					</div>
 
-					@if (showReferences)
+					@if (IsInspectMode && showReferences)
 					{
 						<div class="ref-panel">
 							<div class="ref-header">
@@ -200,7 +356,7 @@
 						</div>
 					}
 
-					@if (showDetail)
+					@if (IsInspectMode && showDetail)
 					{
 						<div class="detail-panel">
 							<div class="detail-head">
@@ -489,12 +645,16 @@
 	private bool showReferences;
 	private bool showDetail;
 	private bool showTechDetails;
+	private string insightMode = "focus";
 
 	// AI summary
 	private bool showAiSummary;
 	private bool isLoadingAiSummary;
 	private string? aiSummaryError;
 	private readonly Dictionary<string, AiSummary> _aiSummaryCache = [];
+
+	// Journal export
+	private bool journalCopied;
 
 	private string slideClass = string.Empty;
 	private string nodeKey = string.Empty;
@@ -553,7 +713,7 @@
 			currentSessionNodeIndex = 0;
 			slideClass = "from-right";
 			showReferences = false;
-			showDetail = false;
+			showDetail = IsInspectMode;
 			showAiSummary = false;
 			aiSummaryError = null;
 			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -571,7 +731,7 @@
 			currentSessionNodeIndex = 0;
 			slideClass = "from-left";
 			showReferences = false;
-			showDetail = false;
+			showDetail = IsInspectMode;
 			showAiSummary = false;
 			aiSummaryError = null;
 			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -583,6 +743,8 @@
 	[JSInvokable]
 	public async Task OnSwipeUp()
 	{
+		if (!IsInspectMode)
+			return;
 		showReferences = !showReferences;
 		if (showReferences) showDetail = false;
 		await InvokeAsync(StateHasChanged);
@@ -591,6 +753,8 @@
 	[JSInvokable]
 	public async Task OnSwipeDown()
 	{
+		if (!IsInspectMode)
+			return;
 		showDetail = !showDetail;
 		if (showDetail) showReferences = false;
 		await InvokeAsync(StateHasChanged);
@@ -603,7 +767,7 @@
 		currentSessionNodeIndex = 0;
 		slideClass = "from-right";
 		showReferences = false;
-		showDetail = false;
+		showDetail = IsInspectMode;
 		showAiSummary = false;
 		aiSummaryError = null;
 		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -617,7 +781,7 @@
 		currentSessionNodeIndex = 0;
 		slideClass = "from-left";
 		showReferences = false;
-		showDetail = false;
+		showDetail = IsInspectMode;
 		showAiSummary = false;
 		aiSummaryError = null;
 		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -626,6 +790,8 @@
 
 	private void ToggleReferences()
 	{
+		if (!IsInspectMode)
+			return;
 		showReferences = !showReferences;
 		if (showReferences)
 			showDetail = false;
@@ -633,6 +799,8 @@
 
 	private void ToggleDetail()
 	{
+		if (!IsInspectMode)
+			return;
 		showDetail = !showDetail;
 		if (showDetail)
 			showReferences = false;
@@ -646,7 +814,7 @@
 		currentSessionNodeIndex = idx;
 		showAiSummary = false;
 		aiSummaryError = null;
-		showDetail = true;
+		showDetail = IsInspectMode;
 		if (hideReferences)
 			showReferences = false;
 	}
@@ -758,7 +926,7 @@
 			currentSessionIndex = 0;
 			currentSessionNodeIndex = 0;
 			showReferences = false;
-			showDetail = false;
+			showDetail = IsInspectMode;
 			showAiSummary = false;
 			aiSummaryError = null;
 			nodeKey = sessions.Count > 0 ? GetSessionKey(sessions[0]) : string.Empty;
@@ -815,7 +983,7 @@
 		currentSessionNodeIndex = Math.Clamp(nodeIndex, 0, Math.Max(0, maxIdx));
 		slideClass = "from-left";
 		showReferences = false;
-		showDetail = true;
+		showDetail = IsInspectMode;
 		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
 		shouldAttachSwipe = true;
 		activeView = "nodes";
@@ -1016,6 +1184,25 @@
 
 	private void SetView(string view) => activeView = view;
 	private void SetNodesView() => activeView = "nodes";
+	private bool IsFocusMode => insightMode == "focus";
+	private bool IsInspectMode => insightMode == "inspect";
+
+	private void SetFocusMode()
+	{
+		insightMode = "focus";
+		showDetail = false;
+		showReferences = false;
+		showAiSummary = false;
+		aiSummaryError = null;
+	}
+
+	private void SetInspectMode()
+	{
+		insightMode = "inspect";
+		showDetail = true;
+		showReferences = false;
+	}
+
 	private async Task OpenSessionPickerAsync()
 	{
 		sessionPickerOpen = true;
@@ -1054,7 +1241,7 @@
 			currentSessionNodeIndex = 0;
 			slideClass = "from-left";
 			showReferences = false;
-			showDetail = false;
+			showDetail = IsInspectMode;
 			showAiSummary = false;
 			aiSummaryError = null;
 			nodeKey = GetSessionKey(sessions[currentSessionIndex]);
@@ -1310,6 +1497,378 @@
 	private static int ToPercent(float value)
 		=> (int)MathF.Round(Clamp01(value) * 100f);
 
+	private static DailyArchetypeCard BuildDailyArchetypeCard(SessionGroup session, PsychLayer psych)
+	{
+		var title = psych.Archetype;
+		var description = psych.OrbClass switch
+		{
+			"orb-alert" => "You are carrying more load than usual. Protect your energy and simplify your next move.",
+			"orb-focused" => "You are in execution mode. Great moment to commit one meaningful action.",
+			"orb-connective" => "Your state is open and adaptive. Great time for conversation and collaborative progress.",
+			_ => "Your state is balanced. Keep momentum with one clear, low-friction step."
+		};
+
+		return new DailyArchetypeCard(title, description, session.SessionId);
+	}
+
+	private static DeltaStory BuildDeltaStory(SessionGroup session, int currentNodeIdx)
+	{
+		if (session.Nodes.Count < 2 || currentNodeIdx >= session.Nodes.Count - 1)
+			return new DeltaStory(
+				"This is your freshest snapshot.",
+				"Add one more session moment to unlock change tracking.");
+
+		var current = ResolveState(session.Nodes[currentNodeIdx]);
+		var previous = ResolveState(session.Nodes[currentNodeIdx + 1]);
+
+		var deltas = new List<(string Name, float Value)>
+		{
+			("curiosity", (current.Logic * 0.58f + current.Autonomy * 0.42f) - (previous.Logic * 0.58f + previous.Autonomy * 0.42f)),
+			("discipline", (current.Stability * 0.64f + (1f - current.Friction) * 0.36f) - (previous.Stability * 0.64f + (1f - previous.Friction) * 0.36f)),
+			("social energy", (current.Autonomy * 0.56f + (1f - current.Friction) * 0.44f) - (previous.Autonomy * 0.56f + (1f - previous.Friction) * 0.44f)),
+			("flexibility", ((1f - current.Stability) * 0.34f + current.Logic * 0.36f + current.Autonomy * 0.30f) - ((1f - previous.Stability) * 0.34f + previous.Logic * 0.36f + previous.Autonomy * 0.30f)),
+			("stress load", (current.Friction * 0.74f + (1f - current.Stability) * 0.26f) - (previous.Friction * 0.74f + (1f - previous.Stability) * 0.26f))
+		};
+
+		var strongestUp = deltas.OrderByDescending(d => d.Value).First();
+		var strongestDown = deltas.OrderBy(d => d.Value).First();
+		var upText = strongestUp.Value > 0.02f ? $"{strongestUp.Name} rose {ToPercent(Math.Abs(strongestUp.Value))}%" : null;
+		var downText = strongestDown.Value < -0.02f ? $"{strongestDown.Name} dropped {ToPercent(Math.Abs(strongestDown.Value))}%" : null;
+
+		var headline = upText is not null && downText is not null
+			? $"{upText}, while {downText}."
+			: upText is not null
+				? $"Main shift: {upText}."
+				: downText is not null
+					? $"Main shift: {downText}."
+					: "Your state is mostly stable across the last two moments.";
+
+		var supporting = upText is not null || downText is not null
+			? "Use this as direction, not judgment: this is momentum, not identity."
+			: "Small movements are normal. Keep tracking and patterns will emerge.";
+
+		return new DeltaStory(headline, supporting);
+	}
+
+	private static IReadOnlyList<string> BuildAdaptivePrompts(PsychLayer psych, DeltaStory delta)
+	{
+		var prompts = new List<string>(3);
+
+		if (psych.OrbClass == "orb-alert")
+			prompts.Add("What can I safely remove from my plate in the next 10 minutes?");
+		else if (psych.OrbClass == "orb-focused")
+			prompts.Add("What single commitment will convert this focus into visible progress?");
+		else if (psych.OrbClass == "orb-connective")
+			prompts.Add("Who could make this easier if I reached out right now?");
+		else
+			prompts.Add("What one tiny step would keep this balanced state alive?");
+
+		prompts.Add(delta.Headline.Contains("rose", StringComparison.OrdinalIgnoreCase)
+			? "How can I channel this rising energy without overloading myself?"
+			: "What support would help me lift the quieter part of my state?");
+
+		prompts.Add("If tomorrow felt 15% better, what would I do differently first?");
+
+		return prompts;
+	}
+
+	private static IReadOnlyList<MoodTimelineItem> BuildMoodTimeline(IReadOnlyList<SessionGroup> groups, int currentIdx)
+	{
+		return groups.Take(12).Select((g, idx) =>
+		{
+			var psych = BuildPsychLayer(g.LatestNode);
+			return new MoodTimelineItem(
+				g.SessionId,
+				idx == currentIdx,
+				psych.OrbHue,
+				Math.Clamp(0.42f + psych.OrbEnergy * 0.5f, 0.38f, 0.94f),
+				$"{g.SessionId} · {psych.Archetype} · score {g.LatestNode.Psi:0.00}");
+		}).ToList();
+	}
+
+	private static string GetMoodDotStyle(MoodTimelineItem item)
+		=> string.Create(CultureInfo.InvariantCulture, $"--mood-hue:{item.Hue:0}; --mood-alpha:{item.Alpha:0.00};");
+
+	private static FutureSelfPreview BuildFutureSelfPreview(PsychLayer psych, DeltaStory delta)
+	{
+		var title = psych.OrbClass switch
+		{
+			"orb-alert" => "If this pace continues",
+			"orb-focused" => "If this focus continues",
+			"orb-connective" => "If this openness continues",
+			_ => "If this balance continues"
+		};
+
+		var likelyPath = psych.OrbClass switch
+		{
+			"orb-alert" => "You may feel mentally crowded and decision quality could drop by later sessions.",
+			"orb-focused" => "You will likely produce clear output quickly, with strong follow-through.",
+			"orb-connective" => "You may unlock progress through people and fresh perspectives.",
+			_ => "You may sustain steady progress with lower emotional volatility."
+		};
+
+		var shiftPath = psych.OrbClass == "orb-alert"
+			? "Small shift: remove one obligation and protect 20 minutes for recovery before the next push."
+			: delta.Headline.Contains("dropped", StringComparison.OrdinalIgnoreCase)
+				? "Small shift: restore the dropped axis with one tiny, concrete action in the next hour."
+				: "Small shift: lock a single next step now so this state turns into compounding momentum.";
+
+		return new FutureSelfPreview(title, likelyPath, shiftPath);
+	}
+
+	private static InnerDialogue BuildInnerDialogue(PsychLayer psych, DeltaStory delta)
+	{
+		var analyst = psych.OrbClass switch
+		{
+			"orb-alert" => "Signal says load is high; reduce friction before adding complexity.",
+			"orb-focused" => "Signal says execution window is open; prioritize one high-impact task.",
+			"orb-connective" => "Signal says collaboration leverage is available; involve someone early.",
+			_ => "Signal says system is stable; keep cadence and avoid unnecessary context switching."
+		};
+
+		var human = psych.OrbClass switch
+		{
+			"orb-alert" => "I want relief and permission to make this simpler.",
+			"orb-focused" => "I want to finish something meaningful and feel proud of it.",
+			"orb-connective" => "I want support and momentum that does not feel lonely.",
+			_ => "I want progress that feels calm, not chaotic."
+		};
+
+		var synthesis = delta.Headline.Contains("stable", StringComparison.OrdinalIgnoreCase)
+			? "Synthesis: keep this state by choosing one visible win and ending on purpose."
+			: "Synthesis: honor both signal and emotion by taking one action that is useful and humane.";
+
+		return new InnerDialogue(analyst, human, synthesis);
+	}
+
+	private static LifeContextTags BuildLifeContextTags(PsychLayer psych)
+	{
+		var curiosity = psych.Axes[0].Value;
+		var discipline = psych.Axes[1].Value;
+		var socialEnergy = psych.Axes[2].Value;
+		var flexibility = psych.Axes[3].Value;
+		var stressLoad = psych.Axes[4].Value;
+
+		var tags = new List<LifeContextTag>();
+
+		if (stressLoad >= 0.68f)
+			tags.Add(new LifeContextTag("Recovery Mode", 0f));
+
+		if (discipline >= 0.70f && stressLoad < 0.55f)
+			tags.Add(new LifeContextTag("Deep Focus", 220f));
+		else if (discipline >= 0.65f && stressLoad >= 0.55f)
+			tags.Add(new LifeContextTag("Work Sprint", 270f));
+
+		if (curiosity >= 0.68f && flexibility >= 0.58f)
+			tags.Add(new LifeContextTag("Creative Flow", 38f));
+		else if (curiosity >= 0.62f && discipline < 0.60f)
+			tags.Add(new LifeContextTag("Exploration Phase", 160f));
+
+		if (socialEnergy >= 0.66f)
+			tags.Add(new LifeContextTag("Social Push", 145f));
+
+		if (flexibility >= 0.62f && stressLoad < 0.48f && discipline >= 0.54f && !tags.Any(t => t.Label == "Deep Focus"))
+			tags.Add(new LifeContextTag("Planning Mode", 200f));
+
+		if (tags.Count == 0)
+			tags.Add(new LifeContextTag("Steady State", 215f));
+
+		string moodNote;
+		if (tags.Count == 1)
+		{
+			moodNote = tags[0].Label switch
+			{
+				"Recovery Mode" => "Load is high — protect your energy and simplify the next move.",
+				"Deep Focus" => "A clear execution window is open right now.",
+				"Work Sprint" => "Pushing through with pressure behind you.",
+				"Creative Flow" => "Curiosity and flexibility are converging — follow it.",
+				"Exploration Phase" => "Curiosity is leading. Good moment to follow without forcing structure.",
+				"Social Push" => "Connection energy is high. Good time to involve someone.",
+				"Planning Mode" => "Adaptive structure available — map before you move.",
+				_ => "Steady momentum — the state is sustainably balanced."
+			};
+		}
+		else if (tags.Count == 2)
+		{
+			moodNote = $"Blending {tags[0].Label.ToLowerInvariant()} with {tags[1].Label.ToLowerInvariant()}.";
+		}
+		else
+		{
+			moodNote = $"Complex state: {string.Join(", ", tags.Take(3).Select(t => t.Label.ToLowerInvariant()))}.";
+		}
+
+		return new LifeContextTags(tags, moodNote);
+	}
+
+	private static BlindSpotLens BuildBlindSpotLens(PsychLayer psych)
+	{
+		var curiosity = psych.Axes[0].Value;
+		var discipline = psych.Axes[1].Value;
+		var socialEnergy = psych.Axes[2].Value;
+		var flexibility = psych.Axes[3].Value;
+		var stressLoad = psych.Axes[4].Value;
+
+		var opportunities = new[]
+		{
+			("curiosity",     1f - curiosity),
+			("discipline",    1f - discipline),
+			("social energy", 1f - socialEnergy),
+			("flexibility",   1f - flexibility),
+			("stress load",   stressLoad)
+		};
+
+		var strongest = opportunities.OrderByDescending(o => o.Item2).First();
+
+		if (strongest.Item2 < 0.18f)
+			return new BlindSpotLens(
+				"Coherence Balance",
+				"Your state is unusually aligned — which makes it easy to drift without noticing.",
+				"Nudge: name one priority so this balance turns into compounding momentum, not comfortable inertia.");
+
+		return strongest.Item1 switch
+		{
+			"curiosity" => new BlindSpotLens(
+				"Curiosity Gap",
+				"You may be solving the known problem instead of questioning whether it is the right one.",
+				"Nudge: ask one question you have not asked yet about this situation."),
+			"discipline" => new BlindSpotLens(
+				"Commitment Gap",
+				"You may be circling without committing. One locked action beats ten open loops.",
+				"Nudge: name one specific deliverable with a finish line you can hold yourself to."),
+			"social energy" => new BlindSpotLens(
+				"Connection Gap",
+				"You may be going it alone when a conversation would accelerate the work.",
+				"Nudge: share one update or ask one question with someone who would benefit or help."),
+			"flexibility" => new BlindSpotLens(
+				"Flexibility Gap",
+				"You may be attached to a path that has already shifted beneath you.",
+				"Nudge: identify one assumption you have been protecting and test it quickly."),
+			_ => new BlindSpotLens(
+				"Stress Buildup",
+				"Carrying more than you are registering. The signal is quiet, but the weight is real.",
+				"Nudge: before adding more, finish or drop one thing from your current active list.")
+		};
+	}
+
+	private static string GetContextTagStyle(LifeContextTag tag)
+		=> string.Create(CultureInfo.InvariantCulture, $"--tag-hue:{tag.Hue:0};");
+
+	private static GentleCelebration BuildGentleCelebration(SessionGroup session, PsychLayer psych, DeltaStory delta)
+	{
+		var curiosity  = psych.Axes[0].Value;
+		var discipline = psych.Axes[1].Value;
+		var stressLoad = psych.Axes[4].Value;
+		var coherence  = psych.Coherence;
+
+		// Milestone: large session (8+ nodes)
+		if (session.Nodes.Count >= 8)
+			return new GentleCelebration(true, "∞",
+				"Deep Continuity",
+				$"This session has {session.Nodes.Count} moments — a rare depth of tracking. That's worth acknowledging.");
+
+		// Coherence spike
+		if (coherence >= 0.78f)
+			return new GentleCelebration(true, "◎",
+				"High Coherence",
+				"Your state is unusually aligned right now. Most people never notice moments like this. You did.");
+
+		// Stress came down noticeably
+		if (delta.Headline.Contains("stress load", StringComparison.OrdinalIgnoreCase)
+			&& delta.Headline.Contains("dropped", StringComparison.OrdinalIgnoreCase))
+			return new GentleCelebration(true, "▽",
+				"Pressure Released",
+				"Your stress signal dropped between moments. That shift took something. It counts.");
+
+		// High discipline + low stress = execution window
+		if (discipline >= 0.74f && stressLoad < 0.40f)
+			return new GentleCelebration(true, "⬡",
+				"Clear Execution Window",
+				"High discipline and low pressure rarely show up together. This is a good moment to do the hard thing.");
+
+		// Curiosity peak
+		if (curiosity >= 0.76f)
+			return new GentleCelebration(true, "✦",
+				"Curiosity Peak",
+				"Your curiosity signal is at a high. Ideas are more accessible now than they usually are.");
+
+		return new GentleCelebration(false, string.Empty, string.Empty, string.Empty);
+	}
+
+	private static JournalExportEntry BuildJournalExport(
+		SessionGroup session,
+		SttpNodeDto focusNode,
+		PsychLayer psych,
+		DailyArchetypeCard archetype,
+		DeltaStory delta,
+		LifeContextTags contextTags,
+		BlindSpotLens blindSpot)
+	{
+		var dateLine = $"{focusNode.Timestamp:yyyy-MM-dd} · {session.SessionId}";
+		var stateLine = $"State: {psych.Archetype} · Coherence {psych.Coherence:0.00} · Score {focusNode.Psi:0.00}";
+		var contextLine = contextTags.Tags.Count > 0
+			? $"Context: {string.Join(", ", contextTags.Tags.Select(t => t.Label))}"
+			: "Context: Steady State";
+		var deltaLine = $"Shift: {delta.Headline}";
+		var blindSpotLine = $"Watch: {blindSpot.Label} — {blindSpot.Nudge}";
+		var descLine = archetype.Description;
+
+		var lines = new[] { dateLine, stateLine, contextLine };
+		var fullText = string.Join("\n",
+			dateLine, stateLine, contextLine, deltaLine, descLine, blindSpotLine);
+
+		return new JournalExportEntry(lines, fullText);
+	}
+
+	private static RecommendedAction BuildRecommendedAction(
+		PsychLayer psych,
+		DeltaStory delta,
+		BlindSpotLens blindSpot,
+		LifeContextTags contextTags)
+	{
+		var action = psych.OrbClass switch
+		{
+			"orb-alert" => "Reduce load now: drop, defer, or delegate one active obligation.",
+			"orb-focused" => "Use this execution window: complete one concrete outcome end-to-end.",
+			"orb-connective" => "Send one high-context message to unlock collaboration momentum.",
+			_ => "Protect continuity: define one visible next step with a clear finish line."
+		};
+
+		var why = $"{blindSpot.Label} is currently the highest leverage area. " +
+			(delta.Headline.Contains("stable", StringComparison.OrdinalIgnoreCase)
+				? "This keeps momentum from becoming drift."
+				: "This converts the current shift into useful progress.");
+
+		if (contextTags.Tags.Any(t => t.Label == "Recovery Mode"))
+			why = "Recovery Mode is active. Prioritize reducing pressure before adding complexity.";
+
+		return new RecommendedAction(action, why);
+	}
+
+	private async Task CopyJournalAsync(string text)
+	{
+		if (string.IsNullOrWhiteSpace(text)) return;
+		await JS.InvokeVoidAsync("navigator.clipboard.writeText", text);
+		journalCopied = true;
+		StateHasChanged();
+		await Task.Delay(1800);
+		journalCopied = false;
+		StateHasChanged();
+	}
+
+	private void JumpToSession(string sessionId)
+	{
+		var idx = sessions.FindIndex(s => s.SessionId == sessionId);
+		if (idx < 0) return;
+		var previousIndex = currentSessionIndex;
+		currentSessionIndex = idx;
+		currentSessionNodeIndex = 0;
+		slideClass = idx > previousIndex ? "from-right" : "from-left";
+		showReferences = false;
+		showDetail = IsInspectMode;
+		nodeKey = GetSessionKey(sessions[currentSessionIndex]);
+		shouldAttachSwipe = true;
+	}
+
 	private static RadarPoint PolarPoint(int index, float value, float radius)
 	{
 		var angle = (-90d + index * 72d) * Math.PI / 180d;
@@ -1338,6 +1897,17 @@
 
 	private sealed record PsychAxis(string Name, float Value);
 	private sealed record RadarPoint(float X, float Y);
+	private sealed record DailyArchetypeCard(string Title, string Description, string SessionId);
+	private sealed record DeltaStory(string Headline, string SupportingLine);
+	private sealed record MoodTimelineItem(string SessionId, bool IsCurrent, float Hue, float Alpha, string Tooltip);
+	private sealed record FutureSelfPreview(string Title, string LikelyPath, string ShiftPath);
+	private sealed record InnerDialogue(string Analyst, string Human, string Synthesis);
+	private sealed record LifeContextTag(string Label, float Hue);
+	private sealed record LifeContextTags(IReadOnlyList<LifeContextTag> Tags, string MoodNote);
+	private sealed record BlindSpotLens(string Label, string Observation, string Nudge);
+	private sealed record GentleCelebration(bool Show, string Glyph, string Title, string Body);
+	private sealed record JournalExportEntry(string[] Lines, string FullText);
+	private sealed record RecommendedAction(string Action, string Why);
 
 	private sealed class SessionGroup(string sessionId, List<SttpNodeDto> nodes)
 	{
