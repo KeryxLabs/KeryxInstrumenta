@@ -2,6 +2,50 @@
 
 All notable changes across STTP components are documented in this file.
 
+## [0.3.1-beta] - 2026-04-06
+
+### Added
+
+- **`sttp-ui` — Psych Layer UI (session-state mirror)**
+  - New in-card psych layer combining:
+    - dynamic **vibe orb** (hue/energy/pulse driven from AVEC-derived state)
+    - 5-axis **radar state shape** (`Curiosity`, `Discipline`, `Social Energy`, `Flexibility`, `Stress Load`)
+    - **session reflection** readout with archetype, interpretation, and next nudge
+  - Radar legend added with per-axis bar + percent for faster glanceability on mobile
+  - Explicit non-identity scope language added: this is a session-state snapshot, not a fixed trait label
+
+### Changed
+
+- **`sttp-ui` — Psych mapping and narrative behavior**
+  - Added deterministic AVEC-to-psych mapping with compression-first source selection and user/model fallback averaging
+  - Added archetype resolver and reflection generator tuned for session momentum framing
+  - Nudge logic refined by stress/coherence bands for more actionable copy
+- **`sttp-ui` — Mobile psych layer footprint**
+  - Reduced mobile orb size (`72px -> 66px`)
+  - Reduced mobile radar footprint (`min(100%, 280px) -> min(92%, 258px)`)
+- **`sttp-ui` — Motion pass**
+  - Meaningful, staggered animation choreography for psych layer:
+    - panel rise-in
+    - orb float + pulse
+    - radar ring/axis reveal, shape pop-in, node reveal
+    - legend row + fill progression
+    - reflection delayed reveal
+  - `prefers-reduced-motion` support extended to disable all new psych-layer animations while preserving visibility
+
+### Validated
+
+- `dotnet build` passed after each major patch (`src/sttp/sttp-ui/sttp-ui.csproj`)
+
+### Session Coverage
+
+- Session: `sttp_ui_psych_layer_design` (2026-04-06)
+- Stored checkpoints:
+  - `a6c8f094d144423694808162d404f232` (psych layer + mobile sizing)
+  - `246e6a8ead014f0eb40f0fbf02685715` (motion pass)
+- Changed files:
+  - `src/sttp/sttp-ui/Components/Pages/Home.razor`
+  - `src/sttp/sttp-ui/Components/Pages/Home.razor.css`
+
 ## [0.3.0-beta] - 2026-04-05
 
 ### Added

@@ -583,6 +583,300 @@ textarea:focus {
     border-color: color-mix(in srgb, #4a6e9e 52%, transparent);
 }
 
+/* ── psych layer (orb + radar + readout) ────────────── */
+.psych-layer-wrap {
+    margin-top: 0.72rem;
+    border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+    border-radius: 16px;
+    padding: 0.62rem;
+    background:
+        radial-gradient(circle at 16% 18%, color-mix(in srgb, var(--accent2) 18%, transparent) 0%, transparent 38%),
+        radial-gradient(circle at 78% 78%, color-mix(in srgb, #2b7d57 14%, transparent) 0%, transparent 42%),
+        color-mix(in srgb, var(--bg2) 80%, #fff);
+    display: grid;
+    grid-template-columns: auto minmax(180px, 230px) minmax(0, 1fr);
+    gap: 0.66rem;
+    align-items: center;
+    animation: psychRise 320ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.psych-orb-stack {
+    display: grid;
+    gap: 0.34rem;
+    justify-items: center;
+}
+
+.vibe-orb {
+    --orb-hue: 40;
+    --orb-energy: 0.5;
+    --orb-pulse: 0.6;
+    width: 72px;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    position: relative;
+    display: grid;
+    place-items: center;
+    isolation: isolate;
+    background:
+        radial-gradient(circle at 34% 26%, hsla(calc(var(--orb-hue) + 14), 92%, 79%, 0.9) 0%, transparent 34%),
+        radial-gradient(circle at 66% 74%, hsla(calc(var(--orb-hue) - 14), 70%, 44%, 0.86) 0%, transparent 42%),
+        radial-gradient(circle at 50% 50%, hsla(var(--orb-hue), 76%, 50%, calc(0.42 + var(--orb-energy) * 0.4)) 0%, hsla(calc(var(--orb-hue) + 18), 84%, 34%, 0.94) 72%);
+    box-shadow:
+        0 0 calc(14px + var(--orb-energy) * 22px) hsla(var(--orb-hue), 90%, 56%, 0.34),
+        inset 0 0 22px hsla(calc(var(--orb-hue) + 16), 86%, 70%, 0.34);
+    animation: orbFloat 6.4s ease-in-out infinite;
+}
+
+.vibe-orb::before,
+.vibe-orb::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    border: 1px solid hsla(var(--orb-hue), 84%, 56%, 0.18);
+    animation: orbPulse calc(2.4s - var(--orb-pulse)) ease-in-out infinite;
+}
+
+.vibe-orb::after {
+    inset: -14px;
+    opacity: 0.55;
+    animation-delay: 0.28s;
+}
+
+.orb-core {
+    width: 30%;
+    aspect-ratio: 1;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.82);
+    filter: blur(0.4px);
+}
+
+.orb-alert { filter: saturate(0.88) hue-rotate(-14deg); }
+.orb-focused { filter: saturate(1.16) contrast(1.04); }
+.orb-connective { filter: saturate(1.08) hue-rotate(8deg); }
+.orb-balanced { filter: saturate(1); }
+
+.orb-caption {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.58rem;
+    letter-spacing: 0.04em;
+    color: var(--ink2);
+    text-align: center;
+    max-width: 112px;
+}
+
+.radar-panel {
+    justify-self: center;
+}
+
+.radar-svg {
+    width: min(230px, 100%);
+    height: auto;
+    display: block;
+}
+
+.radar-svg .radar-ring {
+    animation: radarReveal 560ms ease both;
+}
+
+.radar-svg .radar-ring:nth-of-type(1) { animation-delay: 50ms; }
+.radar-svg .radar-ring:nth-of-type(2) { animation-delay: 90ms; }
+.radar-svg .radar-ring:nth-of-type(3) { animation-delay: 130ms; }
+.radar-svg .radar-ring:nth-of-type(4) { animation-delay: 170ms; }
+
+.radar-svg .radar-axis {
+    animation: radarReveal 520ms ease both;
+    animation-delay: 180ms;
+}
+
+.radar-legend {
+    margin-top: 0.34rem;
+    display: grid;
+    gap: 0.24rem;
+}
+
+.radar-legend-row {
+    display: grid;
+    grid-template-columns: minmax(0, 86px) minmax(0, 1fr) auto;
+    gap: 0.34rem;
+    align-items: center;
+    opacity: 0;
+    animation: legendRowIn 360ms ease forwards;
+}
+
+.radar-legend-row:nth-child(1) { animation-delay: 290ms; }
+.radar-legend-row:nth-child(2) { animation-delay: 340ms; }
+.radar-legend-row:nth-child(3) { animation-delay: 390ms; }
+.radar-legend-row:nth-child(4) { animation-delay: 440ms; }
+.radar-legend-row:nth-child(5) { animation-delay: 490ms; }
+
+.radar-legend-name {
+    font-family: var(--mono);
+    font-size: 0.54rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.radar-legend-track {
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+    background: color-mix(in srgb, var(--bg2) 80%, #fff);
+}
+
+.radar-legend-fill {
+    --axis-fill: 0.5;
+    display: block;
+    height: 100%;
+    width: calc(var(--axis-fill) * 100%);
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--accent2) 84%, transparent) 0%,
+        color-mix(in srgb, var(--accent) 88%, transparent) 100%);
+    transform-origin: left center;
+    animation: legendFillIn 620ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.radar-legend-value {
+    font-family: var(--mono);
+    font-size: 0.56rem;
+    color: var(--ink2);
+    letter-spacing: 0.04em;
+}
+
+.radar-ring {
+    fill: transparent;
+    stroke: color-mix(in srgb, var(--ink2) 20%, transparent);
+    stroke-width: 1;
+}
+
+.radar-axis {
+    stroke: color-mix(in srgb, var(--ink2) 18%, transparent);
+    stroke-width: 0.9;
+}
+
+.radar-shape {
+    fill: color-mix(in srgb, var(--accent) 26%, transparent);
+    stroke: color-mix(in srgb, var(--accent) 78%, var(--ink));
+    stroke-width: 1.4;
+    transform-origin: 110px 110px;
+    animation: radarShapeIn 480ms cubic-bezier(0.24, 0.9, 0.32, 1) 220ms both;
+}
+
+.radar-node {
+    fill: color-mix(in srgb, var(--accent) 88%, #fff);
+    stroke: color-mix(in srgb, var(--bg) 70%, #fff);
+    stroke-width: 1;
+    animation: radarNodeIn 360ms ease both;
+}
+
+.radar-node:nth-of-type(1) { animation-delay: 280ms; }
+.radar-node:nth-of-type(2) { animation-delay: 320ms; }
+.radar-node:nth-of-type(3) { animation-delay: 360ms; }
+.radar-node:nth-of-type(4) { animation-delay: 400ms; }
+.radar-node:nth-of-type(5) { animation-delay: 440ms; }
+
+.radar-label {
+    fill: color-mix(in srgb, var(--ink2) 90%, transparent);
+    font-family: var(--mono);
+    font-size: 8px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.session-reflection {
+    border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+    border-radius: 12px;
+    padding: 0.5rem 0.56rem;
+    background: color-mix(in srgb, var(--bg) 84%, #fff);
+    display: grid;
+    gap: 0.34rem;
+    min-width: 0;
+    animation: reflectionIn 420ms ease 240ms both;
+}
+
+.reflection-archetype {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.62rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--accent);
+    font-weight: 700;
+}
+
+.reflection-text {
+    margin: 0;
+    font-family: var(--serif);
+    font-size: 0.9rem;
+    line-height: 1.35;
+    color: var(--ink);
+}
+
+.reflection-next {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.65rem;
+    line-height: 1.46;
+    color: var(--ink2);
+}
+
+.reflection-scope {
+    margin: 0;
+    font-family: var(--mono);
+    font-size: 0.57rem;
+    color: var(--muted);
+    letter-spacing: 0.03em;
+    line-height: 1.4;
+}
+
+@keyframes orbPulse {
+    0%, 100% { transform: scale(1); opacity: 0.36; }
+    50% { transform: scale(1.04); opacity: 0.68; }
+}
+
+@keyframes psychRise {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes orbFloat {
+    0%, 100% { transform: translateY(0) scale(1); }
+    50% { transform: translateY(-2px) scale(1.012); }
+}
+
+@keyframes radarReveal {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes radarShapeIn {
+    from { opacity: 0; transform: scale(0.86); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes radarNodeIn {
+    from { opacity: 0; transform: scale(0.5); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes legendRowIn {
+    from { opacity: 0; transform: translateY(3px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes legendFillIn {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+}
+
+@keyframes reflectionIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
 /* ── slide-in animations ──────────────────────────────── */
 @keyframes fromRight {
     from { opacity: 0; transform: translateX(40px); }
@@ -1417,8 +1711,53 @@ textarea:focus {
         padding: 0.16rem 0.44rem;
     }
 
+    .psych-layer-wrap {
+        grid-template-columns: minmax(0, 1fr);
+        justify-items: stretch;
+    }
+
+    .psych-orb-stack {
+        justify-items: start;
+    }
+
+    .vibe-orb {
+        width: 66px;
+    }
+
+    .radar-panel {
+        justify-self: stretch;
+    }
+
+    .radar-svg {
+        width: min(92%, 258px);
+        margin-inline: auto;
+    }
+
     .node-tags {
         gap: 0.32rem;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .psych-layer-wrap,
+    .vibe-orb,
+    .radar-svg .radar-ring,
+    .radar-svg .radar-axis,
+    .radar-shape,
+    .radar-node,
+    .radar-legend-row,
+    .radar-legend-fill,
+    .session-reflection {
+        animation: none;
+    }
+
+    .radar-legend-row {
+        opacity: 1;
+    }
+
+    .vibe-orb::before,
+    .vibe-orb::after {
+        animation: none;
     }
 }
 

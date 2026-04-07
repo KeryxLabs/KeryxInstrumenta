@@ -1,5 +1,6 @@
 ﻿@page "/"
 @rendermode InteractiveServer
+@using System.Globalization
 @using System.Security.Cryptography
 @using System.Text
 @using Microsoft.AspNetCore.Components.Rendering
@@ -97,6 +98,7 @@
 				var session = sessions[currentSessionIndex];
 				var node = session.Nodes[currentSessionNodeIndex];
 				var latestNode = session.LatestNode;
+				var psych = BuildPsychLayer(latestNode);
 				<div class="deck-stage">
 					<div id="sttp-card" class="node-card @slideClass" @key="nodeKey">
 						<div class="hint hint-left">← older</div>
@@ -121,6 +123,59 @@
 										<span>Signal strength&nbsp;@latestNode.Rho.ToString("0.00")</span>
 										<span>Consistency&nbsp;@latestNode.Kappa.ToString("0.00")</span>
 									</div>
+								</div>
+							</div>
+
+							<div class="psych-layer-wrap">
+								<div class="psych-orb-stack">
+									<div class="vibe-orb @psych.OrbClass"
+										style="@GetOrbStyle(psych)"
+										title="Session vibe orb">
+										<span class="orb-core"></span>
+									</div>
+									<p class="orb-caption">@psych.OrbCaption</p>
+								</div>
+
+								<div class="radar-panel" aria-label="Session state radar">
+									<svg class="radar-svg" viewBox="0 0 220 220" role="img">
+										@for (var ring = 1; ring <= 4; ring++)
+										{
+											var radius = 76f * ring / 4f;
+											<polygon class="radar-ring" points="@BuildRadarRingPoints(radius)" />
+										}
+
+										@for (var i = 0; i < psych.Axes.Count; i++)
+										{
+											var axisEnd = PolarPoint(i, 1f, 76f);
+											<line class="radar-axis" x1="110" y1="110" x2="@axisEnd.X" y2="@axisEnd.Y" />
+										}
+
+										<polygon class="radar-shape" points="@psych.RadarPoints" />
+										@for (var i = 0; i < psych.Axes.Count; i++)
+										{
+											var p = PolarPoint(i, psych.Axes[i].Value, 76f);
+											<circle class="radar-node" cx="@p.X" cy="@p.Y" r="3.4" />
+										}
+									</svg>
+									<div class="radar-legend" aria-hidden="true">
+										@foreach (var axis in psych.Axes)
+										{
+											<div class="radar-legend-row">
+												<span class="radar-legend-name">@axis.Name</span>
+												<div class="radar-legend-track">
+													<span class="radar-legend-fill" style="@GetLegendFillStyle(axis.Value)"></span>
+												</div>
+												<span class="radar-legend-value">@ToPercent(axis.Value)%</span>
+											</div>
+										}
+									</div>
+								</div>
+
+								<div class="session-reflection">
+									<p class="reflection-archetype">@psych.Archetype</p>
+									<p class="reflection-text">@psych.Reflection</p>
+									<p class="reflection-next">@psych.NextNudge</p>
+									<p class="reflection-scope">@psych.ScopeNote</p>
 								</div>
 							</div>
 						</div>
@@ -1133,6 +1188,156 @@
 		builder.CloseElement();
 		builder.CloseElement();
 	}
+
+	private static PsychLayer BuildPsychLayer(SttpNodeDto node)
+	{
+		var state = ResolveState(node);
+		var curiosity = Clamp01(state.Logic * 0.58f + state.Autonomy * 0.42f);
+		var discipline = Clamp01(state.Stability * 0.64f + (1f - state.Friction) * 0.36f);
+		var socialEnergy = Clamp01(state.Autonomy * 0.56f + (1f - state.Friction) * 0.44f);
+		var flexibility = Clamp01((1f - state.Stability) * 0.34f + state.Logic * 0.36f + state.Autonomy * 0.30f);
+		var stressLoad = Clamp01(state.Friction * 0.74f + (1f - state.Stability) * 0.26f);
+
+		var axes = new List<PsychAxis>
+		{
+			new("Curiosity", curiosity),
+			new("Discipline", discipline),
+			new("Social Energy", socialEnergy),
+			new("Flexibility", flexibility),
+			new("Stress Load", stressLoad)
+		};
+
+		var coherence = (curiosity + discipline + socialEnergy + flexibility + (1f - stressLoad)) / 5f;
+		var leadAxis = HighestAxis(axes);
+		var quietAxis = LowestAxis(axes);
+		var archetype = ResolveArchetype(curiosity, discipline, socialEnergy, flexibility, stressLoad);
+		var reflection = $"Right now this session leans on {leadAxis.ToLowerInvariant()} while {quietAxis.ToLowerInvariant()} stays quieter.";
+		var nextNudge = stressLoad >= 0.68f
+			? "Nudge: lower load first, then lock one small move you can finish quickly."
+			: coherence >= 0.66f
+				? "Nudge: convert this stable shape into one concrete next action before context shifts."
+				: "Nudge: lift the quietest axis with a tiny, low-friction step.";
+		var scopeNote = "Session-state snapshot only. This is momentum context, not identity.";
+
+		var orbClass = stressLoad >= 0.68f
+			? "orb-alert"
+			: discipline >= 0.7f && curiosity >= 0.62f
+				? "orb-focused"
+				: socialEnergy >= 0.65f && flexibility >= 0.58f
+					? "orb-connective"
+					: "orb-balanced";
+
+		var hue = Math.Clamp(18f + curiosity * 54f + socialEnergy * 22f - stressLoad * 16f, 12f, 122f);
+		var energy = Clamp01((curiosity + socialEnergy + flexibility) / 3f);
+		var pulse = Math.Clamp(0.35f + stressLoad * 0.9f, 0.35f, 1.2f);
+		var orbCaption = $"Coherence {coherence:0.00} · {archetype}";
+
+		return new PsychLayer(
+			axes,
+			archetype,
+			reflection,
+			nextNudge,
+			scopeNote,
+			orbClass,
+			hue,
+			energy,
+			pulse,
+			BuildRadarDataPoints(axes),
+			coherence,
+			orbCaption);
+	}
+
+	private static AvecState ResolveState(SttpNodeDto node)
+	{
+		if (node.CompressionAvec is not null)
+			return node.CompressionAvec;
+
+		return new AvecState(
+			(node.UserAvec.Stability + node.ModelAvec.Stability) / 2f,
+			(node.UserAvec.Friction + node.ModelAvec.Friction) / 2f,
+			(node.UserAvec.Logic + node.ModelAvec.Logic) / 2f,
+			(node.UserAvec.Autonomy + node.ModelAvec.Autonomy) / 2f,
+			(node.UserAvec.Psi + node.ModelAvec.Psi) / 2f);
+	}
+
+	private static string ResolveArchetype(float curiosity, float discipline, float socialEnergy, float flexibility, float stressLoad)
+	{
+		if (stressLoad >= 0.74f)
+			return "Pressure Navigator";
+		if (discipline >= 0.72f && curiosity >= 0.65f)
+			return "Precision Explorer";
+		if (socialEnergy >= 0.68f && flexibility >= 0.6f)
+			return "Bridge Builder";
+		if (curiosity >= 0.72f && flexibility >= 0.62f)
+			return "Pattern Diver";
+		return "Steady Integrator";
+	}
+
+	private static string HighestAxis(IReadOnlyList<PsychAxis> axes)
+		=> axes.OrderByDescending(a => a.Value).First().Name;
+
+	private static string LowestAxis(IReadOnlyList<PsychAxis> axes)
+		=> axes.OrderBy(a => a.Value).First().Name;
+
+	private static string BuildRadarDataPoints(IReadOnlyList<PsychAxis> axes)
+	{
+		var points = new List<string>(axes.Count);
+		for (var i = 0; i < axes.Count; i++)
+		{
+			var point = PolarPoint(i, axes[i].Value, 76f);
+			points.Add($"{point.X.ToString("0.##", CultureInfo.InvariantCulture)},{point.Y.ToString("0.##", CultureInfo.InvariantCulture)}");
+		}
+		return string.Join(" ", points);
+	}
+
+	private static string BuildRadarRingPoints(float radius)
+	{
+		var points = new List<string>(5);
+		for (var i = 0; i < 5; i++)
+		{
+			var point = PolarPoint(i, 1f, radius);
+			points.Add($"{point.X.ToString("0.##", CultureInfo.InvariantCulture)},{point.Y.ToString("0.##", CultureInfo.InvariantCulture)}");
+		}
+		return string.Join(" ", points);
+	}
+
+	private static string GetOrbStyle(PsychLayer psych)
+		=> string.Create(CultureInfo.InvariantCulture, $"--orb-hue:{psych.OrbHue:0}; --orb-energy:{psych.OrbEnergy:0.00}; --orb-pulse:{psych.OrbPulse:0.00};");
+
+	private static string GetLegendFillStyle(float value)
+		=> string.Create(CultureInfo.InvariantCulture, $"--axis-fill:{Clamp01(value):0.00};");
+
+	private static int ToPercent(float value)
+		=> (int)MathF.Round(Clamp01(value) * 100f);
+
+	private static RadarPoint PolarPoint(int index, float value, float radius)
+	{
+		var angle = (-90d + index * 72d) * Math.PI / 180d;
+		var r = radius * Clamp01(value);
+		var x = 110d + Math.Cos(angle) * r;
+		var y = 110d + Math.Sin(angle) * r;
+		return new RadarPoint((float)x, (float)y);
+	}
+
+	private static float Clamp01(float value)
+		=> Math.Clamp(value, 0f, 1f);
+
+	private sealed record PsychLayer(
+		IReadOnlyList<PsychAxis> Axes,
+		string Archetype,
+		string Reflection,
+		string NextNudge,
+		string ScopeNote,
+		string OrbClass,
+		float OrbHue,
+		float OrbEnergy,
+		float OrbPulse,
+		string RadarPoints,
+		float Coherence,
+		string OrbCaption);
+
+	private sealed record PsychAxis(string Name, float Value);
+	private sealed record RadarPoint(float X, float Y);
 
 	private sealed class SessionGroup(string sessionId, List<SttpNodeDto> nodes)
 	{
