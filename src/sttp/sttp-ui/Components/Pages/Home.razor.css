@@ -398,6 +398,10 @@ textarea:focus {
     color: var(--muted);
 }
 
+.deck-guide-mobile {
+    display: none;
+}
+
 .experience-mode-switch {
     border: 1px solid var(--line);
     border-radius: 999px;
@@ -551,7 +555,7 @@ textarea:focus {
     box-shadow: 0 8px 28px rgba(15, 12, 9, 0.07), 0 2px 6px rgba(15, 12, 9, 0.04);
     cursor: grab;
     user-select: none;
-    touch-action: none;
+    touch-action: pan-y pinch-zoom;
     will-change: transform;
     overflow: hidden;
 }
@@ -2267,6 +2271,10 @@ textarea:focus {
 }
 
 @media (max-width: 979px) {
+    .deck-guide-mobile {
+        display: inline;
+    }
+
     .mobile-hidden {
         display: none;
     }
