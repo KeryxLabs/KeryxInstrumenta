@@ -165,3 +165,15 @@ pub const GET_TRIGGER_HISTORY_QUERY: &str = r#"
             WHERE session_id = $session_id
             ORDER BY created_at ASC;
             "#;
+
+pub const STORE_CALIBRATION_QUERY: &str = r#"
+            CREATE calibration SET
+                session_id = $session_id,
+                stability = $stability,
+                friction = $friction,
+                logic = $logic,
+                autonomy = $autonomy,
+                psi = $psi,
+                trigger = $trigger,
+                created_at = $created_at;
+            "#;
