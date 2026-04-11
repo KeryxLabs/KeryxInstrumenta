@@ -98,3 +98,82 @@ cargo package --manifest-path src/sttp/sttp-core-rs/Cargo.toml --allow-dirty --l
 ```
 
 The artifact is written under `src/sttp/sttp-core-rs/target/package`.
+
+## First Publish To crates.io (Step-By-Step)
+
+If this is your first crates.io release, use this sequence.
+
+### 1. Verify Name Availability
+
+```bash
+cargo search sttp-core-rs --limit 5
+```
+
+If the exact crate name is already taken, update `[package].name` in `Cargo.toml`.
+
+### 2. Create crates.io Token
+
+1. Sign in at crates.io.
+2. Go to Account Settings -> API Tokens.
+3. Create a token with publish scope.
+
+Login locally:
+
+```bash
+cargo login <YOUR_CRATES_IO_TOKEN>
+```
+
+Alternative for CI/non-interactive use:
+
+```bash
+export CARGO_REGISTRY_TOKEN=<YOUR_CRATES_IO_TOKEN>
+```
+
+### 3. Release Readiness Checks
+
+From repository root:
+
+```bash
+cargo check --manifest-path src/sttp/sttp-core-rs/Cargo.toml
+cargo test --manifest-path src/sttp/sttp-core-rs/Cargo.toml
+```
+
+Check exact package contents:
+
+```bash
+cargo package --manifest-path src/sttp/sttp-core-rs/Cargo.toml --list
+```
+
+### 4. Dry-Run Publish (Required)
+
+```bash
+cargo publish --manifest-path src/sttp/sttp-core-rs/Cargo.toml --dry-run
+```
+
+### 5. Publish
+
+```bash
+cargo publish --manifest-path src/sttp/sttp-core-rs/Cargo.toml
+```
+
+### 6. Post-Publish Verification
+
+```bash
+cargo info sttp-core-rs
+```
+
+Then verify docs build on docs.rs (can take a few minutes).
+
+## Optional: One-Command Release Preflight
+
+Use the helper script:
+
+```bash
+./src/sttp/sttp-core-rs/publish-crates.sh
+```
+
+To run publish after preflight:
+
+```bash
+./src/sttp/sttp-core-rs/publish-crates.sh --publish
+```
