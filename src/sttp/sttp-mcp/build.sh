@@ -3,7 +3,7 @@
 # Usage: ./build.sh [--publish]
 set -e
 
-VERSION="1.2.0"
+VERSION="1.2.1"
 TAG_PREFIX="sttp-mcp"
 RELEASE="${TAG_PREFIX}/v$VERSION"
 NAME="sttp-mcp"

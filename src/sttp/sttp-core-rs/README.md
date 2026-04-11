@@ -13,10 +13,16 @@ This crate is designed to be embedded in apps, MCP servers, and gateways that ne
   - context storage,
   - mood catalog and blend preview,
   - monthly rollup generation,
-  - batch scope rekey.
+    - batch scope rekey,
+    - sync coordination with pluggable source and policy hooks.
 - Storage implementations:
   - in-memory store,
   - SurrealDB-backed store.
+- Sync primitives:
+    - deterministic sync keys for STTP nodes,
+    - idempotent node upserts,
+    - incremental change queries with cursors,
+    - connector checkpoints for cloud/local sync state.
 - Parser and validator primitives for raw STTP node text.
 
 ## Installation
@@ -70,11 +76,11 @@ runtime.block_on(async {
 
 ## Public API Surface
 
-- Services: `CalibrationService`, `ContextQueryService`, `StoreContextService`, `MoodCatalogService`, `MonthlyRollupService`, `RekeyScopeService`.
+- Services: `CalibrationService`, `ContextQueryService`, `StoreContextService`, `MoodCatalogService`, `MonthlyRollupService`, `RekeyScopeService`, `SyncCoordinatorService`.
 - Validation: `TreeSitterValidator`.
 - Storage: `InMemoryNodeStore`, `SurrealDbNodeStore`, `SurrealDbRuntimeOptions`, `SurrealDbSettings`.
-- Contracts: `NodeStore`, `NodeStoreInitializer`, `NodeValidator`.
-- Core models: `SttpNode`, `AvecState`, `NodeQuery`, `MonthlyRollupRequest`, `BatchRekeyResult`.
+- Contracts: `NodeStore`, `NodeStoreInitializer`, `NodeValidator`, `SyncChangeSource`, `SyncCoordinatorPolicy`.
+- Core models: `SttpNode`, `AvecState`, `NodeQuery`, `MonthlyRollupRequest`, `BatchRekeyResult`, `NodeUpsertResult`, `SyncCursor`, `SyncCheckpoint`.
 
 ## Build And Test
 

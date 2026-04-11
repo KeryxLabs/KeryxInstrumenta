@@ -1,11 +1,14 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use chrono::Utc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, NodeQuery, ScopeRekeyResult, SttpNode,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
+    NodeUpsertResult, NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint,
+    SyncCursor,
 };
 
 const DEFAULT_TENANT: &str = "default";
@@ -21,6 +24,7 @@ struct CalibrationRecord {
 pub struct InMemoryNodeStore {
     nodes: RwLock<Vec<(String, SttpNode)>>,
     calibrations: RwLock<Vec<(String, CalibrationRecord, String)>>,
+    checkpoints: RwLock<Vec<SyncCheckpoint>>,
 }
 
 impl InMemoryNodeStore {
@@ -63,11 +67,65 @@ impl NodeStore for InMemoryNodeStore {
         Ok(result)
     }
 
-    async fn store_async(&self, node: SttpNode) -> Result<String> {
+    async fn upsert_node_async(&self, node: SttpNode) -> Result<NodeUpsertResult> {
+        let mut candidate = node;
+        let sync_key = if candidate.sync_key.trim().is_empty() {
+            candidate.canonical_sync_key()
+        } else {
+            candidate.sync_key.trim().to_string()
+        };
+
+        let now = Utc::now();
+        candidate.sync_key = sync_key.clone();
+        candidate.updated_at = now;
+
         let mut nodes = self.nodes.write().await;
+        if let Some((node_id, existing)) = nodes.iter_mut().find(|(_, existing)| {
+            existing.session_id == candidate.session_id && existing.sync_key == sync_key
+        }) {
+            let existing_metadata = normalize_metadata(existing.source_metadata.as_ref());
+            let candidate_metadata = normalize_metadata(candidate.source_metadata.as_ref());
+
+            if existing.raw != candidate.raw
+                || existing.tier != candidate.tier
+                || existing.timestamp != candidate.timestamp
+                || existing.compression_depth != candidate.compression_depth
+                || existing.parent_node_id != candidate.parent_node_id
+                || existing.user_avec != candidate.user_avec
+                || existing.model_avec != candidate.model_avec
+                || existing.compression_avec != candidate.compression_avec
+                || (existing.rho - candidate.rho).abs() > f32::EPSILON
+                || (existing.kappa - candidate.kappa).abs() > f32::EPSILON
+                || (existing.psi - candidate.psi).abs() > f32::EPSILON
+                || existing_metadata != candidate_metadata
+            {
+                *existing = candidate.clone();
+                existing.updated_at = now;
+                return Ok(NodeUpsertResult {
+                    node_id: node_id.clone(),
+                    sync_key,
+                    status: NodeUpsertStatus::Updated,
+                    updated_at: now,
+                });
+            }
+
+            return Ok(NodeUpsertResult {
+                node_id: node_id.clone(),
+                sync_key,
+                status: NodeUpsertStatus::Duplicate,
+                updated_at: existing.updated_at,
+            });
+        }
+
         let node_id = Uuid::new_v4().to_string();
-        nodes.push((node_id.clone(), node));
-        Ok(node_id)
+        nodes.push((node_id.clone(), candidate));
+
+        Ok(NodeUpsertResult {
+            node_id,
+            sync_key,
+            status: NodeUpsertStatus::Created,
+            updated_at: now,
+        })
     }
 
     async fn get_by_resonance_async(
@@ -138,6 +196,80 @@ impl NodeStore for InMemoryNodeStore {
             CalibrationRecord { avec },
             trigger.to_string(),
         ));
+        Ok(())
+    }
+
+    async fn query_changes_since_async(
+        &self,
+        session_id: &str,
+        cursor: Option<SyncCursor>,
+        limit: usize,
+    ) -> Result<ChangeQueryResult> {
+        let capped_limit = limit.max(1);
+        let nodes = self.nodes.read().await;
+
+        let mut changes = nodes
+            .iter()
+            .map(|(_, node)| node)
+            .filter(|node| node.session_id == session_id)
+            .filter(|node| match cursor.as_ref() {
+                Some(cursor) => {
+                    node.updated_at > cursor.updated_at
+                        || (node.updated_at == cursor.updated_at && node.sync_key > cursor.sync_key)
+                }
+                None => true,
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+
+        changes.sort_by(|left, right| {
+            left.updated_at
+                .cmp(&right.updated_at)
+                .then_with(|| left.sync_key.cmp(&right.sync_key))
+        });
+
+        let has_more = changes.len() > capped_limit;
+        if has_more {
+            changes.truncate(capped_limit);
+        }
+
+        let next_cursor = changes.last().map(|node| SyncCursor {
+            updated_at: node.updated_at,
+            sync_key: node.sync_key.clone(),
+        });
+
+        Ok(ChangeQueryResult {
+            nodes: changes,
+            next_cursor,
+            has_more,
+        })
+    }
+
+    async fn get_checkpoint_async(
+        &self,
+        session_id: &str,
+        connector_id: &str,
+    ) -> Result<Option<SyncCheckpoint>> {
+        let checkpoints = self.checkpoints.read().await;
+        Ok(checkpoints
+            .iter()
+            .find(|checkpoint| {
+                checkpoint.session_id == session_id && checkpoint.connector_id == connector_id
+            })
+            .cloned())
+    }
+
+    async fn put_checkpoint_async(&self, checkpoint: SyncCheckpoint) -> Result<()> {
+        let mut checkpoints = self.checkpoints.write().await;
+        if let Some(existing) = checkpoints.iter_mut().find(|existing| {
+            existing.session_id == checkpoint.session_id
+                && existing.connector_id == checkpoint.connector_id
+        }) {
+            *existing = checkpoint;
+        } else {
+            checkpoints.push(checkpoint);
+        }
+
         Ok(())
     }
 
@@ -327,4 +459,8 @@ fn normalize_temporal_node_id(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn normalize_metadata(metadata: Option<&ConnectorMetadata>) -> Option<String> {
+    metadata.and_then(|value| serde_json::to_string(value).ok())
 }

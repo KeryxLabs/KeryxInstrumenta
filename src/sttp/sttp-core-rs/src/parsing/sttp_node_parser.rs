@@ -76,6 +76,9 @@ impl SttpNodeParser {
             timestamp: parse_timestamp(raw),
             compression_depth: parse_int(&COMPRESSION_DEPTH_RX, raw),
             parent_node_id: parse_parent_node(raw),
+            sync_key: String::new(),
+            updated_at: Utc::now(),
+            source_metadata: None,
             user_avec: avec_map
                 .get("user_avec")
                 .copied()

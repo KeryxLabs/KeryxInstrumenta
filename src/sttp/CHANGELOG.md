@@ -2,6 +2,27 @@
 
 All notable changes across STTP components are documented in this file.
 
+## [1.2.1] - 2026-04-11
+
+### Added
+
+- **`sttp-core` / `sttp-core-rs` — sync primitives and safe coordinator boundary**
+  - Added deterministic `sync_key` generation for STTP nodes in both runtimes
+  - Added idempotent upsert semantics with created / updated / duplicate / skipped outcomes
+  - Added incremental change-query support with cursor-based pagination
+  - Added connector checkpoint persistence for sync state tracking
+  - Added typed `ConnectorMetadata` envelopes for node provenance and checkpoint metadata instead of opaque metadata blobs
+  - Added narrow sync coordinator surfaces that own mechanics only:
+    - Rust: `SyncChangeSource`, `SyncCoordinatorPolicy`, `SyncPullRequest`, `SyncPullResult`, `SyncCoordinatorService`
+    - C#: `ISyncChangeSource`, `ISyncCoordinatorPolicy`, `SyncPullRequest`, `SyncPullResult`, `SyncCoordinatorService`
+
+### Fixed
+
+- **`sttp-core` / `sttp-core-rs` — typed metadata and sync-schema completion**
+  - Sync metadata fields are now additive and backward-compatible for existing rows and existing callers
+  - Node provenance and checkpoint metadata now use typed `ConnectorMetadata` envelopes instead of opaque blobs in both runtimes
+  - Legacy rows without persisted sync fields continue to read correctly via fallback handling for `updated_at`, `sync_key`, and legacy tenant values
+
 ## [1.2.0] - 2026-04-11
 
 ### Fixed

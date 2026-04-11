@@ -2,7 +2,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, NodeQuery, SttpNode, ValidationResult,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
+    NodeUpsertResult, SttpNode, SyncCheckpoint, SyncCursor, ValidationResult,
 };
 
 /// Storage abstraction for STTP nodes and calibration data.
@@ -15,7 +16,12 @@ pub trait NodeStore: Send + Sync {
     async fn query_nodes_async(&self, query: NodeQuery) -> Result<Vec<SttpNode>>;
 
     /// Persist a parsed node and return its storage identifier.
-    async fn store_async(&self, node: SttpNode) -> Result<String>;
+    async fn store_async(&self, node: SttpNode) -> Result<String> {
+        Ok(self.upsert_node_async(node).await?.node_id)
+    }
+
+    /// Idempotently persist a parsed node using its deterministic sync key.
+    async fn upsert_node_async(&self, node: SttpNode) -> Result<NodeUpsertResult>;
 
     /// Retrieve nodes ordered by resonance to the provided AVEC state.
     async fn get_by_resonance_async(
@@ -46,6 +52,24 @@ pub trait NodeStore: Send + Sync {
         trigger: &str,
     ) -> Result<()>;
 
+    /// Query nodes that changed after the provided cursor.
+    async fn query_changes_since_async(
+        &self,
+        session_id: &str,
+        cursor: Option<SyncCursor>,
+        limit: usize,
+    ) -> Result<ChangeQueryResult>;
+
+    /// Read the last sync checkpoint for a connector within a session scope.
+    async fn get_checkpoint_async(
+        &self,
+        session_id: &str,
+        connector_id: &str,
+    ) -> Result<Option<SyncCheckpoint>>;
+
+    /// Persist the last sync checkpoint for a connector within a session scope.
+    async fn put_checkpoint_async(&self, checkpoint: SyncCheckpoint) -> Result<()>;
+
     /// Batch-rekey one or more source scopes to a target scope using node IDs as anchors.
     ///
     /// Implementations should treat `node_ids` as source-scope anchors and apply scope-wide
@@ -74,4 +98,32 @@ pub trait NodeValidator: Send + Sync {
     fn validate(&self, raw_node: &str) -> ValidationResult;
     /// Verify PSI coherence between fields and computed values.
     fn verify_psi(&self, node: &SttpNode) -> bool;
+}
+
+#[async_trait]
+pub trait SyncChangeSource: Send + Sync {
+    async fn read_changes_async(
+        &self,
+        session_id: &str,
+        connector_id: &str,
+        cursor: Option<SyncCursor>,
+        limit: usize,
+    ) -> Result<ChangeQueryResult>;
+}
+
+pub trait SyncCoordinatorPolicy: Send + Sync {
+    fn should_accept_node(&self, _node: &SttpNode) -> bool {
+        true
+    }
+
+    fn checkpoint_metadata(
+        &self,
+        _session_id: &str,
+        _connector_id: &str,
+        previous: Option<&SyncCheckpoint>,
+        _last_applied_node: Option<&SttpNode>,
+        _next_cursor: Option<&SyncCursor>,
+    ) -> Option<ConnectorMetadata> {
+        previous.and_then(|checkpoint| checkpoint.metadata.clone())
+    }
 }
