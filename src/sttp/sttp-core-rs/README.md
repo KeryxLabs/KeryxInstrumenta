@@ -17,6 +17,11 @@ This crate is designed to be embedded in apps, MCP servers, and gateways that ne
 - Storage implementations:
   - in-memory store,
   - SurrealDB-backed store.
+- Sync primitives:
+    - deterministic sync keys for STTP nodes,
+    - idempotent node upserts,
+    - incremental change queries with cursors,
+    - connector checkpoints for cloud/local sync state.
 - Parser and validator primitives for raw STTP node text.
 
 ## Installation
@@ -74,7 +79,7 @@ runtime.block_on(async {
 - Validation: `TreeSitterValidator`.
 - Storage: `InMemoryNodeStore`, `SurrealDbNodeStore`, `SurrealDbRuntimeOptions`, `SurrealDbSettings`.
 - Contracts: `NodeStore`, `NodeStoreInitializer`, `NodeValidator`.
-- Core models: `SttpNode`, `AvecState`, `NodeQuery`, `MonthlyRollupRequest`, `BatchRekeyResult`.
+- Core models: `SttpNode`, `AvecState`, `NodeQuery`, `MonthlyRollupRequest`, `BatchRekeyResult`, `NodeUpsertResult`, `SyncCursor`, `SyncCheckpoint`.
 
 ## Build And Test
 

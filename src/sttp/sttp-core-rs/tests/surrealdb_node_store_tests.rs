@@ -8,7 +8,9 @@ use serde_json::{Value, json};
 use tokio::sync::Mutex;
 
 use sttp_core_rs::domain::contracts::{NodeStore, NodeStoreInitializer};
-use sttp_core_rs::domain::models::{AvecState, NodeQuery, SttpNode};
+use sttp_core_rs::domain::models::{
+    AvecState, NodeQuery, NodeUpsertStatus, SttpNode, SyncCheckpoint, SyncCursor,
+};
 use sttp_core_rs::storage::surrealdb::{QueryParams, SurrealDbClient, SurrealDbNodeStore};
 
 #[derive(Default)]
@@ -38,6 +40,40 @@ impl SurrealDbClient for MockSurrealDbClient {
         self.queries.lock().await.push(query.to_string());
         self.parameters.lock().await.push(parameters);
         Ok(self.responses.lock().await.pop_front().unwrap_or_default())
+    }
+}
+
+fn build_test_node(session_id: &str) -> SttpNode {
+    SttpNode {
+        raw: "raw".to_string(),
+        session_id: session_id.to_string(),
+        tier: "raw".to_string(),
+        timestamp: DateTime::parse_from_rfc3339("2026-03-05T06:30:00Z")
+            .expect("timestamp should parse")
+            .with_timezone(&Utc),
+        compression_depth: 1,
+        parent_node_id: None,
+        sync_key: String::new(),
+        updated_at: DateTime::parse_from_rfc3339("2026-03-05T06:30:00Z")
+            .expect("timestamp should parse")
+            .with_timezone(&Utc),
+        source_metadata: None,
+        user_avec: AvecState {
+            stability: 0.85,
+            friction: 0.25,
+            logic: 0.80,
+            autonomy: 0.70,
+        },
+        model_avec: AvecState {
+            stability: 0.91,
+            friction: 0.21,
+            logic: 0.90,
+            autonomy: 0.80,
+        },
+        compression_avec: Some(AvecState::zero()),
+        rho: 0.96,
+        kappa: 0.94,
+        psi: 2.6,
     }
 }
 
@@ -176,32 +212,10 @@ async fn store_uses_model_avec_when_compression_avec_is_zero() {
     let client = Arc::new(MockSurrealDbClient::default());
     let store = SurrealDbNodeStore::new(client.clone());
 
-    let node = SttpNode {
-        raw: "raw".to_string(),
-        session_id: "session".to_string(),
-        tier: "raw".to_string(),
-        timestamp: DateTime::parse_from_rfc3339("2026-03-05T06:30:00Z")
-            .expect("timestamp should parse")
-            .with_timezone(&Utc),
-        compression_depth: 1,
-        parent_node_id: None,
-        user_avec: AvecState {
-            stability: 0.85,
-            friction: 0.25,
-            logic: 0.80,
-            autonomy: 0.70,
-        },
-        model_avec: AvecState {
-            stability: 0.91,
-            friction: 0.21,
-            logic: 0.90,
-            autonomy: 0.80,
-        },
-        compression_avec: Some(AvecState::zero()),
-        rho: 0.96,
-        kappa: 0.94,
-        psi: 2.6,
-    };
+    client.queue_response(vec![]).await;
+    client.queue_response(vec![]).await;
+
+    let node = build_test_node("session");
 
     let node_id = store
         .store_async(node)
@@ -210,16 +224,16 @@ async fn store_uses_model_avec_when_compression_avec_is_zero() {
     assert!(!node_id.trim().is_empty());
 
     let params = client.parameters().await;
-    assert_eq!(params.len(), 1);
+    assert_eq!(params.len(), 2);
 
-    let comp_stability = params[0]
+    let comp_stability = params[1]
         .get("comp_stability")
         .expect("comp_stability must be present")
         .as_f64()
         .expect("comp_stability must be numeric");
     assert!((comp_stability - 0.91).abs() <= 0.0001);
     assert_eq!(
-        params[0]
+        params[1]
             .get("tenant_id")
             .expect("tenant_id must be present"),
         &json!("default")
@@ -231,43 +245,187 @@ async fn store_derives_tenant_id_from_scoped_session_key() {
     let client = Arc::new(MockSurrealDbClient::default());
     let store = SurrealDbNodeStore::new(client.clone());
 
-    let node = SttpNode {
-        raw: "raw".to_string(),
-        session_id: "tenant:acme::session:session-42".to_string(),
-        tier: "raw".to_string(),
-        timestamp: DateTime::parse_from_rfc3339("2026-03-05T06:30:00Z")
-            .expect("timestamp should parse")
-            .with_timezone(&Utc),
-        compression_depth: 1,
-        parent_node_id: None,
-        user_avec: AvecState {
-            stability: 0.85,
-            friction: 0.25,
-            logic: 0.80,
-            autonomy: 0.70,
-        },
-        model_avec: AvecState {
-            stability: 0.91,
-            friction: 0.21,
-            logic: 0.90,
-            autonomy: 0.80,
-        },
-        compression_avec: Some(AvecState::zero()),
-        rho: 0.96,
-        kappa: 0.94,
-        psi: 2.6,
-    };
+    client.queue_response(vec![]).await;
+    client.queue_response(vec![]).await;
+
+    let node = build_test_node("tenant:acme::session:session-42");
 
     store.store_async(node).await.expect("store should succeed");
 
     let params = client.parameters().await;
-    assert_eq!(params.len(), 1);
+    assert_eq!(params.len(), 2);
     assert_eq!(
-        params[0]
+        params[1]
             .get("tenant_id")
             .expect("tenant_id must be present"),
         &json!("acme")
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn upsert_returns_duplicate_when_sync_identity_already_exists() {
+    let client = Arc::new(MockSurrealDbClient::default());
+    let store = SurrealDbNodeStore::new(client.clone());
+
+    client.queue_response(vec![]).await;
+    client.queue_response(vec![]).await;
+    client
+        .queue_response(vec![json!({
+            "Id": "temporal_node:existing-node",
+            "SourceMetadata": null
+        })])
+        .await;
+
+    let first = store
+        .upsert_node_async(build_test_node("sync-session"))
+        .await
+        .expect("first upsert should succeed");
+    let second = store
+        .upsert_node_async(build_test_node("sync-session"))
+        .await
+        .expect("second upsert should succeed");
+
+    assert_eq!(first.status, NodeUpsertStatus::Created);
+    assert_eq!(second.status, NodeUpsertStatus::Duplicate);
+    assert_eq!(second.node_id, "existing-node");
+
+    let queries = client.queries().await;
+    assert_eq!(queries.len(), 3);
+    assert!(queries[0].contains("sync_key = $sync_key"));
+    assert!(queries[1].contains("CREATE temporal_node:"));
+    assert!(queries[2].contains("sync_key = $sync_key"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn query_changes_since_returns_incremental_cursor() {
+    let client = Arc::new(MockSurrealDbClient::default());
+    let store = SurrealDbNodeStore::new(client.clone());
+
+    client
+        .queue_response(vec![
+            json!({
+                "SessionId": "sync-session",
+                "Raw": "node-a",
+                "Tier": "raw",
+                "Timestamp": "2026-03-05T06:30:00Z",
+                "CompressionDepth": 1,
+                "ParentNodeId": null,
+                "SyncKey": "sync-a",
+                "UpdatedAt": "2026-03-05T06:31:00Z",
+                "SourceMetadata": null,
+                "Psi": 2.6,
+                "Rho": 0.96,
+                "Kappa": 0.94,
+                "UserStability": 0.85,
+                "UserFriction": 0.25,
+                "UserLogic": 0.80,
+                "UserAutonomy": 0.70,
+                "UserPsi": 2.60,
+                "ModelStability": 0.85,
+                "ModelFriction": 0.25,
+                "ModelLogic": 0.80,
+                "ModelAutonomy": 0.70,
+                "ModelPsi": 2.60,
+                "CompStability": 0.85,
+                "CompFriction": 0.25,
+                "CompLogic": 0.80,
+                "CompAutonomy": 0.70,
+                "CompPsi": 2.60,
+                "ResonanceDelta": 0.0
+            }),
+            json!({
+                "SessionId": "sync-session",
+                "Raw": "node-b",
+                "Tier": "raw",
+                "Timestamp": "2026-03-05T06:32:00Z",
+                "CompressionDepth": 1,
+                "ParentNodeId": null,
+                "SyncKey": "sync-b",
+                "UpdatedAt": "2026-03-05T06:33:00Z",
+                "SourceMetadata": null,
+                "Psi": 2.6,
+                "Rho": 0.96,
+                "Kappa": 0.94,
+                "UserStability": 0.85,
+                "UserFriction": 0.25,
+                "UserLogic": 0.80,
+                "UserAutonomy": 0.70,
+                "UserPsi": 2.60,
+                "ModelStability": 0.85,
+                "ModelFriction": 0.25,
+                "ModelLogic": 0.80,
+                "ModelAutonomy": 0.70,
+                "ModelPsi": 2.60,
+                "CompStability": 0.85,
+                "CompFriction": 0.25,
+                "CompLogic": 0.80,
+                "CompAutonomy": 0.70,
+                "CompPsi": 2.60,
+                "ResonanceDelta": 0.0
+            })
+        ])
+        .await;
+
+    let result = store
+        .query_changes_since_async("sync-session", None, 1)
+        .await
+        .expect("change query should succeed");
+
+    assert_eq!(result.nodes.len(), 1);
+    assert!(result.has_more);
+    assert_eq!(result.nodes[0].sync_key, "sync-a");
+    assert_eq!(result.next_cursor.as_ref().map(|cursor| cursor.sync_key.as_str()), Some("sync-a"));
+
+    let params = client.parameters().await;
+    assert_eq!(params[0].get("include_cursor"), Some(&json!(false)));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn checkpoints_can_be_read_and_written() {
+    let client = Arc::new(MockSurrealDbClient::default());
+    let store = SurrealDbNodeStore::new(client.clone());
+
+    client
+        .queue_response(vec![json!({
+            "SessionId": "sync-session",
+            "ConnectorId": "cloud-primary",
+            "CursorUpdatedAt": "2026-03-05T06:35:00Z",
+            "CursorSyncKey": "sync-b",
+            "UpdatedAt": "2026-03-05T06:36:00Z",
+            "Metadata": { "endpoint": "cloud" }
+        })])
+        .await;
+    client.queue_response(vec![]).await;
+
+    let checkpoint = store
+        .get_checkpoint_async("sync-session", "cloud-primary")
+        .await
+        .expect("checkpoint query should succeed")
+        .expect("checkpoint should exist");
+    assert_eq!(checkpoint.connector_id, "cloud-primary");
+    assert_eq!(checkpoint.cursor.as_ref().map(|cursor| cursor.sync_key.as_str()), Some("sync-b"));
+
+    store
+        .put_checkpoint_async(SyncCheckpoint {
+            session_id: "sync-session".to_string(),
+            connector_id: "cloud-primary".to_string(),
+            cursor: Some(SyncCursor {
+                updated_at: DateTime::parse_from_rfc3339("2026-03-05T06:40:00Z")
+                    .expect("timestamp should parse")
+                    .with_timezone(&Utc),
+                sync_key: "sync-c".to_string(),
+            }),
+            updated_at: DateTime::parse_from_rfc3339("2026-03-05T06:41:00Z")
+                .expect("timestamp should parse")
+                .with_timezone(&Utc),
+            metadata: Some(json!({ "endpoint": "cloud" })),
+        })
+        .await
+        .expect("checkpoint update should succeed");
+
+    let queries = client.queries().await;
+    assert!(queries[0].contains("FROM sync_checkpoint"));
+    assert!(queries[1].contains("UPSERT sync_checkpoint:"));
 }
 
 #[tokio::test(flavor = "current_thread")]

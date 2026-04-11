@@ -1,4 +1,7 @@
 use chrono::{DateTime, Utc};
+use serde::Serialize;
+use serde_json::Value;
+use sha2::{Digest, Sha256};
 use std::fmt;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,7 +35,7 @@ impl fmt::Display for ValidationFailureReason {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct AvecState {
     pub stability: f32,
     pub friction: f32,
@@ -145,12 +148,98 @@ pub struct SttpNode {
     pub timestamp: DateTime<Utc>,
     pub compression_depth: i32,
     pub parent_node_id: Option<String>,
+    pub sync_key: String,
+    pub updated_at: DateTime<Utc>,
+    pub source_metadata: Option<Value>,
     pub user_avec: AvecState,
     pub model_avec: AvecState,
     pub compression_avec: Option<AvecState>,
     pub rho: f32,
     pub kappa: f32,
     pub psi: f32,
+}
+
+impl SttpNode {
+    pub fn canonical_sync_key(&self) -> String {
+        #[derive(Serialize)]
+        struct SyncFingerprint<'a> {
+            session_id: &'a str,
+            tier: &'a str,
+            timestamp: String,
+            compression_depth: i32,
+            parent_node_id: &'a Option<String>,
+            raw: &'a str,
+            user_avec: AvecState,
+            model_avec: AvecState,
+            compression_avec: Option<AvecState>,
+            rho: f32,
+            kappa: f32,
+            psi: f32,
+        }
+
+        let fingerprint = SyncFingerprint {
+            session_id: &self.session_id,
+            tier: &self.tier,
+            timestamp: self.timestamp.to_rfc3339(),
+            compression_depth: self.compression_depth,
+            parent_node_id: &self.parent_node_id,
+            raw: &self.raw,
+            user_avec: self.user_avec,
+            model_avec: self.model_avec,
+            compression_avec: self.compression_avec,
+            rho: self.rho,
+            kappa: self.kappa,
+            psi: self.psi,
+        };
+
+        let encoded = serde_json::to_vec(&fingerprint).unwrap_or_default();
+        let mut hasher = Sha256::new();
+        hasher.update(encoded);
+        let digest = hasher.finalize();
+
+        digest
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeUpsertStatus {
+    Created,
+    Updated,
+    Duplicate,
+    Skipped,
+}
+
+#[derive(Debug, Clone)]
+pub struct NodeUpsertResult {
+    pub node_id: String,
+    pub sync_key: String,
+    pub status: NodeUpsertStatus,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SyncCursor {
+    pub updated_at: DateTime<Utc>,
+    pub sync_key: String,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ChangeQueryResult {
+    pub nodes: Vec<SttpNode>,
+    pub next_cursor: Option<SyncCursor>,
+    pub has_more: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct SyncCheckpoint {
+    pub session_id: String,
+    pub connector_id: String,
+    pub cursor: Option<SyncCursor>,
+    pub updated_at: DateTime<Utc>,
+    pub metadata: Option<Value>,
 }
 
 #[derive(Debug, Clone)]

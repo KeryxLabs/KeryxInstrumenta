@@ -7,15 +7,18 @@ use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, NodeQuery, ScopeRekeyResult, SttpNode,
+    AvecState, BatchRekeyResult, ChangeQueryResult, NodeQuery, NodeUpsertResult,
+    NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint, SyncCursor,
 };
 use crate::storage::surrealdb::client::{QueryParams, SurrealDbClient};
 use crate::storage::surrealdb::models::{
-    SurrealAvecRecord, SurrealNodeRecord, SurrealTriggerRecord,
+    SurrealAvecRecord, SurrealCheckpointRecord, SurrealExistingNodeRecord,
+    SurrealNodeRecord, SurrealTriggerRecord,
 };
 use crate::storage::surrealdb::raw_queries;
 
@@ -201,38 +204,131 @@ impl NodeStore for SurrealDbNodeStore {
         Ok(records.into_iter().map(map_to_node).collect())
     }
 
-    async fn store_async(&self, node: SttpNode) -> Result<String> {
-        let compression_avec_to_use = match node.compression_avec {
+    async fn upsert_node_async(&self, node: SttpNode) -> Result<NodeUpsertResult> {
+        let mut candidate = node;
+        let compression_avec_to_use = match candidate.compression_avec {
             Some(avec) if avec.psi() != 0.0 => avec,
-            _ => node.model_avec,
+            _ => candidate.model_avec,
         };
 
-        let include_parent_assignment = node.parent_node_id.is_some();
-        let mut parameters = QueryParams::new();
+        let sync_key = if candidate.sync_key.trim().is_empty() {
+            candidate.canonical_sync_key()
+        } else {
+            candidate.sync_key.trim().to_string()
+        };
 
-        parameters.insert(
+        let updated_at = Utc::now();
+        candidate.sync_key = sync_key.clone();
+        candidate.updated_at = updated_at;
+
+        let mut lookup_parameters = QueryParams::new();
+        lookup_parameters.insert(
             "tenant_id".to_string(),
-            json!(derive_tenant_id_from_session(&node.session_id)),
+            json!(derive_tenant_id_from_session(&candidate.session_id)),
         );
+        lookup_parameters.insert("session_id".to_string(), json!(&candidate.session_id));
+        lookup_parameters.insert("sync_key".to_string(), json!(&sync_key));
 
-        parameters.insert("session_id".to_string(), json!(node.session_id));
-        parameters.insert("raw".to_string(), json!(node.raw));
-        parameters.insert("tier".to_string(), json!(node.tier));
-        parameters.insert("timestamp".to_string(), json!(node.timestamp.to_rfc3339()));
-        parameters.insert("compression_depth".to_string(), json!(node.compression_depth));
-        parameters.insert("psi".to_string(), json!(node.psi));
-        parameters.insert("rho".to_string(), json!(node.rho));
-        parameters.insert("kappa".to_string(), json!(node.kappa));
-        parameters.insert("user_stability".to_string(), json!(node.user_avec.stability));
-        parameters.insert("user_friction".to_string(), json!(node.user_avec.friction));
-        parameters.insert("user_logic".to_string(), json!(node.user_avec.logic));
-        parameters.insert("user_autonomy".to_string(), json!(node.user_avec.autonomy));
-        parameters.insert("user_psi".to_string(), json!(node.user_avec.psi()));
-        parameters.insert("model_stability".to_string(), json!(node.model_avec.stability));
-        parameters.insert("model_friction".to_string(), json!(node.model_avec.friction));
-        parameters.insert("model_logic".to_string(), json!(node.model_avec.logic));
-        parameters.insert("model_autonomy".to_string(), json!(node.model_avec.autonomy));
-        parameters.insert("model_psi".to_string(), json!(node.model_avec.psi()));
+        let existing_rows = self
+            .client
+            .raw_query(raw_queries::FIND_EXISTING_NODE_BY_SYNC_KEY_QUERY, lookup_parameters)
+            .await?;
+        let existing_records: Vec<SurrealExistingNodeRecord> = decode_rows(existing_rows)?;
+
+        if let Some(existing) = existing_records.first() {
+            let existing_id = normalize_record_id(existing.id.clone(), "temporal_node")
+                .and_then(|record_id| normalize_temporal_node_id(&record_id))
+                .ok_or_else(|| anyhow!("existing node record id was invalid"))?;
+
+            if normalize_metadata(existing.source_metadata.as_ref())
+                != normalize_metadata(candidate.source_metadata.as_ref())
+            {
+                let mut update_parameters = QueryParams::new();
+                update_parameters.insert(
+                    "source_metadata".to_string(),
+                    candidate
+                        .source_metadata
+                        .clone()
+                        .map_or(Value::Null, |metadata| metadata),
+                );
+                update_parameters
+                    .insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
+
+                let update_query = raw_queries::update_temporal_node_sync_metadata_query(&existing_id);
+                self.client.raw_query(&update_query, update_parameters).await?;
+
+                return Ok(NodeUpsertResult {
+                    node_id: existing_id,
+                    sync_key,
+                    status: NodeUpsertStatus::Updated,
+                    updated_at,
+                });
+            }
+
+            return Ok(NodeUpsertResult {
+                node_id: existing_id,
+                sync_key,
+                status: NodeUpsertStatus::Duplicate,
+                updated_at,
+            });
+        }
+
+        let include_parent_assignment = candidate.parent_node_id.is_some();
+        let mut parameters = QueryParams::new();
+        let tenant_id = derive_tenant_id_from_session(&candidate.session_id);
+
+        parameters.insert("tenant_id".to_string(), json!(tenant_id));
+        parameters.insert("session_id".to_string(), json!(&candidate.session_id));
+        parameters.insert("raw".to_string(), json!(&candidate.raw));
+        parameters.insert("tier".to_string(), json!(&candidate.tier));
+        parameters.insert(
+            "timestamp".to_string(),
+            json!(candidate.timestamp.to_rfc3339()),
+        );
+        parameters.insert(
+            "compression_depth".to_string(),
+            json!(candidate.compression_depth),
+        );
+        parameters.insert("sync_key".to_string(), json!(&sync_key));
+        parameters.insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
+        parameters.insert(
+            "source_metadata".to_string(),
+            candidate
+                .source_metadata
+                .clone()
+                .map_or(Value::Null, |metadata| metadata),
+        );
+        parameters.insert("psi".to_string(), json!(candidate.psi));
+        parameters.insert("rho".to_string(), json!(candidate.rho));
+        parameters.insert("kappa".to_string(), json!(candidate.kappa));
+        parameters.insert(
+            "user_stability".to_string(),
+            json!(candidate.user_avec.stability),
+        );
+        parameters.insert(
+            "user_friction".to_string(),
+            json!(candidate.user_avec.friction),
+        );
+        parameters.insert("user_logic".to_string(), json!(candidate.user_avec.logic));
+        parameters.insert(
+            "user_autonomy".to_string(),
+            json!(candidate.user_avec.autonomy),
+        );
+        parameters.insert("user_psi".to_string(), json!(candidate.user_avec.psi()));
+        parameters.insert(
+            "model_stability".to_string(),
+            json!(candidate.model_avec.stability),
+        );
+        parameters.insert(
+            "model_friction".to_string(),
+            json!(candidate.model_avec.friction),
+        );
+        parameters.insert("model_logic".to_string(), json!(candidate.model_avec.logic));
+        parameters.insert(
+            "model_autonomy".to_string(),
+            json!(candidate.model_avec.autonomy),
+        );
+        parameters.insert("model_psi".to_string(), json!(candidate.model_avec.psi()));
         parameters.insert(
             "comp_stability".to_string(),
             json!(compression_avec_to_use.stability),
@@ -248,7 +344,7 @@ impl NodeStore for SurrealDbNodeStore {
         );
         parameters.insert("comp_psi".to_string(), json!(compression_avec_to_use.psi()));
 
-        if let Some(parent_node_id) = node.parent_node_id {
+        if let Some(parent_node_id) = candidate.parent_node_id.clone() {
             parameters.insert("parent_node_id".to_string(), json!(parent_node_id));
         }
 
@@ -257,7 +353,12 @@ impl NodeStore for SurrealDbNodeStore {
             raw_queries::create_temporal_node_query(&record_id, include_parent_assignment);
         self.client.raw_query(&query_text, parameters).await?;
 
-        Ok(record_id)
+        Ok(NodeUpsertResult {
+            node_id: record_id,
+            sync_key,
+            status: NodeUpsertStatus::Created,
+            updated_at,
+        })
     }
 
     async fn get_by_resonance_async(
@@ -353,6 +454,115 @@ impl NodeStore for SurrealDbNodeStore {
             .raw_query(raw_queries::STORE_CALIBRATION_QUERY, parameters)
             .await?;
 
+        Ok(())
+    }
+
+    async fn query_changes_since_async(
+        &self,
+        session_id: &str,
+        cursor: Option<SyncCursor>,
+        limit: usize,
+    ) -> Result<ChangeQueryResult> {
+        let capped_limit = limit.max(1);
+        let query_text = raw_queries::query_changes_since_query(capped_limit + 1);
+        let mut parameters = QueryParams::new();
+        parameters.insert(
+            "tenant_id".to_string(),
+            json!(derive_tenant_id_from_session(session_id)),
+        );
+        parameters.insert("session_id".to_string(), json!(session_id));
+        parameters.insert("include_cursor".to_string(), json!(cursor.is_some()));
+        parameters.insert(
+            "cursor_updated_at".to_string(),
+            cursor
+                .as_ref()
+                .map(|cursor| json!(cursor.updated_at.to_rfc3339()))
+                .unwrap_or(Value::Null),
+        );
+        parameters.insert(
+            "cursor_sync_key".to_string(),
+            cursor
+                .as_ref()
+                .map(|cursor| json!(&cursor.sync_key))
+                .unwrap_or(Value::Null),
+        );
+
+        let rows = self.client.raw_query(&query_text, parameters).await?;
+        let mut records: Vec<SurrealNodeRecord> = decode_rows(rows)?;
+        let has_more = records.len() > capped_limit;
+        if has_more {
+            records.truncate(capped_limit);
+        }
+
+        let nodes = records.into_iter().map(map_to_node).collect::<Vec<_>>();
+        let next_cursor = nodes.last().map(|node| SyncCursor {
+            updated_at: node.updated_at,
+            sync_key: node.sync_key.clone(),
+        });
+
+        Ok(ChangeQueryResult {
+            nodes,
+            next_cursor,
+            has_more,
+        })
+    }
+
+    async fn get_checkpoint_async(
+        &self,
+        session_id: &str,
+        connector_id: &str,
+    ) -> Result<Option<SyncCheckpoint>> {
+        let mut parameters = QueryParams::new();
+        parameters.insert(
+            "tenant_id".to_string(),
+            json!(derive_tenant_id_from_session(session_id)),
+        );
+        parameters.insert("session_id".to_string(), json!(session_id));
+        parameters.insert("connector_id".to_string(), json!(connector_id));
+
+        let rows = self
+            .client
+            .raw_query(raw_queries::GET_SYNC_CHECKPOINT_QUERY, parameters)
+            .await?;
+        let records: Vec<SurrealCheckpointRecord> = decode_rows(rows)?;
+
+        Ok(records.first().map(map_to_checkpoint))
+    }
+
+    async fn put_checkpoint_async(&self, checkpoint: SyncCheckpoint) -> Result<()> {
+        let tenant_id = derive_tenant_id_from_session(&checkpoint.session_id);
+        let record_id = checkpoint_record_id(&tenant_id, &checkpoint.session_id, &checkpoint.connector_id);
+        let mut parameters = QueryParams::new();
+        parameters.insert("tenant_id".to_string(), json!(tenant_id));
+        parameters.insert("session_id".to_string(), json!(&checkpoint.session_id));
+        parameters.insert("connector_id".to_string(), json!(&checkpoint.connector_id));
+        parameters.insert(
+            "cursor_updated_at".to_string(),
+            checkpoint
+                .cursor
+                .as_ref()
+                .map(|cursor| json!(cursor.updated_at.to_rfc3339()))
+                .unwrap_or(Value::Null),
+        );
+        parameters.insert(
+            "cursor_sync_key".to_string(),
+            checkpoint
+                .cursor
+                .as_ref()
+                .map(|cursor| json!(&cursor.sync_key))
+                .unwrap_or(Value::Null),
+        );
+        parameters.insert(
+            "metadata".to_string(),
+            checkpoint.metadata.clone().map_or(Value::Null, |value| value),
+        );
+        parameters.insert(
+            "updated_at".to_string(),
+            json!(checkpoint.updated_at.to_rfc3339()),
+        );
+
+        let query_text = raw_queries::upsert_sync_checkpoint_query(&record_id);
+        self.client.raw_query(&query_text, parameters).await?;
         Ok(())
     }
 
@@ -516,13 +726,24 @@ impl NodeStore for SurrealDbNodeStore {
 fn map_to_node(record: SurrealNodeRecord) -> SttpNode {
     let _ = (record.user_psi, record.model_psi, record.comp_psi, record.resonance_delta);
 
-    SttpNode {
+    let timestamp = parse_timestamp(&record.timestamp);
+    let updated_at = record
+        .updated_at
+        .as_deref()
+        .map(parse_timestamp)
+        .unwrap_or(timestamp);
+    let sync_key = record.sync_key.unwrap_or_default();
+
+    let mut node = SttpNode {
         raw: record.raw,
         session_id: record.session_id,
         tier: record.tier,
-        timestamp: parse_timestamp(&record.timestamp),
+        timestamp,
         compression_depth: record.compression_depth,
         parent_node_id: record.parent_node_id,
+        sync_key,
+        updated_at,
+        source_metadata: record.source_metadata,
         psi: record.psi as f32,
         rho: record.rho as f32,
         kappa: record.kappa as f32,
@@ -544,6 +765,28 @@ fn map_to_node(record: SurrealNodeRecord) -> SttpNode {
             logic: record.comp_logic as f32,
             autonomy: record.comp_autonomy as f32,
         }),
+    };
+
+    if node.sync_key.trim().is_empty() {
+        node.sync_key = node.canonical_sync_key();
+    }
+
+    node
+}
+
+fn map_to_checkpoint(record: &SurrealCheckpointRecord) -> SyncCheckpoint {
+    SyncCheckpoint {
+        session_id: record.session_id.clone(),
+        connector_id: record.connector_id.clone(),
+        cursor: match (&record.cursor_updated_at, &record.cursor_sync_key) {
+            (Some(updated_at), Some(sync_key)) if !sync_key.trim().is_empty() => Some(SyncCursor {
+                updated_at: parse_timestamp(updated_at),
+                sync_key: sync_key.clone(),
+            }),
+            _ => None,
+        },
+        updated_at: parse_timestamp(&record.updated_at),
+        metadata: record.metadata.clone(),
     }
 }
 
@@ -636,4 +879,22 @@ fn normalize_temporal_node_id(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn normalize_metadata(metadata: Option<&Value>) -> Option<String> {
+    metadata.and_then(|value| serde_json::to_string(value).ok())
+}
+
+fn checkpoint_record_id(tenant_id: &str, session_id: &str, connector_id: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(tenant_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(session_id.as_bytes());
+    hasher.update([0]);
+    hasher.update(connector_id.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }

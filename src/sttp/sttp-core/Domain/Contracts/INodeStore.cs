@@ -8,7 +8,12 @@ public interface INodeStore
         NodeQuery query,
         CancellationToken ct = default);
 
-    Task<string> StoreAsync(SttpNode node, CancellationToken ct = default);
+    async Task<string> StoreAsync(SttpNode node, CancellationToken ct = default)
+        => (await UpsertNodeAsync(node, ct)).NodeId;
+
+    Task<NodeUpsertResult> UpsertNodeAsync(
+        SttpNode node,
+        CancellationToken ct = default);
 
     Task<IReadOnlyList<SttpNode>> GetByResonanceAsync(
         string sessionId,
@@ -33,5 +38,20 @@ public interface INodeStore
         string sessionId,
         AvecState avec,
         string trigger,
+        CancellationToken ct = default);
+
+    Task<ChangeQueryResult> QueryChangesSinceAsync(
+        string sessionId,
+        SyncCursor? cursor,
+        int limit,
+        CancellationToken ct = default);
+
+    Task<SyncCheckpoint?> GetCheckpointAsync(
+        string sessionId,
+        string connectorId,
+        CancellationToken ct = default);
+
+    Task PutCheckpointAsync(
+        SyncCheckpoint checkpoint,
         CancellationToken ct = default);
 }

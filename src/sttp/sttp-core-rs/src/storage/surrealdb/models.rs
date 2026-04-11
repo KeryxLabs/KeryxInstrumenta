@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurrealNodeRecord {
@@ -14,6 +15,12 @@ pub struct SurrealNodeRecord {
     pub compression_depth: i32,
     #[serde(rename = "ParentNodeId", default)]
     pub parent_node_id: Option<String>,
+    #[serde(rename = "SyncKey", default)]
+    pub sync_key: Option<String>,
+    #[serde(rename = "UpdatedAt", default)]
+    pub updated_at: Option<String>,
+    #[serde(rename = "SourceMetadata", default)]
+    pub source_metadata: Option<Value>,
     #[serde(rename = "Psi", default)]
     pub psi: f64,
     #[serde(rename = "Rho", default)]
@@ -73,4 +80,28 @@ pub struct SurrealAvecRecord {
 #[derive(Debug, Clone, Deserialize)]
 pub struct SurrealTriggerRecord {
     pub trigger: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SurrealExistingNodeRecord {
+    #[serde(rename = "Id", default)]
+    pub id: Value,
+    #[serde(rename = "SourceMetadata", default)]
+    pub source_metadata: Option<Value>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SurrealCheckpointRecord {
+    #[serde(rename = "SessionId")]
+    pub session_id: String,
+    #[serde(rename = "ConnectorId")]
+    pub connector_id: String,
+    #[serde(rename = "CursorUpdatedAt", default)]
+    pub cursor_updated_at: Option<String>,
+    #[serde(rename = "CursorSyncKey", default)]
+    pub cursor_sync_key: Option<String>,
+    #[serde(rename = "UpdatedAt")]
+    pub updated_at: String,
+    #[serde(rename = "Metadata", default)]
+    pub metadata: Option<Value>,
 }
