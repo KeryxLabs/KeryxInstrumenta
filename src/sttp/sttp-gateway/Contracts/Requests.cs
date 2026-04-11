@@ -2,6 +2,7 @@ namespace SttpGateway.Contracts;
 
 public sealed record CalibrateSessionHttpRequest(
     string SessionId,
+    string? TenantId,
     float Stability,
     float Friction,
     float Logic,
@@ -10,10 +11,12 @@ public sealed record CalibrateSessionHttpRequest(
 
 public sealed record StoreContextHttpRequest(
     string Node,
-    string SessionId);
+    string SessionId,
+    string? TenantId);
 
 public sealed record GetContextHttpRequest(
     string SessionId,
+    string? TenantId,
     float Stability,
     float Friction,
     float Logic,
@@ -22,9 +25,17 @@ public sealed record GetContextHttpRequest(
 
 public sealed record CreateMonthlyRollupHttpRequest(
     string SessionId,
+    string? TenantId,
     DateTime StartDateUtc,
     DateTime EndDateUtc,
     string? SourceSessionId = null,
     string? ParentNodeId = null,
     bool Persist = true,
     int Limit = 5000);
+
+public sealed record BatchRekeyHttpRequest(
+    IReadOnlyList<string> NodeIds,
+    string TargetSessionId,
+    string? TargetTenantId = null,
+    bool DryRun = true,
+    bool AllowMerge = false);

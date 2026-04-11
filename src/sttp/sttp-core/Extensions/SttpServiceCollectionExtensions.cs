@@ -14,6 +14,7 @@ public static class SttpServiceCollectionExtensions
         services.AddSingleton<MoodCatalogService>();
         services.AddSingleton<StoreContextService>();
         services.AddSingleton<MonthlyRollupService>();
+        services.AddSingleton<RekeyScopeService>();
         return services;
     }
 

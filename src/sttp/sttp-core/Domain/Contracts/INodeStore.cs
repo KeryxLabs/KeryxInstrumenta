@@ -54,4 +54,12 @@ public interface INodeStore
     Task PutCheckpointAsync(
         SyncCheckpoint checkpoint,
         CancellationToken ct = default);
+
+    Task<BatchRekeyResult> BatchRekeyScopesAsync(
+        IReadOnlyList<string> nodeIds,
+        string targetTenantId,
+        string targetSessionId,
+        bool dryRun,
+        bool allowMerge,
+        CancellationToken ct = default);
 }

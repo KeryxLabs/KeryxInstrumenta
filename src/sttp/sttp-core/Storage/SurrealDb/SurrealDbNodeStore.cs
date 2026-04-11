@@ -25,6 +25,12 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
         _logger = logger;
     }
 
+    private sealed record ScopeAnchorRecord(string? TenantId, string SessionId);
+
+    private sealed record ScopeCountRecord(int Count);
+
+    private sealed record ScopeKey(string TenantId, string SessionId);
+
     public async Task InitializeAsync(CancellationToken ct = default)
     {
         var schema = @"
@@ -91,10 +97,56 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
         try
         {
             await _db.RawQuery(schema, null, ct);
+            await BackfillMissingTenantIdsAsync(ct);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "unable to initialize SurrealDB schema");
+        }
+    }
+
+    private async Task BackfillMissingTenantIdsAsync(CancellationToken ct)
+    {
+        await BackfillTableTenantIdsAsync(
+            "temporal_node",
+            """
+            SELECT id, session_id
+            FROM temporal_node
+            WHERE tenant_id = NONE OR tenant_id = '';
+            """,
+            ct);
+
+        await BackfillTableTenantIdsAsync(
+            "calibration",
+            """
+            SELECT id, session_id
+            FROM calibration
+            WHERE tenant_id = NONE OR tenant_id = '';
+            """,
+            ct);
+    }
+
+    private async Task BackfillTableTenantIdsAsync(string table, string query, CancellationToken ct)
+    {
+        var results = await _db.RawQuery(query, null, ct);
+        var records = results.GetValue<List<MissingTenantRecord>>(0) ?? [];
+
+        foreach (var record in records)
+        {
+            if (string.IsNullOrWhiteSpace(record.SessionId))
+                continue;
+
+            var recordId = NormalizeRecordId(record.Id, table);
+            if (string.IsNullOrWhiteSpace(recordId))
+                continue;
+
+            await _db.RawQuery(
+                $"UPDATE {recordId} SET tenant_id = $tenant_id;",
+                new Dictionary<string, object?>
+                {
+                    ["tenant_id"] = DeriveTenantIdFromSession(record.SessionId)
+                },
+                ct);
         }
     }
 
@@ -614,6 +666,228 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             ct);
     }
 
+    public async Task<BatchRekeyResult> BatchRekeyScopesAsync(
+        IReadOnlyList<string> nodeIds,
+        string targetTenantId,
+        string targetSessionId,
+        bool dryRun,
+        bool allowMerge,
+        CancellationToken ct = default)
+    {
+        if (nodeIds.Count == 0)
+            throw new ArgumentException("at least one node id is required", nameof(nodeIds));
+
+        if (string.IsNullOrWhiteSpace(targetSessionId))
+            throw new ArgumentException("target session id cannot be empty", nameof(targetSessionId));
+
+        var normalizedTargetTenantId = NormalizeTenantId(targetTenantId);
+        var normalizedNodeIds = nodeIds
+            .Select(NormalizeTemporalNodeId)
+            .Where(nodeId => !string.IsNullOrWhiteSpace(nodeId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (normalizedNodeIds.Count == 0)
+            throw new ArgumentException("no valid node ids were provided", nameof(nodeIds));
+
+        var missingNodeIds = new List<string>();
+        var scopeKeys = new SortedSet<ScopeKey>(Comparer<ScopeKey>.Create((left, right) =>
+        {
+            var tenantComparison = string.CompareOrdinal(left.TenantId, right.TenantId);
+            return tenantComparison != 0
+                ? tenantComparison
+                : string.CompareOrdinal(left.SessionId, right.SessionId);
+        }));
+
+        foreach (var nodeId in normalizedNodeIds)
+        {
+            var results = await _db.RawQuery(
+                """
+                SELECT
+                    tenant_id AS TenantId,
+                    session_id AS SessionId
+                FROM temporal_node
+                WHERE id = type::record('temporal_node', $node_id)
+                LIMIT 1;
+                """,
+                new Dictionary<string, object?>
+                {
+                    ["node_id"] = nodeId
+                },
+                ct);
+
+            var anchor = results.GetValue<List<ScopeAnchorRecord>>(0)?.FirstOrDefault();
+            if (anchor is null || string.IsNullOrWhiteSpace(anchor.SessionId))
+            {
+                missingNodeIds.Add(nodeId!);
+                continue;
+            }
+
+            scopeKeys.Add(new ScopeKey(NormalizeTenantId(anchor.TenantId), anchor.SessionId));
+        }
+
+        var scopeResults = new List<ScopeRekeyResult>();
+        var temporalNodesUpdated = 0;
+        var calibrationsUpdated = 0;
+
+        foreach (var scope in scopeKeys)
+        {
+            var sourceIncludeLegacy = IncludesLegacyTenantBucket(scope.TenantId);
+            var temporalNodes = await CountScopeRowsAsync(
+                "temporal_node",
+                scope.SessionId,
+                scope.TenantId,
+                sourceIncludeLegacy,
+                ct);
+            var calibrations = await CountScopeRowsAsync(
+                "calibration",
+                scope.SessionId,
+                scope.TenantId,
+                sourceIncludeLegacy,
+                ct);
+
+            var sameScope = scope.TenantId == normalizedTargetTenantId && scope.SessionId == targetSessionId;
+            var targetIncludeLegacy = IncludesLegacyTenantBucket(normalizedTargetTenantId);
+
+            var targetTemporalNodes = sameScope
+                ? 0
+                : await CountScopeRowsAsync(
+                    "temporal_node",
+                    targetSessionId,
+                    normalizedTargetTenantId,
+                    targetIncludeLegacy,
+                    ct);
+
+            var targetCalibrations = sameScope
+                ? 0
+                : await CountScopeRowsAsync(
+                    "calibration",
+                    targetSessionId,
+                    normalizedTargetTenantId,
+                    targetIncludeLegacy,
+                    ct);
+
+            var conflict = !allowMerge
+                && !sameScope
+                && (targetTemporalNodes > 0 || targetCalibrations > 0);
+
+            var applied = false;
+            string? message = null;
+
+            if (sameScope)
+            {
+                message = "source and target scopes are identical";
+            }
+            else if (conflict)
+            {
+                message = "target scope already contains rows; set allowMerge=true to override";
+            }
+            else if (!dryRun)
+            {
+                await ApplyScopeRekeyAsync(
+                    scope.SessionId,
+                    scope.TenantId,
+                    targetSessionId,
+                    normalizedTargetTenantId,
+                    ct);
+
+                applied = true;
+                temporalNodesUpdated += temporalNodes;
+                calibrationsUpdated += calibrations;
+            }
+
+            scopeResults.Add(new ScopeRekeyResult
+            {
+                SourceTenantId = scope.TenantId,
+                SourceSessionId = scope.SessionId,
+                TargetTenantId = normalizedTargetTenantId,
+                TargetSessionId = targetSessionId,
+                TemporalNodes = temporalNodes,
+                Calibrations = calibrations,
+                TargetTemporalNodes = targetTemporalNodes,
+                TargetCalibrations = targetCalibrations,
+                Applied = applied,
+                Conflict = conflict,
+                Message = message
+            });
+        }
+
+        return new BatchRekeyResult
+        {
+            DryRun = dryRun,
+            RequestedNodeIds = normalizedNodeIds.Count,
+            ResolvedNodeIds = normalizedNodeIds.Count - missingNodeIds.Count,
+            MissingNodeIds = missingNodeIds,
+            Scopes = scopeResults,
+            TemporalNodesUpdated = temporalNodesUpdated,
+            CalibrationsUpdated = calibrationsUpdated
+        };
+    }
+
+    private async Task<int> CountScopeRowsAsync(
+        string table,
+        string sessionId,
+        string tenantId,
+        bool includeLegacy,
+        CancellationToken ct)
+    {
+        var results = await _db.RawQuery(
+            $"""
+            SELECT count() AS Count
+            FROM {table}
+            WHERE session_id = $session_id
+                AND (tenant_id = $tenant_id OR ($include_legacy AND (tenant_id = NONE OR tenant_id = '')))
+            LIMIT 1;
+            """,
+            new Dictionary<string, object?>
+            {
+                ["session_id"] = sessionId,
+                ["tenant_id"] = tenantId,
+                ["include_legacy"] = includeLegacy
+            },
+            ct);
+
+        return results.GetValue<List<ScopeCountRecord>>(0)?.FirstOrDefault()?.Count ?? 0;
+    }
+
+    private async Task ApplyScopeRekeyAsync(
+        string sourceSessionId,
+        string sourceTenantId,
+        string targetSessionId,
+        string targetTenantId,
+        CancellationToken ct)
+    {
+        await _db.RawQuery(
+            """
+            BEGIN TRANSACTION;
+
+            UPDATE temporal_node
+            SET
+                tenant_id = $target_tenant_id,
+                session_id = $target_session_id
+            WHERE session_id = $source_session_id
+                AND (tenant_id = $source_tenant_id OR ($source_include_legacy AND (tenant_id = NONE OR tenant_id = '')));
+
+            UPDATE calibration
+            SET
+                tenant_id = $target_tenant_id,
+                session_id = $target_session_id
+            WHERE session_id = $source_session_id
+                AND (tenant_id = $source_tenant_id OR ($source_include_legacy AND (tenant_id = NONE OR tenant_id = '')));
+
+            COMMIT TRANSACTION;
+            """,
+            new Dictionary<string, object?>
+            {
+                ["source_session_id"] = sourceSessionId,
+                ["source_tenant_id"] = sourceTenantId,
+                ["source_include_legacy"] = IncludesLegacyTenantBucket(sourceTenantId),
+                ["target_session_id"] = targetSessionId,
+                ["target_tenant_id"] = targetTenantId
+            },
+            ct);
+    }
+
     private static SttpNode MapToNode(SurrealNodeRecord record)
     {
         var node = new SttpNode
@@ -676,10 +950,63 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
         return string.IsNullOrWhiteSpace(tenantId) ? DefaultTenantId : tenantId;
     }
 
-    private static string NormalizeTemporalNodeId(string value)
-        => value.StartsWith("temporal_node:", StringComparison.Ordinal)
-            ? value["temporal_node:".Length..]
-            : value;
+    private static string NormalizeTenantId(string? value)
+        => string.IsNullOrWhiteSpace(value) ? DefaultTenantId : value.Trim();
+
+    private static bool IncludesLegacyTenantBucket(string tenantId)
+        => string.Equals(tenantId, DefaultTenantId, StringComparison.Ordinal);
+
+    private static string? NormalizeTemporalNodeId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        if (!trimmed.StartsWith("temporal_node:", StringComparison.Ordinal))
+            return trimmed;
+
+        var normalized = trimmed["temporal_node:".Length..].Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
+
+    private static string? NormalizeRecordId(object? rawId, string fallbackTable)
+    {
+        if (rawId is JsonElement json)
+        {
+            if (json.ValueKind == JsonValueKind.String)
+            {
+                var value = json.GetString();
+                return string.IsNullOrWhiteSpace(value) ? null : value;
+            }
+
+            if (json.ValueKind == JsonValueKind.Object)
+            {
+                var tableName = json.TryGetProperty("tb", out var tableProperty)
+                    ? ValueToRecordComponent(tableProperty)
+                    : fallbackTable;
+                var idComponent = json.TryGetProperty("id", out var idProperty)
+                    ? ValueToRecordComponent(idProperty)
+                    : null;
+
+                return string.IsNullOrWhiteSpace(idComponent) ? null : $"{tableName}:{idComponent}";
+            }
+        }
+
+        var stringValue = rawId?.ToString();
+        return string.IsNullOrWhiteSpace(stringValue) ? null : stringValue;
+    }
+
+    private static string? ValueToRecordComponent(JsonElement value)
+        => value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.GetRawText(),
+            JsonValueKind.True => bool.TrueString.ToLowerInvariant(),
+            JsonValueKind.False => bool.FalseString.ToLowerInvariant(),
+            _ => null
+        };
+
+    private sealed record MissingTenantRecord(object? Id, string SessionId);
 
     private static object? ToSurrealValue(ConnectorMetadata? value)
         => value is null ? null : JsonSerializer.Deserialize<object>(JsonSerializer.Serialize(value));

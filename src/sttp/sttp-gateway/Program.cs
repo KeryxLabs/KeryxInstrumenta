@@ -6,6 +6,12 @@ using SttpMcp.Application.Validation;
 using SttpMcp.Domain.Contracts;
 using SttpMcp.Domain.Models;
 
+const string TenantHeader = "x-tenant-id";
+const string DefaultTenant = "default";
+const string TenantScopePrefix = "tenant:";
+const string TenantScopeSeparator = "::session:";
+const int TenantScanLimit = 200;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Optional user-local config: ~/.sttp-gateway/appsettings.json
@@ -80,9 +86,10 @@ app.MapGet("/health", () => Results.Ok(new { status = "ok", transport = "http+gr
 
 app.MapPost("/api/v1/calibrate", async (CalibrateSessionHttpRequest request, CalibrationService service, CancellationToken ct) =>
 {
+    var tenant = ResolveHttpTenant(request.TenantId, null);
     var trigger = string.IsNullOrWhiteSpace(request.Trigger) ? "manual" : request.Trigger;
     var result = await service.CalibrateAsync(
-        request.SessionId,
+        ScopeSessionId(tenant, request.SessionId),
         request.Stability,
         request.Friction,
         request.Logic,
@@ -95,14 +102,16 @@ app.MapPost("/api/v1/calibrate", async (CalibrateSessionHttpRequest request, Cal
 
 app.MapPost("/api/v1/store", async (StoreContextHttpRequest request, StoreContextService service, CancellationToken ct) =>
 {
-    var result = await service.StoreAsync(request.Node, request.SessionId, ct);
+    var tenant = ResolveHttpTenant(request.TenantId, null);
+    var result = await service.StoreAsync(request.Node, ScopeSessionId(tenant, request.SessionId), ct);
     return Results.Ok(result);
 });
 
 app.MapPost("/api/v1/context", async (GetContextHttpRequest request, ContextQueryService service, CancellationToken ct) =>
 {
+    var tenant = ResolveHttpTenant(request.TenantId, null);
     var result = await service.GetContextAsync(
-        request.SessionId,
+        ScopeSessionId(tenant, request.SessionId),
         request.Stability,
         request.Friction,
         request.Logic,
@@ -110,22 +119,47 @@ app.MapPost("/api/v1/context", async (GetContextHttpRequest request, ContextQuer
         request.Limit,
         ct);
 
-    return Results.Ok(result);
+    return Results.Ok(result with
+    {
+        Nodes = result.Nodes.Select(node => NormalizeNodeForTenant(node, tenant)).Where(node => node is not null).Select(node => node!).ToList(),
+        Retrieved = result.Nodes.Count
+    });
 });
 
-app.MapGet("/api/v1/nodes", async (int? limit, string? sessionId, ContextQueryService service, CancellationToken ct) =>
+app.MapGet("/api/v1/nodes", async (HttpRequest httpRequest, int? limit, string? sessionId, string? tenantId, ContextQueryService service, CancellationToken ct) =>
 {
-    var result = await service.ListNodesAsync(limit ?? 50, sessionId, ct);
-    return Results.Ok(result);
+    var tenant = ResolveHttpTenant(tenantId, httpRequest.Headers);
+    var requestedLimit = Math.Clamp(limit ?? 50, 1, TenantScanLimit);
+    var scopedSessionId = string.IsNullOrWhiteSpace(sessionId) ? null : ScopeSessionId(tenant, sessionId);
+    var backendLimit = scopedSessionId is null ? TenantScanLimit : requestedLimit;
+    var result = await service.ListNodesAsync(backendLimit, scopedSessionId, ct);
+    var nodes = result.Nodes
+        .Select(node => NormalizeNodeForTenant(node, tenant))
+        .Where(node => node is not null)
+        .Take(requestedLimit)
+        .Select(node => node!)
+        .ToList();
+    return Results.Ok(new ListNodesResult
+    {
+        Nodes = nodes,
+        Retrieved = nodes.Count
+    });
 });
 
-app.MapGet("/api/v1/graph", async (int? limit, string? sessionId, ContextQueryService service, CancellationToken ct) =>
+app.MapGet("/api/v1/graph", async (HttpRequest httpRequest, int? limit, string? sessionId, string? tenantId, ContextQueryService service, CancellationToken ct) =>
 {
+    var tenant = ResolveHttpTenant(tenantId, httpRequest.Headers);
     var cappedLimit = Math.Clamp(limit ?? 1000, 1, 5000);
-    var result = await service.ListNodesAsync(cappedLimit, sessionId, ct);
+    var scopedSessionId = string.IsNullOrWhiteSpace(sessionId) ? null : ScopeSessionId(tenant, sessionId);
+    var backendLimit = scopedSessionId is null ? TenantScanLimit : cappedLimit;
+    var result = await service.ListNodesAsync(backendLimit, scopedSessionId, ct);
 
     var orderedNodes = result.Nodes
+        .Select(node => NormalizeNodeForTenant(node, tenant))
+        .Where(node => node is not null)
+        .Select(node => node!)
         .OrderByDescending(n => n.Timestamp)
+        .Take(cappedLimit)
         .ToList();
 
     var grouped = orderedNodes
@@ -289,12 +323,13 @@ app.MapGet("/api/v1/moods", async (
 
 app.MapPost("/api/v1/rollups/monthly", async (CreateMonthlyRollupHttpRequest request, MonthlyRollupService service, CancellationToken ct) =>
 {
+    var tenant = ResolveHttpTenant(request.TenantId, null);
     var rollupRequest = new MonthlyRollupRequest
     {
-        SessionId = request.SessionId,
+        SessionId = ScopeSessionId(tenant, request.SessionId),
         StartUtc = request.StartDateUtc,
         EndUtc = request.EndDateUtc,
-        SourceSessionId = request.SourceSessionId,
+        SourceSessionId = string.IsNullOrWhiteSpace(request.SourceSessionId) ? null : ScopeSessionId(tenant, request.SourceSessionId),
         ParentNodeId = request.ParentNodeId,
         Persist = request.Persist,
         Limit = request.Limit
@@ -304,7 +339,90 @@ app.MapPost("/api/v1/rollups/monthly", async (CreateMonthlyRollupHttpRequest req
     return Results.Ok(result);
 });
 
+app.MapPost("/api/v1/rekey", async (HttpRequest httpRequest, BatchRekeyHttpRequest request, RekeyScopeService service, CancellationToken ct) =>
+{
+    if (request.NodeIds.Count == 0)
+        return Results.BadRequest(new { error = "nodeIds must contain at least one value" });
+
+    if (string.IsNullOrWhiteSpace(request.TargetSessionId))
+        return Results.BadRequest(new { error = "targetSessionId cannot be empty" });
+
+    var targetTenant = ResolveHttpTenant(request.TargetTenantId, httpRequest.Headers);
+    var scopedTargetSession = ScopeSessionId(targetTenant, request.TargetSessionId.Trim());
+    var result = await service.RekeyAsync(
+        request.NodeIds,
+        targetTenant,
+        scopedTargetSession,
+        request.DryRun,
+        request.AllowMerge,
+        ct);
+
+    return Results.Ok(new BatchRekeyResult
+    {
+        DryRun = result.DryRun,
+        RequestedNodeIds = result.RequestedNodeIds,
+        ResolvedNodeIds = result.ResolvedNodeIds,
+        MissingNodeIds = result.MissingNodeIds,
+        Scopes = result.Scopes.Select(scope => scope with
+        {
+            SourceSessionId = DisplaySessionId(scope.SourceSessionId),
+            TargetSessionId = DisplaySessionId(scope.TargetSessionId)
+        }).ToList(),
+        TemporalNodesUpdated = result.TemporalNodesUpdated,
+        CalibrationsUpdated = result.CalibrationsUpdated
+    });
+});
+
 app.MapGrpcService<SttpGrpcService>();
 app.MapGrpcReflectionService();
 
 app.Run();
+
+static string? NormalizeTenantValue(string? value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+        return null;
+
+    var normalized = value.Trim().ToLowerInvariant();
+    return normalized.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '-' || ch == '_')
+        ? normalized
+        : null;
+}
+
+static string ResolveHttpTenant(string? explicitTenant, IHeaderDictionary? headers)
+    => NormalizeTenantValue(explicitTenant)
+        ?? (headers is null ? null : NormalizeTenantValue(headers[TenantHeader].FirstOrDefault()))
+        ?? DefaultTenant;
+
+static string ScopeSessionId(string tenant, string sessionId)
+    => string.Equals(tenant, DefaultTenant, StringComparison.Ordinal)
+        ? sessionId
+        : $"{TenantScopePrefix}{tenant}{TenantScopeSeparator}{sessionId}";
+
+static string DisplaySessionId(string sessionId)
+{
+    if (!sessionId.StartsWith(TenantScopePrefix, StringComparison.Ordinal))
+        return sessionId;
+
+    var remainder = sessionId[TenantScopePrefix.Length..];
+    var parts = remainder.Split(TenantScopeSeparator, 2, StringSplitOptions.None);
+    return parts.Length == 2 ? parts[1] : sessionId;
+}
+
+static bool SessionBelongsToTenant(string sessionId, string tenant)
+{
+    if (!sessionId.StartsWith(TenantScopePrefix, StringComparison.Ordinal))
+        return string.Equals(tenant, DefaultTenant, StringComparison.Ordinal);
+
+    var remainder = sessionId[TenantScopePrefix.Length..];
+    var parts = remainder.Split(TenantScopeSeparator, 2, StringSplitOptions.None);
+    return parts.Length == 2 && string.Equals(parts[0], tenant, StringComparison.Ordinal);
+}
+
+static SttpNode? NormalizeNodeForTenant(SttpNode node, string tenant)
+{
+    if (!SessionBelongsToTenant(node.SessionId, tenant))
+        return null;
+
+    return node with { SessionId = DisplaySessionId(node.SessionId) };
+}
