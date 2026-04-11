@@ -3,6 +3,6 @@ pub mod surrealdb;
 
 pub use in_memory_node_store::InMemoryNodeStore;
 pub use surrealdb::{
-	SurrealDbClient, SurrealDbEndpointsSettings, SurrealDbNodeStore, SurrealDbRuntimeOptions,
+	QueryParams, SurrealDbClient, SurrealDbEndpointsSettings, SurrealDbNodeStore, SurrealDbRuntimeOptions,
 	SurrealDbSettings,
 };

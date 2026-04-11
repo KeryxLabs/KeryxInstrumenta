@@ -7,6 +7,13 @@ const VALID_TIERS: [&str; 6] = ["raw", "daily", "weekly", "monthly", "quarterly"
 #[derive(Debug, Default, Clone, Copy)]
 pub struct TreeSitterValidator;
 
+impl TreeSitterValidator {
+    /// Create a new validator instance.
+    pub fn new() -> Self {
+        Self
+    }
+}
+
 impl NodeValidator for TreeSitterValidator {
     fn validate(&self, raw_node: &str) -> ValidationResult {
         if raw_node.trim().is_empty() {
