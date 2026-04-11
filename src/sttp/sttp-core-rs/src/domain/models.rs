@@ -237,6 +237,32 @@ pub struct ListNodesResult {
 }
 
 #[derive(Debug, Clone, Default)]
+pub struct ScopeRekeyResult {
+    pub source_tenant_id: String,
+    pub source_session_id: String,
+    pub target_tenant_id: String,
+    pub target_session_id: String,
+    pub temporal_nodes: usize,
+    pub calibrations: usize,
+    pub target_temporal_nodes: usize,
+    pub target_calibrations: usize,
+    pub applied: bool,
+    pub conflict: bool,
+    pub message: Option<String>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct BatchRekeyResult {
+    pub dry_run: bool,
+    pub requested_node_ids: usize,
+    pub resolved_node_ids: usize,
+    pub missing_node_ids: Vec<String>,
+    pub scopes: Vec<ScopeRekeyResult>,
+    pub temporal_nodes_updated: usize,
+    pub calibrations_updated: usize,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct StoreResult {
     pub node_id: String,
     pub psi: f32,

@@ -269,3 +269,95 @@ async fn store_derives_tenant_id_from_scoped_session_key() {
         &json!("acme")
     );
 }
+
+#[tokio::test(flavor = "current_thread")]
+async fn batch_rekey_scopes_dry_run_reports_scope_counts() {
+    let client = Arc::new(MockSurrealDbClient::default());
+    let store = SurrealDbNodeStore::new(client.clone());
+
+    client
+        .queue_response(vec![json!({
+            "TenantId": "acme",
+            "SessionId": "tenant:acme::session:source-session"
+        })])
+        .await;
+    client.queue_response(vec![json!({ "Count": 3 })]).await;
+    client.queue_response(vec![json!({ "Count": 2 })]).await;
+    client.queue_response(vec![json!({ "Count": 0 })]).await;
+    client.queue_response(vec![json!({ "Count": 0 })]).await;
+
+    let result = store
+        .batch_rekey_scopes_async(
+            vec!["abc123".to_string()],
+            "acme",
+            "tenant:acme::session:target-session",
+            true,
+            false,
+        )
+        .await
+        .expect("dry-run rekey should succeed");
+
+    assert!(result.dry_run);
+    assert_eq!(result.requested_node_ids, 1);
+    assert_eq!(result.resolved_node_ids, 1);
+    assert!(result.missing_node_ids.is_empty());
+    assert_eq!(result.scopes.len(), 1);
+    assert_eq!(result.scopes[0].temporal_nodes, 3);
+    assert_eq!(result.scopes[0].calibrations, 2);
+    assert!(!result.scopes[0].applied);
+
+    let queries = client.queries().await;
+    assert!(queries
+        .iter()
+        .any(|query| query.contains("WHERE id = type::record('temporal_node', $node_id)")));
+    assert!(!queries
+        .iter()
+        .any(|query| query.contains("BEGIN TRANSACTION")));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn batch_rekey_scopes_apply_updates_both_tables() {
+    let client = Arc::new(MockSurrealDbClient::default());
+    let store = SurrealDbNodeStore::new(client.clone());
+
+    client
+        .queue_response(vec![json!({
+            "TenantId": "acme",
+            "SessionId": "tenant:acme::session:source-session"
+        })])
+        .await;
+    client.queue_response(vec![json!({ "Count": 4 })]).await;
+    client.queue_response(vec![json!({ "Count": 1 })]).await;
+    client.queue_response(vec![json!({ "Count": 0 })]).await;
+    client.queue_response(vec![json!({ "Count": 0 })]).await;
+
+    let result = store
+        .batch_rekey_scopes_async(
+            vec!["temporal_node:abc123".to_string()],
+            "acme",
+            "tenant:acme::session:target-session",
+            false,
+            false,
+        )
+        .await
+        .expect("apply rekey should succeed");
+
+    assert!(!result.dry_run);
+    assert_eq!(result.temporal_nodes_updated, 4);
+    assert_eq!(result.calibrations_updated, 1);
+    assert_eq!(result.scopes.len(), 1);
+    assert!(result.scopes[0].applied);
+    assert!(!result.scopes[0].conflict);
+
+    let queries = client.queries().await;
+    assert!(queries
+        .iter()
+        .any(|query| query.contains("BEGIN TRANSACTION")));
+
+    let params = client.parameters().await;
+    assert!(params.iter().any(|param| {
+        param.get("target_tenant_id") == Some(&json!("acme"))
+            && param.get("target_session_id")
+                == Some(&json!("tenant:acme::session:target-session"))
+    }));
+}

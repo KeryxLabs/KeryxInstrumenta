@@ -1,10 +1,16 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
-use crate::domain::models::{AvecState, NodeQuery, SttpNode};
+use crate::domain::models::{
+    AvecState, BatchRekeyResult, NodeQuery, ScopeRekeyResult, SttpNode,
+};
+
+const DEFAULT_TENANT: &str = "default";
+const TENANT_SCOPE_PREFIX: &str = "tenant:";
+const TENANT_SCOPE_SEPARATOR: &str = "::session:";
 
 #[derive(Debug, Clone, Copy)]
 struct CalibrationRecord {
@@ -13,7 +19,7 @@ struct CalibrationRecord {
 
 #[derive(Debug, Default)]
 pub struct InMemoryNodeStore {
-    nodes: RwLock<Vec<SttpNode>>,
+    nodes: RwLock<Vec<(String, SttpNode)>>,
     calibrations: RwLock<Vec<(String, CalibrationRecord, String)>>,
 }
 
@@ -38,6 +44,7 @@ impl NodeStore for InMemoryNodeStore {
 
         let mut result = nodes
             .iter()
+            .map(|(_, node)| node)
             .filter(|n| {
                 query
                     .session_id
@@ -58,8 +65,9 @@ impl NodeStore for InMemoryNodeStore {
 
     async fn store_async(&self, node: SttpNode) -> Result<String> {
         let mut nodes = self.nodes.write().await;
-        nodes.push(node);
-        Ok(Uuid::new_v4().to_string())
+        let node_id = Uuid::new_v4().to_string();
+        nodes.push((node_id.clone(), node));
+        Ok(node_id)
     }
 
     async fn get_by_resonance_async(
@@ -72,6 +80,7 @@ impl NodeStore for InMemoryNodeStore {
 
         let mut result = nodes
             .iter()
+            .map(|(_, node)| node)
             .filter(|n| n.session_id == session_id)
             .cloned()
             .collect::<Vec<_>>();
@@ -130,5 +139,192 @@ impl NodeStore for InMemoryNodeStore {
             trigger.to_string(),
         ));
         Ok(())
+    }
+
+    async fn batch_rekey_scopes_async(
+        &self,
+        node_ids: Vec<String>,
+        target_tenant_id: &str,
+        target_session_id: &str,
+        dry_run: bool,
+        allow_merge: bool,
+    ) -> Result<BatchRekeyResult> {
+        if node_ids.is_empty() {
+            return Err(anyhow!("at least one node id is required"));
+        }
+
+        let target_tenant_id = normalize_tenant_id(target_tenant_id);
+        if target_session_id.trim().is_empty() {
+            return Err(anyhow!("target session id cannot be empty"));
+        }
+
+        let normalized_node_ids = node_ids
+            .into_iter()
+            .filter_map(|node_id| normalize_temporal_node_id(&node_id))
+            .collect::<Vec<_>>();
+
+        if normalized_node_ids.is_empty() {
+            return Err(anyhow!("no valid node ids were provided"));
+        }
+
+        let nodes_snapshot = self.nodes.read().await.clone();
+        let calibrations_snapshot = self.calibrations.read().await.clone();
+
+        let mut missing_node_ids = Vec::new();
+        let mut scopes = Vec::new();
+
+        for node_id in &normalized_node_ids {
+            let Some((_, node)) = nodes_snapshot.iter().find(|(id, _)| id == node_id) else {
+                missing_node_ids.push(node_id.clone());
+                continue;
+            };
+
+            let tenant_id = derive_tenant_id_from_session(&node.session_id);
+            if !scopes
+                .iter()
+                .any(|(tenant, session): &(String, String)| tenant == &tenant_id && session == &node.session_id)
+            {
+                scopes.push((tenant_id, node.session_id.clone()));
+            }
+        }
+
+        let mut scope_results = Vec::new();
+        let mut temporal_nodes_updated = 0usize;
+        let mut calibrations_updated = 0usize;
+        let mut sources_to_apply = Vec::new();
+
+        for (source_tenant_id, source_session_id) in scopes {
+            let same_scope = source_tenant_id == target_tenant_id && source_session_id == target_session_id;
+
+            let temporal_nodes = nodes_snapshot
+                .iter()
+                .filter(|(_, node)| node.session_id == source_session_id)
+                .count();
+            let calibrations = calibrations_snapshot
+                .iter()
+                .filter(|(session_id, _, _)| session_id == &source_session_id)
+                .count();
+
+            let target_temporal_nodes = if same_scope {
+                0
+            } else {
+                nodes_snapshot
+                    .iter()
+                    .filter(|(_, node)| node.session_id == target_session_id)
+                    .count()
+            };
+            let target_calibrations = if same_scope {
+                0
+            } else {
+                calibrations_snapshot
+                    .iter()
+                    .filter(|(session_id, _, _)| session_id == target_session_id)
+                    .count()
+            };
+
+            let conflict = !allow_merge
+                && !same_scope
+                && (target_temporal_nodes > 0 || target_calibrations > 0);
+
+            let mut applied = false;
+            let message = if same_scope {
+                Some("source and target scopes are identical".to_string())
+            } else if conflict {
+                Some("target scope already contains rows; set allow_merge=true to override"
+                    .to_string())
+            } else {
+                if !dry_run {
+                    applied = true;
+                    temporal_nodes_updated += temporal_nodes;
+                    calibrations_updated += calibrations;
+                    sources_to_apply.push(source_session_id.clone());
+                }
+                None
+            };
+
+            scope_results.push(ScopeRekeyResult {
+                source_tenant_id,
+                source_session_id,
+                target_tenant_id: target_tenant_id.clone(),
+                target_session_id: target_session_id.to_string(),
+                temporal_nodes,
+                calibrations,
+                target_temporal_nodes,
+                target_calibrations,
+                applied,
+                conflict,
+                message,
+            });
+        }
+
+        if !dry_run && !sources_to_apply.is_empty() {
+            let mut nodes = self.nodes.write().await;
+            for (_, node) in nodes.iter_mut() {
+                if sources_to_apply.iter().any(|source| source == &node.session_id) {
+                    node.session_id = target_session_id.to_string();
+                }
+            }
+
+            let mut calibrations = self.calibrations.write().await;
+            for (session_id, _, _) in calibrations.iter_mut() {
+                if sources_to_apply.iter().any(|source| source == session_id) {
+                    *session_id = target_session_id.to_string();
+                }
+            }
+        }
+
+        Ok(BatchRekeyResult {
+            dry_run,
+            requested_node_ids: normalized_node_ids.len(),
+            resolved_node_ids: normalized_node_ids.len().saturating_sub(missing_node_ids.len()),
+            missing_node_ids,
+            scopes: scope_results,
+            temporal_nodes_updated,
+            calibrations_updated,
+        })
+    }
+}
+
+fn parse_scoped_session_id(session_id: &str) -> Option<(&str, &str)> {
+    let remainder = session_id.strip_prefix(TENANT_SCOPE_PREFIX)?;
+    remainder.split_once(TENANT_SCOPE_SEPARATOR)
+}
+
+fn derive_tenant_id_from_session(session_id: &str) -> String {
+    parse_scoped_session_id(session_id)
+        .map(|(tenant, _)| tenant)
+        .filter(|tenant| !tenant.trim().is_empty())
+        .unwrap_or(DEFAULT_TENANT)
+        .to_string()
+}
+
+fn normalize_tenant_id(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        DEFAULT_TENANT.to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn normalize_temporal_node_id(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some((table, id)) = trimmed.split_once(':') {
+        if table != "temporal_node" {
+            return None;
+        }
+
+        let id = id.trim();
+        if id.is_empty() {
+            None
+        } else {
+            Some(id.to_string())
+        }
+    } else {
+        Some(trimmed.to_string())
     }
 }

@@ -2,7 +2,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::domain::models::{
-    AvecState, NodeQuery, SttpNode, ValidationResult,
+    AvecState, BatchRekeyResult, NodeQuery, SttpNode, ValidationResult,
 };
 
 #[async_trait]
@@ -34,6 +34,15 @@ pub trait NodeStore: Send + Sync {
         avec: AvecState,
         trigger: &str,
     ) -> Result<()>;
+
+    async fn batch_rekey_scopes_async(
+        &self,
+        node_ids: Vec<String>,
+        target_tenant_id: &str,
+        target_session_id: &str,
+        dry_run: bool,
+        allow_merge: bool,
+    ) -> Result<BatchRekeyResult>;
 }
 
 #[async_trait]

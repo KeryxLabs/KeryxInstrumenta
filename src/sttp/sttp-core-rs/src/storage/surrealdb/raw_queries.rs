@@ -201,6 +201,51 @@ pub const SELECT_CALIBRATION_MISSING_TENANT_QUERY: &str = r#"
             WHERE tenant_id = NONE OR tenant_id = '';
             "#;
 
+pub const SELECT_SCOPE_BY_NODE_ID_QUERY: &str = r#"
+                        SELECT
+                                tenant_id AS TenantId,
+                                session_id AS SessionId
+                        FROM temporal_node
+            WHERE id = type::record('temporal_node', $node_id)
+                        LIMIT 1;
+                        "#;
+
+pub const COUNT_TEMPORAL_SCOPE_QUERY: &str = r#"
+                        SELECT count() AS Count
+                        FROM temporal_node
+                        WHERE session_id = $session_id
+                            AND (tenant_id = $tenant_id OR ($include_legacy AND (tenant_id = NONE OR tenant_id = '')))
+                        LIMIT 1;
+                        "#;
+
+pub const COUNT_CALIBRATION_SCOPE_QUERY: &str = r#"
+                        SELECT count() AS Count
+                        FROM calibration
+                        WHERE session_id = $session_id
+                            AND (tenant_id = $tenant_id OR ($include_legacy AND (tenant_id = NONE OR tenant_id = '')))
+                        LIMIT 1;
+                        "#;
+
+pub const APPLY_SCOPE_REKEY_QUERY: &str = r#"
+                        BEGIN TRANSACTION;
+
+                        UPDATE temporal_node
+                        SET
+                                tenant_id = $target_tenant_id,
+                                session_id = $target_session_id
+                        WHERE session_id = $source_session_id
+                            AND (tenant_id = $source_tenant_id OR ($source_include_legacy AND (tenant_id = NONE OR tenant_id = '')));
+
+                        UPDATE calibration
+                        SET
+                                tenant_id = $target_tenant_id,
+                                session_id = $target_session_id
+                        WHERE session_id = $source_session_id
+                            AND (tenant_id = $source_tenant_id OR ($source_include_legacy AND (tenant_id = NONE OR tenant_id = '')));
+
+                        COMMIT TRANSACTION;
+                        "#;
+
 pub fn update_record_tenant_query(record_id: &str) -> String {
     format!(
         r#"

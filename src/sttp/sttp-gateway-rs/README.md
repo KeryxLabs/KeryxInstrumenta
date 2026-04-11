@@ -68,6 +68,7 @@ cargo run --manifest-path src/sttp/sttp-gateway-rs/Cargo.toml -- \
 - `GET /api/v1/nodes?limit=50&sessionId=...`
 - `GET /api/v1/graph?limit=1000&sessionId=...`
 - `GET /api/v1/moods?targetMood=focused&blend=1`
+- `POST /api/v1/rekey`
 - `POST /api/v1/rollups/monthly`
 
 ## Tenant Scoping (Phase 1)
@@ -89,6 +90,20 @@ curl -s -X POST http://127.0.0.1:8080/api/v1/store \
 
 ```bash
 curl -s 'http://127.0.0.1:8080/api/v1/nodes?limit=50&sessionId=gateway-rust-port&tenantId=acme'
+```
+
+Batch rekey dry-run (anchor by node IDs):
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/v1/rekey \
+  -H 'content-type: application/json' \
+  -d '{
+    "nodeIds": ["05ee92706d2b44e8a040e3db2f58175a"],
+    "targetTenantId": "acme",
+    "targetSessionId": "gateway-rust-port",
+    "dryRun": true,
+    "allowMerge": false
+  }'
 ```
 
 Health check:

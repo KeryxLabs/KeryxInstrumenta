@@ -1,6 +1,7 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -9,7 +10,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
-use crate::domain::models::{AvecState, NodeQuery, SttpNode};
+use crate::domain::models::{
+    AvecState, BatchRekeyResult, NodeQuery, ScopeRekeyResult, SttpNode,
+};
 use crate::storage::surrealdb::client::{QueryParams, SurrealDbClient};
 use crate::storage::surrealdb::models::{
     SurrealAvecRecord, SurrealNodeRecord, SurrealTriggerRecord,
@@ -25,6 +28,26 @@ struct MissingTenantRecord {
     #[serde(default)]
     id: Value,
     #[serde(default)]
+    session_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ScopeAnchorRecord {
+    #[serde(rename = "TenantId", default)]
+    tenant_id: Option<String>,
+    #[serde(rename = "SessionId", default)]
+    session_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ScopeCountRecord {
+    #[serde(rename = "Count", default)]
+    count: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct ScopeKey {
+    tenant_id: String,
     session_id: String,
 }
 
@@ -79,6 +102,47 @@ impl SurrealDbNodeStore {
             let query = raw_queries::update_record_tenant_query(&record_id);
             self.client.raw_query(&query, parameters).await?;
         }
+
+        Ok(())
+    }
+
+    async fn count_scope_rows_async(
+        &self,
+        query: &str,
+        session_id: &str,
+        tenant_id: &str,
+        include_legacy: bool,
+    ) -> Result<usize> {
+        let mut parameters = QueryParams::new();
+        parameters.insert("session_id".to_string(), json!(session_id));
+        parameters.insert("tenant_id".to_string(), json!(tenant_id));
+        parameters.insert("include_legacy".to_string(), json!(include_legacy));
+
+        let rows = self.client.raw_query(query, parameters).await?;
+        let counts: Vec<ScopeCountRecord> = decode_rows(rows)?;
+        Ok(counts.first().map(|value| value.count).unwrap_or(0))
+    }
+
+    async fn apply_scope_rekey_async(
+        &self,
+        source_session_id: &str,
+        source_tenant_id: &str,
+        target_session_id: &str,
+        target_tenant_id: &str,
+    ) -> Result<()> {
+        let mut parameters = QueryParams::new();
+        parameters.insert("source_session_id".to_string(), json!(source_session_id));
+        parameters.insert("source_tenant_id".to_string(), json!(source_tenant_id));
+        parameters.insert(
+            "source_include_legacy".to_string(),
+            json!(includes_legacy_tenant_bucket(source_tenant_id)),
+        );
+        parameters.insert("target_session_id".to_string(), json!(target_session_id));
+        parameters.insert("target_tenant_id".to_string(), json!(target_tenant_id));
+
+        self.client
+            .raw_query(raw_queries::APPLY_SCOPE_REKEY_QUERY, parameters)
+            .await?;
 
         Ok(())
     }
@@ -291,6 +355,162 @@ impl NodeStore for SurrealDbNodeStore {
 
         Ok(())
     }
+
+    async fn batch_rekey_scopes_async(
+        &self,
+        node_ids: Vec<String>,
+        target_tenant_id: &str,
+        target_session_id: &str,
+        dry_run: bool,
+        allow_merge: bool,
+    ) -> Result<BatchRekeyResult> {
+        if node_ids.is_empty() {
+            return Err(anyhow!("at least one node id is required"));
+        }
+
+        if target_session_id.trim().is_empty() {
+            return Err(anyhow!("target session id cannot be empty"));
+        }
+
+        let target_tenant_id = normalize_tenant_id(Some(target_tenant_id));
+        let normalized_node_ids = node_ids
+            .into_iter()
+            .filter_map(|node_id| normalize_temporal_node_id(&node_id))
+            .collect::<Vec<_>>();
+
+        if normalized_node_ids.is_empty() {
+            return Err(anyhow!("no valid node ids were provided"));
+        }
+
+        let mut missing_node_ids = Vec::new();
+        let mut scope_keys = BTreeSet::new();
+
+        for node_id in &normalized_node_ids {
+            let mut parameters = QueryParams::new();
+            parameters.insert("node_id".to_string(), json!(node_id));
+
+            let rows = self
+                .client
+                .raw_query(raw_queries::SELECT_SCOPE_BY_NODE_ID_QUERY, parameters)
+                .await?;
+            let anchors: Vec<ScopeAnchorRecord> = decode_rows(rows)?;
+
+            let Some(anchor) = anchors.first() else {
+                missing_node_ids.push(node_id.clone());
+                continue;
+            };
+
+            if anchor.session_id.trim().is_empty() {
+                missing_node_ids.push(node_id.clone());
+                continue;
+            }
+
+            scope_keys.insert(ScopeKey {
+                tenant_id: normalize_tenant_id(anchor.tenant_id.as_deref()),
+                session_id: anchor.session_id.clone(),
+            });
+        }
+
+        let mut scope_results = Vec::new();
+        let mut temporal_nodes_updated = 0usize;
+        let mut calibrations_updated = 0usize;
+
+        for scope in scope_keys {
+            let source_include_legacy = includes_legacy_tenant_bucket(&scope.tenant_id);
+            let temporal_nodes = self
+                .count_scope_rows_async(
+                    raw_queries::COUNT_TEMPORAL_SCOPE_QUERY,
+                    &scope.session_id,
+                    &scope.tenant_id,
+                    source_include_legacy,
+                )
+                .await?;
+            let calibrations = self
+                .count_scope_rows_async(
+                    raw_queries::COUNT_CALIBRATION_SCOPE_QUERY,
+                    &scope.session_id,
+                    &scope.tenant_id,
+                    source_include_legacy,
+                )
+                .await?;
+
+            let same_scope = scope.tenant_id == target_tenant_id && scope.session_id == target_session_id;
+
+            let target_include_legacy = includes_legacy_tenant_bucket(&target_tenant_id);
+            let target_temporal_nodes = if same_scope {
+                0
+            } else {
+                self.count_scope_rows_async(
+                    raw_queries::COUNT_TEMPORAL_SCOPE_QUERY,
+                    target_session_id,
+                    &target_tenant_id,
+                    target_include_legacy,
+                )
+                .await?
+            };
+            let target_calibrations = if same_scope {
+                0
+            } else {
+                self.count_scope_rows_async(
+                    raw_queries::COUNT_CALIBRATION_SCOPE_QUERY,
+                    target_session_id,
+                    &target_tenant_id,
+                    target_include_legacy,
+                )
+                .await?
+            };
+
+            let conflict = !allow_merge
+                && !same_scope
+                && (target_temporal_nodes > 0 || target_calibrations > 0);
+
+            let mut applied = false;
+            let message = if same_scope {
+                Some("source and target scopes are identical".to_string())
+            } else if conflict {
+                Some("target scope already contains rows; set allow_merge=true to override"
+                    .to_string())
+            } else {
+                if !dry_run {
+                    self.apply_scope_rekey_async(
+                        &scope.session_id,
+                        &scope.tenant_id,
+                        target_session_id,
+                        &target_tenant_id,
+                    )
+                    .await?;
+                    applied = true;
+                    temporal_nodes_updated += temporal_nodes;
+                    calibrations_updated += calibrations;
+                }
+                None
+            };
+
+            scope_results.push(ScopeRekeyResult {
+                source_tenant_id: scope.tenant_id,
+                source_session_id: scope.session_id,
+                target_tenant_id: target_tenant_id.clone(),
+                target_session_id: target_session_id.to_string(),
+                temporal_nodes,
+                calibrations,
+                target_temporal_nodes,
+                target_calibrations,
+                applied,
+                conflict,
+                message,
+            });
+        }
+
+        Ok(BatchRekeyResult {
+            dry_run,
+            requested_node_ids: normalized_node_ids.len(),
+            resolved_node_ids: normalized_node_ids.len().saturating_sub(missing_node_ids.len()),
+            missing_node_ids,
+            scopes: scope_results,
+            temporal_nodes_updated,
+            calibrations_updated,
+        })
+    }
 }
 
 fn map_to_node(record: SurrealNodeRecord) -> SttpNode {
@@ -382,4 +602,38 @@ fn derive_tenant_id_from_session(session_id: &str) -> String {
         .filter(|tenant| !tenant.trim().is_empty())
         .unwrap_or(DEFAULT_TENANT)
         .to_string()
+}
+
+fn normalize_tenant_id(value: Option<&str>) -> String {
+    value
+        .map(str::trim)
+        .filter(|tenant| !tenant.is_empty())
+        .unwrap_or(DEFAULT_TENANT)
+        .to_string()
+}
+
+fn includes_legacy_tenant_bucket(tenant_id: &str) -> bool {
+    tenant_id == DEFAULT_TENANT
+}
+
+fn normalize_temporal_node_id(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    if let Some((table, id)) = trimmed.split_once(':') {
+        if table != "temporal_node" {
+            return None;
+        }
+
+        let id = id.trim();
+        if id.is_empty() {
+            None
+        } else {
+            Some(id.to_string())
+        }
+    } else {
+        Some(trimmed.to_string())
+    }
 }

@@ -21,7 +21,7 @@ mod surreal_client;
 
 use sttp_core_rs::application::services::{
     CalibrationService, ContextQueryService, MonthlyRollupService, MoodCatalogService,
-    StoreContextService,
+    RekeyScopeService, StoreContextService,
 };
 use sttp_core_rs::application::validation::TreeSitterValidator;
 use sttp_core_rs::domain::contracts::{NodeStore, NodeStoreInitializer, NodeValidator};
@@ -96,6 +96,7 @@ struct AppState {
     mood_catalog: Arc<MoodCatalogService>,
     store_context: Arc<StoreContextService>,
     monthly_rollup: Arc<MonthlyRollupService>,
+    rekey_scope: Arc<RekeyScopeService>,
 }
 
 #[derive(Debug, Serialize)]
@@ -147,6 +148,16 @@ struct CreateMonthlyRollupHttpRequest {
     parent_node_id: Option<String>,
     persist: Option<bool>,
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchRekeyHttpRequest {
+    node_ids: Vec<String>,
+    target_session_id: String,
+    target_tenant_id: Option<String>,
+    dry_run: Option<bool>,
+    allow_merge: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -308,6 +319,36 @@ struct MonthlyRollupResultDto {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScopeRekeyResultDto {
+    source_tenant_id: String,
+    source_session_id: String,
+    target_tenant_id: String,
+    target_session_id: String,
+    temporal_nodes: usize,
+    calibrations: usize,
+    target_temporal_nodes: usize,
+    target_calibrations: usize,
+    applied: bool,
+    conflict: bool,
+    message: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchRekeyResultDto {
+    dry_run: bool,
+    requested_node_ids: usize,
+    resolved_node_ids: usize,
+    missing_node_ids: Vec<String>,
+    scopes: Vec<ScopeRekeyResultDto>,
+    temporal_nodes_updated: usize,
+    calibrations_updated: usize,
+    updated_scopes: usize,
+    conflict_scopes: usize,
+}
+
+#[derive(Debug, Serialize)]
 struct GraphResponse {
     sessions: Vec<Value>,
     nodes: Vec<Value>,
@@ -341,6 +382,7 @@ async fn main() -> Result<()> {
         .route("/api/v1/nodes", get(list_nodes_handler))
         .route("/api/v1/graph", get(graph_handler))
         .route("/api/v1/moods", get(get_moods_handler))
+        .route("/api/v1/rekey", post(batch_rekey_handler))
         .route("/api/v1/rollups/monthly", post(create_monthly_rollup_handler))
         .with_state(state.clone());
 
@@ -422,7 +464,8 @@ fn build_services(store_trait: Arc<dyn NodeStore>, validator: Arc<dyn NodeValida
             store_trait.clone(),
             validator.clone(),
         )),
-        monthly_rollup: Arc::new(MonthlyRollupService::new(store_trait, validator)),
+        monthly_rollup: Arc::new(MonthlyRollupService::new(store_trait.clone(), validator)),
+        rekey_scope: Arc::new(RekeyScopeService::new(store_trait)),
     }
 }
 
@@ -855,6 +898,46 @@ async fn create_monthly_rollup_handler(
     Ok(Json(to_monthly_rollup_dto(result)))
 }
 
+async fn batch_rekey_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<BatchRekeyHttpRequest>,
+) -> ApiResult<BatchRekeyResultDto> {
+    if request.node_ids.is_empty() {
+        return Err(bad_request("nodeIds must contain at least one value"));
+    }
+
+    if request.target_session_id.trim().is_empty() {
+        return Err(bad_request("targetSessionId cannot be empty"));
+    }
+
+    let target_tenant = resolve_http_tenant(request.target_tenant_id.as_deref(), &headers);
+    let scoped_target_session = scope_session_id(&target_tenant, request.target_session_id.trim());
+
+    let result = state
+        .rekey_scope
+        .rekey_async(
+            request.node_ids,
+            &target_tenant,
+            &scoped_target_session,
+            request.dry_run.unwrap_or(true),
+            request.allow_merge.unwrap_or(false),
+        )
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(to_batch_rekey_dto(result)))
+}
+
+fn bad_request(message: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: message.into(),
+        }),
+    )
+}
+
 fn internal_error(error: impl std::fmt::Display) -> (StatusCode, Json<ErrorResponse>) {
     (
         StatusCode::INTERNAL_SERVER_ERROR,
@@ -1019,6 +1102,39 @@ fn to_monthly_rollup_dto(result: core_models::MonthlyRollupResult) -> MonthlyRol
         psi_range: to_numeric_range_dto(result.psi_range),
         rho_bands: to_confidence_bands_dto(result.rho_bands),
         kappa_bands: to_confidence_bands_dto(result.kappa_bands),
+    }
+}
+
+fn to_batch_rekey_dto(result: core_models::BatchRekeyResult) -> BatchRekeyResultDto {
+    let updated_scopes = result.scopes.iter().filter(|scope| scope.applied).count();
+    let conflict_scopes = result.scopes.iter().filter(|scope| scope.conflict).count();
+
+    BatchRekeyResultDto {
+        dry_run: result.dry_run,
+        requested_node_ids: result.requested_node_ids,
+        resolved_node_ids: result.resolved_node_ids,
+        missing_node_ids: result.missing_node_ids,
+        scopes: result
+            .scopes
+            .into_iter()
+            .map(|scope| ScopeRekeyResultDto {
+                source_tenant_id: scope.source_tenant_id,
+                source_session_id: display_session_id(&scope.source_session_id),
+                target_tenant_id: scope.target_tenant_id,
+                target_session_id: display_session_id(&scope.target_session_id),
+                temporal_nodes: scope.temporal_nodes,
+                calibrations: scope.calibrations,
+                target_temporal_nodes: scope.target_temporal_nodes,
+                target_calibrations: scope.target_calibrations,
+                applied: scope.applied,
+                conflict: scope.conflict,
+                message: scope.message,
+            })
+            .collect(),
+        temporal_nodes_updated: result.temporal_nodes_updated,
+        calibrations_updated: result.calibrations_updated,
+        updated_scopes,
+        conflict_scopes,
     }
 }
 
