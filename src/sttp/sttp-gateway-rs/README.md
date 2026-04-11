@@ -70,6 +70,27 @@ cargo run --manifest-path src/sttp/sttp-gateway-rs/Cargo.toml -- \
 - `GET /api/v1/moods?targetMood=focused&blend=1`
 - `POST /api/v1/rollups/monthly`
 
+## Tenant Scoping (Phase 1)
+
+- Default behavior remains backward compatible: requests without tenant context use the `default` tenant.
+- For HTTP, set tenant via header `x-tenant-id` or optional `tenantId` request/query field.
+- For gRPC, set metadata key `x-tenant-id`.
+- Non-default tenants are isolated using scoped session keys internally.
+- Response payloads expose the original unscoped `sessionId`.
+
+Examples:
+
+```bash
+curl -s -X POST http://127.0.0.1:8080/api/v1/store \
+  -H 'content-type: application/json' \
+  -H 'x-tenant-id: acme' \
+  -d '{"sessionId":"gateway-rust-port","node":"..."}'
+```
+
+```bash
+curl -s 'http://127.0.0.1:8080/api/v1/nodes?limit=50&sessionId=gateway-rust-port&tenantId=acme'
+```
+
 Health check:
 
 ```bash

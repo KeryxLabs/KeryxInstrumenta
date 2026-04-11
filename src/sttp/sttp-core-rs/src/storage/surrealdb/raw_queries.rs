@@ -1,5 +1,6 @@
 pub const INIT_SCHEMA_QUERY: &str = r#"
             DEFINE TABLE IF NOT EXISTS temporal_node SCHEMAFULL;
+            DEFINE FIELD IF NOT EXISTS tenant_id         ON temporal_node TYPE string;
             DEFINE FIELD IF NOT EXISTS session_id        ON temporal_node TYPE string;
             DEFINE FIELD IF NOT EXISTS raw               ON temporal_node TYPE string;
             DEFINE FIELD IF NOT EXISTS tier              ON temporal_node TYPE string;
@@ -26,6 +27,7 @@ pub const INIT_SCHEMA_QUERY: &str = r#"
             DEFINE FIELD IF NOT EXISTS comp_psi          ON temporal_node TYPE float;
 
             DEFINE TABLE IF NOT EXISTS calibration SCHEMAFULL;
+            DEFINE FIELD IF NOT EXISTS tenant_id   ON calibration TYPE string;
             DEFINE FIELD IF NOT EXISTS session_id  ON calibration TYPE string;
             DEFINE FIELD IF NOT EXISTS stability   ON calibration TYPE float;
             DEFINE FIELD IF NOT EXISTS friction    ON calibration TYPE float;
@@ -36,7 +38,9 @@ pub const INIT_SCHEMA_QUERY: &str = r#"
             DEFINE FIELD IF NOT EXISTS created_at  ON calibration TYPE datetime;
 
             DEFINE INDEX IF NOT EXISTS idx_node_session ON temporal_node FIELDS session_id;
+            DEFINE INDEX IF NOT EXISTS idx_node_tenant_session ON temporal_node FIELDS tenant_id, session_id;
             DEFINE INDEX IF NOT EXISTS idx_cal_session ON calibration FIELDS session_id;
+            DEFINE INDEX IF NOT EXISTS idx_cal_tenant_session ON calibration FIELDS tenant_id, session_id;
             SELECT * FROM calibration LIMIT 0;
             "#;
 
@@ -44,6 +48,7 @@ pub fn query_nodes_query(where_clause: &str, capped_limit: usize) -> String {
     format!(
         r#"
             SELECT
+                tenant_id AS TenantId,
                 session_id AS SessionId,
                 raw AS Raw,
                 tier AS Tier,
@@ -87,6 +92,7 @@ pub fn create_temporal_node_query(record_id: &str, include_parent_assignment: bo
     format!(
         r#"
             CREATE temporal_node:`{record_id}` SET
+                tenant_id = $tenant_id,
                 session_id = $session_id,
                 raw = $raw,
                 tier = $tier,
@@ -119,6 +125,7 @@ pub fn get_by_resonance_query(current_psi: f32, limit: usize) -> String {
     format!(
         r#"
             SELECT
+                tenant_id AS TenantId,
                 session_id AS SessionId,
                 raw AS Raw,
                 tier AS Tier,
@@ -145,7 +152,8 @@ pub fn get_by_resonance_query(current_psi: f32, limit: usize) -> String {
                 comp_psi AS CompPsi,
                 math::abs(psi - {psi}) AS ResonanceDelta
             FROM temporal_node
-            WHERE session_id = $session_id
+                        WHERE session_id = $session_id
+                            AND (tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')
             ORDER BY ResonanceDelta ASC
             LIMIT {limit};
             "#
@@ -155,19 +163,22 @@ pub fn get_by_resonance_query(current_psi: f32, limit: usize) -> String {
 pub const GET_LAST_AVEC_QUERY: &str = r#"
             SELECT stability, friction, logic, autonomy, psi, created_at
             FROM calibration
-            WHERE session_id = $session_id
+                        WHERE session_id = $session_id
+                            AND (tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')
             ORDER BY created_at DESC
             LIMIT 1;
             "#;
 
 pub const GET_TRIGGER_HISTORY_QUERY: &str = r#"
             SELECT trigger, created_at FROM calibration
-            WHERE session_id = $session_id
+                        WHERE session_id = $session_id
+                            AND (tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')
             ORDER BY created_at ASC;
             "#;
 
 pub const STORE_CALIBRATION_QUERY: &str = r#"
             CREATE calibration SET
+                tenant_id = $tenant_id,
                 session_id = $session_id,
                 stability = $stability,
                 friction = $friction,
@@ -177,3 +188,24 @@ pub const STORE_CALIBRATION_QUERY: &str = r#"
                 trigger = $trigger,
                 created_at = <datetime>$created_at;
             "#;
+
+pub const SELECT_TEMPORAL_NODE_MISSING_TENANT_QUERY: &str = r#"
+            SELECT id, session_id
+            FROM temporal_node
+            WHERE tenant_id = NONE OR tenant_id = '';
+            "#;
+
+pub const SELECT_CALIBRATION_MISSING_TENANT_QUERY: &str = r#"
+            SELECT id, session_id
+            FROM calibration
+            WHERE tenant_id = NONE OR tenant_id = '';
+            "#;
+
+pub fn update_record_tenant_query(record_id: &str) -> String {
+    format!(
+        r#"
+            UPDATE {record_id}
+            SET tenant_id = $tenant_id;
+            "#
+    )
+}

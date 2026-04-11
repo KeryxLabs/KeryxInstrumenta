@@ -52,8 +52,58 @@ async fn initialize_runs_schema_query() {
         .expect("schema initialization should succeed");
 
     let queries = client.queries().await;
-    assert_eq!(queries.len(), 1);
+    assert_eq!(queries.len(), 3);
     assert!(queries[0].contains("DEFINE TABLE IF NOT EXISTS temporal_node"));
+    assert!(queries[0].contains("DEFINE FIELD IF NOT EXISTS tenant_id"));
+    assert!(queries[1].contains("FROM temporal_node"));
+    assert!(queries[2].contains("FROM calibration"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn initialize_backfills_tenant_ids_for_legacy_rows() {
+    let client = Arc::new(MockSurrealDbClient::default());
+
+    client.queue_response(vec![]).await;
+
+    client
+        .queue_response(vec![json!({
+            "id": "temporal_node:legacy_node",
+            "session_id": "tenant:acme::session:alpha"
+        })])
+        .await;
+
+    client.queue_response(vec![]).await;
+
+    client
+        .queue_response(vec![json!({
+            "id": "calibration:legacy_cal",
+            "session_id": "legacy-session"
+        })])
+        .await;
+
+    client.queue_response(vec![]).await;
+
+    let store = SurrealDbNodeStore::new(client.clone());
+    store
+        .initialize_async()
+        .await
+        .expect("schema initialization should succeed");
+
+    let queries = client.queries().await;
+    assert!(queries
+        .iter()
+        .any(|query| query.contains("UPDATE temporal_node:legacy_node")));
+    assert!(queries
+        .iter()
+        .any(|query| query.contains("UPDATE calibration:legacy_cal")));
+
+    let params = client.parameters().await;
+    assert!(params
+        .iter()
+        .any(|param| param.get("tenant_id") == Some(&json!("acme"))));
+    assert!(params
+        .iter()
+        .any(|param| param.get("tenant_id") == Some(&json!("default"))));
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -108,7 +158,17 @@ async fn query_nodes_maps_result_rows_to_domain_nodes() {
 
     let queries = client.queries().await;
     assert_eq!(queries.len(), 1);
-    assert!(queries[0].contains("WHERE session_id = $session_id"));
+    assert!(queries[0].contains("tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = ''"));
+    assert!(queries[0].contains("session_id = $session_id"));
+
+    let params = client.parameters().await;
+    assert_eq!(params.len(), 1);
+    assert_eq!(
+        params[0]
+            .get("tenant_id")
+            .expect("tenant_id should be present for session-scoped query"),
+        &json!("default")
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -158,4 +218,54 @@ async fn store_uses_model_avec_when_compression_avec_is_zero() {
         .as_f64()
         .expect("comp_stability must be numeric");
     assert!((comp_stability - 0.91).abs() <= 0.0001);
+    assert_eq!(
+        params[0]
+            .get("tenant_id")
+            .expect("tenant_id must be present"),
+        &json!("default")
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn store_derives_tenant_id_from_scoped_session_key() {
+    let client = Arc::new(MockSurrealDbClient::default());
+    let store = SurrealDbNodeStore::new(client.clone());
+
+    let node = SttpNode {
+        raw: "raw".to_string(),
+        session_id: "tenant:acme::session:session-42".to_string(),
+        tier: "raw".to_string(),
+        timestamp: DateTime::parse_from_rfc3339("2026-03-05T06:30:00Z")
+            .expect("timestamp should parse")
+            .with_timezone(&Utc),
+        compression_depth: 1,
+        parent_node_id: None,
+        user_avec: AvecState {
+            stability: 0.85,
+            friction: 0.25,
+            logic: 0.80,
+            autonomy: 0.70,
+        },
+        model_avec: AvecState {
+            stability: 0.91,
+            friction: 0.21,
+            logic: 0.90,
+            autonomy: 0.80,
+        },
+        compression_avec: Some(AvecState::zero()),
+        rho: 0.96,
+        kappa: 0.94,
+        psi: 2.6,
+    };
+
+    store.store_async(node).await.expect("store should succeed");
+
+    let params = client.parameters().await;
+    assert_eq!(params.len(), 1);
+    assert_eq!(
+        params[0]
+            .get("tenant_id")
+            .expect("tenant_id must be present"),
+        &json!("acme")
+    );
 }

@@ -3,8 +3,9 @@ use std::sync::Arc;
 use anyhow::Result;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use serde::de::DeserializeOwned;
-use serde_json::json;
+use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
@@ -15,6 +16,18 @@ use crate::storage::surrealdb::models::{
 };
 use crate::storage::surrealdb::raw_queries;
 
+const DEFAULT_TENANT: &str = "default";
+const TENANT_SCOPE_PREFIX: &str = "tenant:";
+const TENANT_SCOPE_SEPARATOR: &str = "::session:";
+
+#[derive(Debug, Deserialize)]
+struct MissingTenantRecord {
+    #[serde(default)]
+    id: Value,
+    #[serde(default)]
+    session_id: String,
+}
+
 pub struct SurrealDbNodeStore {
     client: Arc<dyn SurrealDbClient>,
 }
@@ -22,6 +35,52 @@ pub struct SurrealDbNodeStore {
 impl SurrealDbNodeStore {
     pub fn new(client: Arc<dyn SurrealDbClient>) -> Self {
         Self { client }
+    }
+
+    async fn backfill_missing_tenant_ids_async(&self) -> Result<()> {
+        self.backfill_table_tenant_ids_async(
+            "temporal_node",
+            raw_queries::SELECT_TEMPORAL_NODE_MISSING_TENANT_QUERY,
+        )
+        .await?;
+
+        self.backfill_table_tenant_ids_async(
+            "calibration",
+            raw_queries::SELECT_CALIBRATION_MISSING_TENANT_QUERY,
+        )
+        .await?;
+
+        Ok(())
+    }
+
+    async fn backfill_table_tenant_ids_async(&self, table: &str, select_query: &str) -> Result<()> {
+        let rows = self
+            .client
+            .raw_query(select_query, QueryParams::new())
+            .await?;
+        let records: Vec<MissingTenantRecord> = decode_rows(rows)?;
+
+        for record in records {
+            let session_id = record.session_id;
+            if session_id.trim().is_empty() {
+                continue;
+            }
+
+            let Some(record_id) = normalize_record_id(record.id, table) else {
+                continue;
+            };
+
+            let mut parameters = QueryParams::new();
+            parameters.insert(
+                "tenant_id".to_string(),
+                json!(derive_tenant_id_from_session(&session_id)),
+            );
+
+            let query = raw_queries::update_record_tenant_query(&record_id);
+            self.client.raw_query(&query, parameters).await?;
+        }
+
+        Ok(())
     }
 }
 
@@ -31,6 +90,7 @@ impl NodeStoreInitializer for SurrealDbNodeStore {
         self.client
             .raw_query(raw_queries::INIT_SCHEMA_QUERY, QueryParams::new())
             .await?;
+        self.backfill_missing_tenant_ids_async().await?;
         Ok(())
     }
 }
@@ -43,6 +103,13 @@ impl NodeStore for SurrealDbNodeStore {
         let mut parameters = QueryParams::new();
 
         if let Some(session_id) = query.session_id.as_ref().filter(|s| !s.trim().is_empty()) {
+            clauses.push(
+                "(tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')".to_string(),
+            );
+            parameters.insert(
+                "tenant_id".to_string(),
+                json!(derive_tenant_id_from_session(session_id)),
+            );
             clauses.push("session_id = $session_id".to_string());
             parameters.insert("session_id".to_string(), json!(session_id));
         }
@@ -78,6 +145,11 @@ impl NodeStore for SurrealDbNodeStore {
 
         let include_parent_assignment = node.parent_node_id.is_some();
         let mut parameters = QueryParams::new();
+
+        parameters.insert(
+            "tenant_id".to_string(),
+            json!(derive_tenant_id_from_session(&node.session_id)),
+        );
 
         parameters.insert("session_id".to_string(), json!(node.session_id));
         parameters.insert("raw".to_string(), json!(node.raw));
@@ -132,6 +204,10 @@ impl NodeStore for SurrealDbNodeStore {
     ) -> Result<Vec<SttpNode>> {
         let query_text = raw_queries::get_by_resonance_query(current_avec.psi(), limit.max(1));
         let mut parameters = QueryParams::new();
+        parameters.insert(
+            "tenant_id".to_string(),
+            json!(derive_tenant_id_from_session(session_id)),
+        );
         parameters.insert("session_id".to_string(), json!(session_id));
 
         let rows = self.client.raw_query(&query_text, parameters).await?;
@@ -152,6 +228,10 @@ impl NodeStore for SurrealDbNodeStore {
 
     async fn get_last_avec_async(&self, session_id: &str) -> Result<Option<AvecState>> {
         let mut parameters = QueryParams::new();
+        parameters.insert(
+            "tenant_id".to_string(),
+            json!(derive_tenant_id_from_session(session_id)),
+        );
         parameters.insert("session_id".to_string(), json!(session_id));
 
         let rows = self
@@ -170,6 +250,10 @@ impl NodeStore for SurrealDbNodeStore {
 
     async fn get_trigger_history_async(&self, session_id: &str) -> Result<Vec<String>> {
         let mut parameters = QueryParams::new();
+        parameters.insert(
+            "tenant_id".to_string(),
+            json!(derive_tenant_id_from_session(session_id)),
+        );
         parameters.insert("session_id".to_string(), json!(session_id));
 
         let rows = self
@@ -188,6 +272,10 @@ impl NodeStore for SurrealDbNodeStore {
         trigger: &str,
     ) -> Result<()> {
         let mut parameters = QueryParams::new();
+        parameters.insert(
+            "tenant_id".to_string(),
+            json!(derive_tenant_id_from_session(session_id)),
+        );
         parameters.insert("session_id".to_string(), json!(session_id));
         parameters.insert("stability".to_string(), json!(avec.stability));
         parameters.insert("friction".to_string(), json!(avec.friction));
@@ -253,4 +341,45 @@ where
         .map(serde_json::from_value)
         .collect::<std::result::Result<Vec<T>, _>>()
         .map_err(Into::into)
+}
+
+fn normalize_record_id(raw_id: Value, fallback_table: &str) -> Option<String> {
+    match raw_id {
+        Value::String(id) => {
+            if id.trim().is_empty() {
+                None
+            } else {
+                Some(id)
+            }
+        }
+        Value::Object(map) => {
+            let table_name = map
+                .get("tb")
+                .and_then(value_to_record_component)
+                .unwrap_or_else(|| fallback_table.to_string());
+
+            let id_component = map.get("id").and_then(value_to_record_component)?;
+            Some(format!("{table_name}:{id_component}"))
+        }
+        _ => None,
+    }
+}
+
+fn value_to_record_component(value: &Value) -> Option<String> {
+    match value {
+        Value::String(v) => Some(v.clone()),
+        Value::Number(v) => Some(v.to_string()),
+        Value::Bool(v) => Some(v.to_string()),
+        _ => None,
+    }
+}
+
+fn derive_tenant_id_from_session(session_id: &str) -> String {
+    session_id
+        .strip_prefix(TENANT_SCOPE_PREFIX)
+        .and_then(|remainder| remainder.split_once(TENANT_SCOPE_SEPARATOR))
+        .map(|(tenant, _)| tenant)
+        .filter(|tenant| !tenant.trim().is_empty())
+        .unwrap_or(DEFAULT_TENANT)
+        .to_string()
 }

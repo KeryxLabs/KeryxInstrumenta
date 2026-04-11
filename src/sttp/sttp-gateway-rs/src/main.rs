@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use axum::extract::{Query, State};
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
@@ -40,6 +40,11 @@ pub mod proto {
 }
 
 const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("sttp_descriptor");
+const TENANT_HEADER: &str = "x-tenant-id";
+const DEFAULT_TENANT: &str = "default";
+const TENANT_SCOPE_PREFIX: &str = "tenant:";
+const TENANT_SCOPE_SEPARATOR: &str = "::session:";
+const TENANT_SCAN_LIMIT: usize = 200;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -103,6 +108,7 @@ struct ErrorResponse {
 #[serde(rename_all = "camelCase")]
 struct CalibrateSessionHttpRequest {
     session_id: String,
+    tenant_id: Option<String>,
     stability: f32,
     friction: f32,
     logic: f32,
@@ -115,12 +121,14 @@ struct CalibrateSessionHttpRequest {
 struct StoreContextHttpRequest {
     node: String,
     session_id: String,
+    tenant_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GetContextHttpRequest {
     session_id: String,
+    tenant_id: Option<String>,
     stability: f32,
     friction: f32,
     logic: f32,
@@ -132,6 +140,7 @@ struct GetContextHttpRequest {
 #[serde(rename_all = "camelCase")]
 struct CreateMonthlyRollupHttpRequest {
     session_id: String,
+    tenant_id: Option<String>,
     start_date_utc: DateTime<Utc>,
     end_date_utc: DateTime<Utc>,
     source_session_id: Option<String>,
@@ -145,6 +154,7 @@ struct CreateMonthlyRollupHttpRequest {
 struct ListNodesQuery {
     limit: Option<usize>,
     session_id: Option<String>,
+    tenant_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -163,6 +173,7 @@ struct GetMoodsQuery {
 struct GraphQuery {
     limit: Option<usize>,
     session_id: Option<String>,
+    tenant_id: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -484,8 +495,12 @@ async fn health_handler() -> Json<Value> {
 
 async fn calibrate_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(request): Json<CalibrateSessionHttpRequest>,
 ) -> ApiResult<CalibrationResultDto> {
+    let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+    let scoped_session_id = scope_session_id(&tenant, &request.session_id);
+
     let trigger = request
         .trigger
         .as_deref()
@@ -495,7 +510,7 @@ async fn calibrate_handler(
     let result = state
         .calibration
         .calibrate_async(
-            &request.session_id,
+            &scoped_session_id,
             request.stability,
             request.friction,
             request.logic,
@@ -517,11 +532,15 @@ async fn calibrate_handler(
 
 async fn store_context_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(request): Json<StoreContextHttpRequest>,
 ) -> ApiResult<StoreResultDto> {
+    let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+    let scoped_session_id = scope_session_id(&tenant, &request.session_id);
+
     let result = state
         .store_context
-        .store_async(&request.node, &request.session_id)
+        .store_async(&request.node, &scoped_session_id)
         .await;
 
     Ok(Json(StoreResultDto {
@@ -534,13 +553,17 @@ async fn store_context_handler(
 
 async fn get_context_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(request): Json<GetContextHttpRequest>,
 ) -> ApiResult<RetrieveResultDto> {
+    let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+    let scoped_session_id = scope_session_id(&tenant, &request.session_id);
+
     let limit = request.limit.unwrap_or(5);
     let result = state
         .context_query
         .get_context_async(
-            &request.session_id,
+            &scoped_session_id,
             request.stability,
             request.friction,
             request.logic,
@@ -562,34 +585,69 @@ async fn get_context_handler(
 
 async fn list_nodes_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Query(query): Query<ListNodesQuery>,
 ) -> ApiResult<ListNodesResultDto> {
-    let limit = query.limit.unwrap_or(50);
+    let tenant = resolve_http_tenant(query.tenant_id.as_deref(), &headers);
+    let requested_limit = query.limit.unwrap_or(50).clamp(1, TENANT_SCAN_LIMIT);
+    let scoped_session_filter = query
+        .session_id
+        .as_deref()
+        .map(|session_id| scope_session_id(&tenant, session_id));
+    let backend_limit = if scoped_session_filter.is_some() {
+        requested_limit
+    } else {
+        TENANT_SCAN_LIMIT
+    };
+
     let result = state
         .context_query
-        .list_nodes_async(limit, query.session_id.as_deref())
+        .list_nodes_async(backend_limit, scoped_session_filter.as_deref())
         .await
         .map_err(internal_error)?;
 
+    let nodes = result
+        .nodes
+        .into_iter()
+        .filter_map(|node| normalize_node_for_tenant(node, &tenant))
+        .take(requested_limit)
+        .collect::<Vec<_>>();
+
     Ok(Json(ListNodesResultDto {
-        nodes: result.nodes.iter().map(to_node_dto).collect(),
-        retrieved: result.retrieved,
+        nodes: nodes.iter().map(to_node_dto).collect(),
+        retrieved: nodes.len(),
     }))
 }
 
 async fn graph_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Query(query): Query<GraphQuery>,
 ) -> ApiResult<GraphResponse> {
+    let tenant = resolve_http_tenant(query.tenant_id.as_deref(), &headers);
     let capped_limit = query.limit.unwrap_or(1000).clamp(1, 5000);
+    let scoped_session_filter = query
+        .session_id
+        .as_deref()
+        .map(|session_id| scope_session_id(&tenant, session_id));
+    let backend_limit = if scoped_session_filter.is_some() {
+        capped_limit
+    } else {
+        TENANT_SCAN_LIMIT
+    };
 
     let result = state
         .context_query
-        .list_nodes_async(capped_limit, query.session_id.as_deref())
+        .list_nodes_async(backend_limit, scoped_session_filter.as_deref())
         .await
         .map_err(internal_error)?;
 
-    let mut ordered_nodes = result.nodes;
+    let mut ordered_nodes = result
+        .nodes
+        .into_iter()
+        .filter_map(|node| normalize_node_for_tenant(node, &tenant))
+        .take(capped_limit)
+        .collect::<Vec<_>>();
     ordered_nodes.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
 
     #[derive(Clone)]
@@ -776,13 +834,18 @@ async fn get_moods_handler(
 
 async fn create_monthly_rollup_handler(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(request): Json<CreateMonthlyRollupHttpRequest>,
 ) -> ApiResult<MonthlyRollupResultDto> {
+    let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+
     let rollup_request = MonthlyRollupRequest {
-        session_id: request.session_id,
+        session_id: scope_session_id(&tenant, &request.session_id),
         start_utc: request.start_date_utc,
         end_utc: request.end_date_utc,
-        source_session_id: request.source_session_id,
+        source_session_id: request
+            .source_session_id
+            .map(|session_id| scope_session_id(&tenant, &session_id)),
         parent_node_id: request.parent_node_id,
         persist: request.persist.unwrap_or(true),
         limit: request.limit.unwrap_or(5000),
@@ -799,6 +862,86 @@ fn internal_error(error: impl std::fmt::Display) -> (StatusCode, Json<ErrorRespo
             error: error.to_string(),
         }),
     )
+}
+
+fn normalize_tenant_value(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let normalized = trimmed.to_ascii_lowercase();
+    if normalized
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_')
+    {
+        Some(normalized)
+    } else {
+        None
+    }
+}
+
+fn resolve_http_tenant(explicit_tenant: Option<&str>, headers: &HeaderMap) -> String {
+    explicit_tenant
+        .and_then(normalize_tenant_value)
+        .or_else(|| {
+            headers
+                .get(TENANT_HEADER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(normalize_tenant_value)
+        })
+        .unwrap_or_else(|| DEFAULT_TENANT.to_string())
+}
+
+fn resolve_grpc_tenant(metadata: &tonic::metadata::MetadataMap) -> String {
+    metadata
+        .get(TENANT_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(normalize_tenant_value)
+        .unwrap_or_else(|| DEFAULT_TENANT.to_string())
+}
+
+fn parse_scoped_session_id(session_id: &str) -> Option<(&str, &str)> {
+    let remainder = session_id.strip_prefix(TENANT_SCOPE_PREFIX)?;
+    remainder.split_once(TENANT_SCOPE_SEPARATOR)
+}
+
+fn is_default_tenant(tenant: &str) -> bool {
+    tenant == DEFAULT_TENANT
+}
+
+fn scope_session_id(tenant: &str, session_id: &str) -> String {
+    if is_default_tenant(tenant) {
+        session_id.to_string()
+    } else {
+        format!("{TENANT_SCOPE_PREFIX}{tenant}{TENANT_SCOPE_SEPARATOR}{session_id}")
+    }
+}
+
+fn session_belongs_to_tenant(session_id: &str, tenant: &str) -> bool {
+    match parse_scoped_session_id(session_id) {
+        Some((scoped_tenant, _)) => scoped_tenant == tenant,
+        None => is_default_tenant(tenant),
+    }
+}
+
+fn display_session_id(session_id: &str) -> String {
+    match parse_scoped_session_id(session_id) {
+        Some((_, base_session_id)) => base_session_id.to_string(),
+        None => session_id.to_string(),
+    }
+}
+
+fn normalize_node_for_tenant(
+    mut node: core_models::SttpNode,
+    tenant: &str,
+) -> Option<core_models::SttpNode> {
+    if !session_belongs_to_tenant(&node.session_id, tenant) {
+        return None;
+    }
+
+    node.session_id = display_session_id(&node.session_id);
+    Some(node)
 }
 
 fn graph_node_id(node: &core_models::SttpNode) -> String {
@@ -824,7 +967,7 @@ fn to_avec_dto(value: core_models::AvecState) -> AvecStateDto {
 fn to_node_dto(value: &core_models::SttpNode) -> SttpNodeDto {
     SttpNodeDto {
         raw: value.raw.clone(),
-        session_id: value.session_id.clone(),
+        session_id: display_session_id(&value.session_id),
         tier: value.tier.clone(),
         timestamp: value.timestamp,
         compression_depth: value.compression_depth,
@@ -912,18 +1055,20 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         &self,
         request: Request<proto::CalibrateSessionRequest>,
     ) -> Result<Response<proto::CalibrateSessionReply>, Status> {
+        let tenant = resolve_grpc_tenant(request.metadata());
         let request = request.into_inner();
         let trigger = if request.trigger.trim().is_empty() {
             "manual"
         } else {
             &request.trigger
         };
+        let scoped_session_id = scope_session_id(&tenant, &request.session_id);
 
         let result = self
             .state
             .calibration
             .calibrate_async(
-                &request.session_id,
+                &scoped_session_id,
                 request.stability,
                 request.friction,
                 request.logic,
@@ -949,11 +1094,14 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         &self,
         request: Request<proto::StoreContextRequest>,
     ) -> Result<Response<proto::StoreContextReply>, Status> {
+        let tenant = resolve_grpc_tenant(request.metadata());
         let request = request.into_inner();
+        let scoped_session_id = scope_session_id(&tenant, &request.session_id);
+
         let result = self
             .state
             .store_context
-            .store_async(&request.node, &request.session_id)
+            .store_async(&request.node, &scoped_session_id)
             .await;
 
         let reply = proto::StoreContextReply {
@@ -970,13 +1118,15 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         &self,
         request: Request<proto::GetContextRequest>,
     ) -> Result<Response<proto::GetContextReply>, Status> {
+        let tenant = resolve_grpc_tenant(request.metadata());
         let request = request.into_inner();
+        let scoped_session_id = scope_session_id(&tenant, &request.session_id);
 
         let result = self
             .state
             .context_query
             .get_context_async(
-                &request.session_id,
+                &scoped_session_id,
                 request.stability,
                 request.friction,
                 request.logic,
@@ -989,9 +1139,16 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
             )
             .await;
 
+        let nodes = result
+            .nodes
+            .iter()
+            .cloned()
+            .filter_map(|node| normalize_node_for_tenant(node, &tenant))
+            .collect::<Vec<_>>();
+
         let reply = proto::GetContextReply {
-            nodes: result.nodes.iter().map(to_grpc_node).collect(),
-            retrieved: clamp_usize_to_i32(result.retrieved),
+            nodes: nodes.iter().map(to_grpc_node).collect(),
+            retrieved: clamp_usize_to_i32(nodes.len()),
             psi_range: Some(to_grpc_psi_range(result.psi_range)),
         };
 
@@ -1002,24 +1159,44 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         &self,
         request: Request<proto::ListNodesRequest>,
     ) -> Result<Response<proto::ListNodesReply>, Status> {
+        let tenant = resolve_grpc_tenant(request.metadata());
         let request = request.into_inner();
+        let requested_limit = if request.limit <= 0 {
+            50
+        } else {
+            request.limit as usize
+        }
+        .clamp(1, TENANT_SCAN_LIMIT);
+        let scoped_session_filter = request
+            .session_id
+            .as_deref()
+            .map(|session_id| scope_session_id(&tenant, session_id));
+        let backend_limit = if scoped_session_filter.is_some() {
+            requested_limit
+        } else {
+            TENANT_SCAN_LIMIT
+        };
+
         let result = self
             .state
             .context_query
             .list_nodes_async(
-                if request.limit <= 0 {
-                    50
-                } else {
-                    request.limit as usize
-                },
-                request.session_id.as_deref(),
+                backend_limit,
+                scoped_session_filter.as_deref(),
             )
             .await
             .map_err(|err| Status::internal(err.to_string()))?;
 
+        let nodes = result
+            .nodes
+            .into_iter()
+            .filter_map(|node| normalize_node_for_tenant(node, &tenant))
+            .take(requested_limit)
+            .collect::<Vec<_>>();
+
         let reply = proto::ListNodesReply {
-            nodes: result.nodes.iter().map(to_grpc_node).collect(),
-            retrieved: clamp_usize_to_i32(result.retrieved),
+            nodes: nodes.iter().map(to_grpc_node).collect(),
+            retrieved: clamp_usize_to_i32(nodes.len()),
         };
 
         Ok(Response::new(reply))
@@ -1066,16 +1243,19 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         &self,
         request: Request<proto::CreateMonthlyRollupRequest>,
     ) -> Result<Response<proto::CreateMonthlyRollupReply>, Status> {
+        let tenant = resolve_grpc_tenant(request.metadata());
         let request = request.into_inner();
 
         let start_utc = timestamp_from_proto(request.start_utc)?;
         let end_utc = timestamp_from_proto(request.end_utc)?;
 
         let monthly_request = MonthlyRollupRequest {
-            session_id: request.session_id,
+            session_id: scope_session_id(&tenant, &request.session_id),
             start_utc,
             end_utc,
-            source_session_id: request.source_session_id,
+            source_session_id: request
+                .source_session_id
+                .map(|session_id| scope_session_id(&tenant, &session_id)),
             parent_node_id: request.parent_node_id,
             persist: request.persist,
             limit: if request.limit <= 0 {
@@ -1121,7 +1301,7 @@ fn to_grpc_avec(value: core_models::AvecState) -> proto::AvecState {
 fn to_grpc_node(value: &core_models::SttpNode) -> proto::SttpNode {
     proto::SttpNode {
         raw: value.raw.clone(),
-        session_id: value.session_id.clone(),
+        session_id: display_session_id(&value.session_id),
         tier: value.tier.clone(),
         timestamp: Some(timestamp_to_proto(value.timestamp)),
         compression_depth: value.compression_depth,
@@ -1237,12 +1417,26 @@ mod tests {
         assert_eq!(runtime.database, "sttp-mcp");
     }
 
+    #[test]
+    fn tenant_scoping_is_applied_only_for_non_default_tenant() {
+        let scoped = scope_session_id("acme", "session-1");
+        assert_eq!(scoped, "tenant:acme::session:session-1");
+        assert!(session_belongs_to_tenant(&scoped, "acme"));
+        assert!(!session_belongs_to_tenant(&scoped, "default"));
+        assert_eq!(display_session_id(&scoped), "session-1");
+
+        let legacy = scope_session_id("default", "session-1");
+        assert_eq!(legacy, "session-1");
+        assert!(session_belongs_to_tenant(&legacy, "default"));
+    }
+
     #[tokio::test]
     async fn http_calibrate_defaults_trigger_to_manual() {
         let state = Arc::new(build_in_memory_state().await.expect("state should build"));
 
         let request = CalibrateSessionHttpRequest {
             session_id: "http-calibrate-session".to_string(),
+            tenant_id: None,
             stability: 0.8,
             friction: 0.2,
             logic: 0.8,
@@ -1250,7 +1444,7 @@ mod tests {
             trigger: None,
         };
 
-        let Json(reply) = calibrate_handler(State(state), Json(request))
+        let Json(reply) = calibrate_handler(State(state), HeaderMap::new(), Json(request))
             .await
             .expect("calibrate should succeed");
 
@@ -1265,9 +1459,11 @@ mod tests {
 
         let Json(store_reply) = store_context_handler(
             State(state.clone()),
+            HeaderMap::new(),
             Json(StoreContextHttpRequest {
                 node: sample_node(session_id),
                 session_id: session_id.to_string(),
+                tenant_id: None,
             }),
         )
         .await
@@ -1278,8 +1474,10 @@ mod tests {
 
         let Json(context_reply) = get_context_handler(
             State(state),
+            HeaderMap::new(),
             Json(GetContextHttpRequest {
                 session_id: session_id.to_string(),
+                tenant_id: None,
                 stability: 0.85,
                 friction: 0.25,
                 logic: 0.80,

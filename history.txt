@@ -1,0 +1,27 @@
+#V2
+SELECT * FROM temporal_node LIMIT 1
+CREATE temporal_node:smoke_tenant_1775871541 SET session_id='tenant:acme_smoke_1775871541::session:smoke_tenant_1775871541', raw='smoke-backfill', tier='raw', timestamp=<datetime>'2026-04-10T00:00:00Z', compression_depth=1, psi=1.1, rho=0.9, kappa=0.9, user_stability=0.5, user_friction=0.5, user_logic=0.5, user_autonomy=0.5, user_psi=2.0, model_stability=0.5, model_friction=0.5, model_logic=0.5, model_autonomy=0.5, model_psi=2.0, comp_stability=0.5, comp_friction=0.5, comp_logic=0.5, comp_autonomy=0.5, comp_psi=2.0
+CREATE calibration:smoke_cal_1775871541 SET session_id='smoke_legacy_1775871541', stability=0.5, friction=0.5, logic=0.5, autonomy=0.5, psi=2.0, trigger='smoke', created_at=<datetime>'2026-04-10T00:00:00Z'
+SELECT id, session_id, tenant_id FROM temporal_node:smoke_tenant_1775871541 LIMIT 1
+SELECT id, session_id, tenant_id FROM calibration:smoke_cal_1775871541 LIMIT 1
+CREATE temporal_node:smoke_tenant_1775871559 SET session_id='tenant:acme_smoke_1775871559::session:smoke_tenant_1775871559', raw='smoke-backfill', tier='raw', timestamp=<datetime>'2026-04-10T00:00:00Z', compression_depth=1, psi=1.1, rho=0.9, kappa=0.9, user_stability=0.5, user_friction=0.5, user_logic=0.5, user_autonomy=0.5, user_psi=2.0, model_stability=0.5, model_friction=0.5, model_logic=0.5, model_autonomy=0.5, model_psi=2.0, comp_stability=0.5, comp_friction=0.5, comp_logic=0.5, comp_autonomy=0.5, comp_psi=2.0
+CREATE calibration:smoke_cal_1775871559 SET session_id='smoke_legacy_1775871559', stability=0.5, friction=0.5, logic=0.5, autonomy=0.5, psi=2.0, trigger='smoke', created_at=<datetime>'2026-04-10T00:00:00Z'
+SELECT id, session_id, tenant_id FROM temporal_node:smoke_tenant_1775871559 LIMIT 1
+SELECT id, session_id, tenant_id FROM calibration:smoke_cal_1775871559 LIMIT 1
+CREATE temporal_node:smoke_tenant_1775871572 SET session_id='tenant:acme_smoke_1775871572::session:smoke_tenant_1775871572', raw='smoke-backfill', tier='raw', timestamp=<datetime>'2026-04-10T00:00:00Z', compression_depth=1, psi=1.1, rho=0.9, kappa=0.9, user_stability=0.5, user_friction=0.5, user_logic=0.5, user_autonomy=0.5, user_psi=2.0, model_stability=0.5, model_friction=0.5, model_logic=0.5, model_autonomy=0.5, model_psi=2.0, comp_stability=0.5, comp_friction=0.5, comp_logic=0.5, comp_autonomy=0.5, comp_psi=2.0
+CREATE calibration:smoke_cal_1775871572 SET session_id='smoke_legacy_1775871572', stability=0.5, friction=0.5, logic=0.5, autonomy=0.5, psi=2.0, trigger='smoke', created_at=<datetime>'2026-04-10T00:00:00Z'
+SELECT id, session_id, tenant_id FROM temporal_node:smoke_tenant_1775871572 LIMIT 1
+SELECT id, session_id, tenant_id FROM calibration:smoke_cal_1775871572 LIMIT 1
+SELECT * FROM temporal_node WHERE session_id = 'tenant:acme_smoke_1775871572::session:smoke_tenant_1775871572' LIMIT 1
+SELECT * FROM calibration WHERE session_id = 'smoke_legacy_1775871572' LIMIT 1
+CREATE temporal_node:debug_smoke_125 SET session_id = 'tenant:acme_smoke_1775871572::session:smoke_tenant_1775871572', raw = 'smoke-backfill', tier = 'raw', timestamp = <datetime>'2026-04-10T00:00:00Z', compression_depth = 1, psi = 1.1, rho = 0.9, kappa = 0.9, user_stability = 0.5, user_friction = 0.5, user_logic = 0.5, user_autonomy = 0.5, user_psi = 2.0, model_stability = 0.5, model_friction = 0.5, model_logic = 0.5, model_autonomy = 0.5, model_psi = 2.0, comp_stability = 0.5, comp_friction = 0.5, comp_logic = 0.5, comp_autonomy = 0.5, comp_psi = 2.0
+CREATE temporal_node:smoke_tenant_1775871620 SET tenant_id='', session_id='tenant:acme_smoke_1775871620::session:smoke_tenant_1775871620', raw='smoke-backfill', tier='raw', timestamp=<datetime>'2026-04-10T00:00:00Z', compression_depth=1, psi=1.1, rho=0.9, kappa=0.9, user_stability=0.5, user_friction=0.5, user_logic=0.5, user_autonomy=0.5, user_psi=2.0, model_stability=0.5, model_friction=0.5, model_logic=0.5, model_autonomy=0.5, model_psi=2.0, comp_stability=0.5, comp_friction=0.5, comp_logic=0.5, comp_autonomy=0.5, comp_psi=2.0
+CREATE calibration:smoke_cal_1775871620 SET tenant_id='', session_id='smoke_legacy_1775871620', stability=0.5, friction=0.5, logic=0.5, autonomy=0.5, psi=2.0, trigger='smoke', created_at=<datetime>'2026-04-10T00:00:00Z'
+SELECT id, session_id, tenant_id FROM temporal_node WHERE id = temporal_node:smoke_tenant_1775871620 LIMIT 1
+SELECT id, session_id, tenant_id FROM calibration WHERE id = calibration:smoke_cal_1775871620 LIMIT 1
+SELECT id, session_id, tenant_id FROM temporal_node WHERE id = temporal_node:smoke_tenant_1775871620 LIMIT 1
+SELECT id, session_id, tenant_id FROM calibration WHERE id = calibration:smoke_cal_1775871620 LIMIT 1
+DELETE temporal_node:smoke_tenant_1775871620
+DELETE calibration:smoke_cal_1775871620
+SELECT id FROM temporal_node WHERE id = temporal_node:smoke_tenant_1775871620 LIMIT 1
+SELECT id FROM calibration WHERE id = calibration:smoke_cal_1775871620 LIMIT 1
