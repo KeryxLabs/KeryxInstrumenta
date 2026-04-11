@@ -204,6 +204,6 @@ public sealed class InMemoryNodeStore : INodeStore, INodeStoreInitializer
             ? node.CanonicalSyncKey()
             : node.SyncKey;
 
-    private static string? NormalizeMetadata(JsonElement? metadata)
-        => metadata is null ? null : JsonSerializer.Serialize(metadata.Value);
+    private static string? NormalizeMetadata(ConnectorMetadata? metadata)
+        => metadata is null ? null : JsonSerializer.Serialize(metadata);
 }

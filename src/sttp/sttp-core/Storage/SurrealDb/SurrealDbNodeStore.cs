@@ -681,21 +681,12 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             ? value["temporal_node:".Length..]
             : value;
 
-    private static object? ToSurrealValue(JsonElement? value)
-        => value is null ? null : JsonSerializer.Deserialize<object>(value.Value.GetRawText());
+    private static object? ToSurrealValue(ConnectorMetadata? value)
+        => value is null ? null : JsonSerializer.Deserialize<object>(JsonSerializer.Serialize(value));
 
-    private static string? NormalizeMetadata(JsonElement? metadata)
-        => metadata is null ? null : JsonSerializer.Serialize(metadata.Value);
-
-    private static string? NormalizeMetadata(object? metadata)
+    private static string? NormalizeMetadata(ConnectorMetadata? metadata)
     {
-        if (metadata is null)
-            return null;
-
-        if (metadata is JsonElement jsonElement)
-            return JsonSerializer.Serialize(jsonElement);
-
-        return JsonSerializer.Serialize(metadata);
+        return metadata is null ? null : JsonSerializer.Serialize(metadata);
     }
 
     private static string BuildCheckpointRecordId(string tenantId, string sessionId, string connectorId)

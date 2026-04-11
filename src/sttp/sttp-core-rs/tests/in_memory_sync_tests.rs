@@ -1,8 +1,8 @@
 use chrono::{DateTime, Utc};
-use serde_json::json;
 use sttp_core_rs::domain::contracts::NodeStore;
 use sttp_core_rs::domain::models::{
-    AvecState, NodeUpsertStatus, SttpNode, SyncCheckpoint, SyncCursor,
+    AvecState, ConnectorMetadata, NodeUpsertStatus, SttpNode, SyncCheckpoint,
+    SyncCursor,
 };
 use sttp_core_rs::storage::InMemoryNodeStore;
 
@@ -130,7 +130,16 @@ async fn checkpoints_replace_existing_connector_state() {
             updated_at: DateTime::parse_from_rfc3339("2026-03-05T06:36:00Z")
                 .expect("timestamp should parse")
                 .with_timezone(&Utc),
-            metadata: Some(json!({ "endpoint": "local" })),
+            metadata: Some(ConnectorMetadata {
+                connector_id: "cloud-primary".to_string(),
+                source_kind: "local".to_string(),
+                upstream_id: "node-a".to_string(),
+                revision: Some("1".to_string()),
+                observed_at_utc: DateTime::parse_from_rfc3339("2026-03-05T06:36:00Z")
+                    .expect("timestamp should parse")
+                    .with_timezone(&Utc),
+                extra: Some(serde_json::json!({ "endpoint": "local" })),
+            }),
         })
         .await
         .expect("checkpoint insert should succeed");
@@ -148,7 +157,16 @@ async fn checkpoints_replace_existing_connector_state() {
             updated_at: DateTime::parse_from_rfc3339("2026-03-05T06:41:00Z")
                 .expect("timestamp should parse")
                 .with_timezone(&Utc),
-            metadata: Some(json!({ "endpoint": "cloud" })),
+            metadata: Some(ConnectorMetadata {
+                connector_id: "cloud-primary".to_string(),
+                source_kind: "cloud".to_string(),
+                upstream_id: "node-b".to_string(),
+                revision: Some("2".to_string()),
+                observed_at_utc: DateTime::parse_from_rfc3339("2026-03-05T06:41:00Z")
+                    .expect("timestamp should parse")
+                    .with_timezone(&Utc),
+                extra: Some(serde_json::json!({ "endpoint": "cloud" })),
+            }),
         })
         .await
         .expect("checkpoint update should succeed");
@@ -160,5 +178,12 @@ async fn checkpoints_replace_existing_connector_state() {
         .expect("checkpoint should exist");
 
     assert_eq!(checkpoint.cursor.as_ref().map(|cursor| cursor.sync_key.as_str()), Some("sync-b"));
-    assert_eq!(checkpoint.metadata, Some(json!({ "endpoint": "cloud" })));
+    assert_eq!(
+        checkpoint.metadata.as_ref().map(|metadata| metadata.source_kind.as_str()),
+        Some("cloud")
+    );
+    assert_eq!(
+        checkpoint.metadata.as_ref().and_then(|metadata| metadata.revision.as_deref()),
+        Some("2")
+    );
 }

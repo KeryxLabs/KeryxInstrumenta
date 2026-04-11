@@ -12,8 +12,9 @@ use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, ChangeQueryResult, NodeQuery, NodeUpsertResult,
-    NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint, SyncCursor,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
+    NodeUpsertResult, NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint,
+    SyncCursor,
 };
 use crate::storage::surrealdb::client::{QueryParams, SurrealDbClient};
 use crate::storage::surrealdb::models::{
@@ -246,10 +247,9 @@ impl NodeStore for SurrealDbNodeStore {
                 let mut update_parameters = QueryParams::new();
                 update_parameters.insert(
                     "source_metadata".to_string(),
-                    candidate
-                        .source_metadata
-                        .clone()
-                        .map_or(Value::Null, |metadata| metadata),
+                    candidate.source_metadata.clone().map_or(Value::Null, |metadata| {
+                        serde_json::to_value(metadata).unwrap_or(Value::Null)
+                    }),
                 );
                 update_parameters
                     .insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
@@ -293,10 +293,9 @@ impl NodeStore for SurrealDbNodeStore {
         parameters.insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
         parameters.insert(
             "source_metadata".to_string(),
-            candidate
-                .source_metadata
-                .clone()
-                .map_or(Value::Null, |metadata| metadata),
+            candidate.source_metadata.clone().map_or(Value::Null, |metadata| {
+                serde_json::to_value(metadata).unwrap_or(Value::Null)
+            }),
         );
         parameters.insert("psi".to_string(), json!(candidate.psi));
         parameters.insert("rho".to_string(), json!(candidate.rho));
@@ -554,7 +553,9 @@ impl NodeStore for SurrealDbNodeStore {
         );
         parameters.insert(
             "metadata".to_string(),
-            checkpoint.metadata.clone().map_or(Value::Null, |value| value),
+            checkpoint.metadata.clone().map_or(Value::Null, |value| {
+                serde_json::to_value(value).unwrap_or(Value::Null)
+            }),
         );
         parameters.insert(
             "updated_at".to_string(),
@@ -881,7 +882,7 @@ fn normalize_temporal_node_id(value: &str) -> Option<String> {
     }
 }
 
-fn normalize_metadata(metadata: Option<&Value>) -> Option<String> {
+fn normalize_metadata(metadata: Option<&ConnectorMetadata>) -> Option<String> {
     metadata.and_then(|value| serde_json::to_string(value).ok())
 }
 

@@ -1,5 +1,5 @@
-using System.Text.Json;
 using System.Text.Json.Serialization;
+using SttpMcp.Domain.Models;
 
 namespace SttpMcp.Storage.SurrealDb.Models;
 
@@ -12,7 +12,7 @@ public sealed record SurrealNodeRecord(
     [property: JsonPropertyName("ParentNodeId")] string? ParentNodeId,
     [property: JsonPropertyName("SyncKey")] string? SyncKey,
     [property: JsonPropertyName("UpdatedAt")] DateTime? UpdatedAt,
-    [property: JsonPropertyName("SourceMetadata")] JsonElement? SourceMetadata,
+    [property: JsonPropertyName("SourceMetadata")] ConnectorMetadata? SourceMetadata,
     [property: JsonPropertyName("Psi")] double Psi,
     [property: JsonPropertyName("Rho")] double Rho,
     [property: JsonPropertyName("Kappa")] double Kappa,

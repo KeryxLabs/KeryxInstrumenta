@@ -1,5 +1,6 @@
 use chrono::{DateTime, Utc};
 use serde::Serialize;
+use serde::{Deserialize, Serialize as SerdeSerialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -150,13 +151,24 @@ pub struct SttpNode {
     pub parent_node_id: Option<String>,
     pub sync_key: String,
     pub updated_at: DateTime<Utc>,
-    pub source_metadata: Option<Value>,
+    pub source_metadata: Option<ConnectorMetadata>,
     pub user_avec: AvecState,
     pub model_avec: AvecState,
     pub compression_avec: Option<AvecState>,
     pub rho: f32,
     pub kappa: f32,
     pub psi: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, SerdeSerialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorMetadata {
+    pub connector_id: String,
+    pub source_kind: String,
+    pub upstream_id: String,
+    pub revision: Option<String>,
+    pub observed_at_utc: DateTime<Utc>,
+    pub extra: Option<Value>,
 }
 
 impl SttpNode {
@@ -239,7 +251,29 @@ pub struct SyncCheckpoint {
     pub connector_id: String,
     pub cursor: Option<SyncCursor>,
     pub updated_at: DateTime<Utc>,
-    pub metadata: Option<Value>,
+    pub metadata: Option<ConnectorMetadata>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SyncPullRequest {
+    pub session_id: String,
+    pub connector_id: String,
+    pub page_size: usize,
+    pub max_batches: Option<usize>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SyncPullResult {
+    pub fetched: usize,
+    pub created: usize,
+    pub updated: usize,
+    pub duplicate: usize,
+    pub skipped: usize,
+    pub filtered: usize,
+    pub batches: usize,
+    pub has_more: bool,
+    pub last_cursor: Option<SyncCursor>,
+    pub checkpoint: Option<SyncCheckpoint>,
 }
 
 #[derive(Debug, Clone)]

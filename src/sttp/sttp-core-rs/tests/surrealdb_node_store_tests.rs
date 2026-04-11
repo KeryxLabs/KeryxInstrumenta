@@ -9,7 +9,8 @@ use tokio::sync::Mutex;
 
 use sttp_core_rs::domain::contracts::{NodeStore, NodeStoreInitializer};
 use sttp_core_rs::domain::models::{
-    AvecState, NodeQuery, NodeUpsertStatus, SttpNode, SyncCheckpoint, SyncCursor,
+    AvecState, ConnectorMetadata, NodeQuery, NodeUpsertStatus, SttpNode, SyncCheckpoint,
+    SyncCursor,
 };
 use sttp_core_rs::storage::surrealdb::{QueryParams, SurrealDbClient, SurrealDbNodeStore};
 
@@ -392,7 +393,14 @@ async fn checkpoints_can_be_read_and_written() {
             "CursorUpdatedAt": "2026-03-05T06:35:00Z",
             "CursorSyncKey": "sync-b",
             "UpdatedAt": "2026-03-05T06:36:00Z",
-            "Metadata": { "endpoint": "cloud" }
+            "Metadata": {
+                "connectorId": "cloud-primary",
+                "sourceKind": "cloud",
+                "upstreamId": "checkpoint/sync-session",
+                "revision": "r1",
+                "observedAtUtc": "2026-03-05T06:36:00Z",
+                "extra": { "endpoint": "cloud" }
+            }
         })])
         .await;
     client.queue_response(vec![]).await;
@@ -418,7 +426,16 @@ async fn checkpoints_can_be_read_and_written() {
             updated_at: DateTime::parse_from_rfc3339("2026-03-05T06:41:00Z")
                 .expect("timestamp should parse")
                 .with_timezone(&Utc),
-            metadata: Some(json!({ "endpoint": "cloud" })),
+            metadata: Some(ConnectorMetadata {
+                connector_id: "cloud-primary".to_string(),
+                source_kind: "cloud".to_string(),
+                upstream_id: "checkpoint/sync-session".to_string(),
+                revision: Some("r2".to_string()),
+                observed_at_utc: DateTime::parse_from_rfc3339("2026-03-05T06:41:00Z")
+                    .expect("timestamp should parse")
+                    .with_timezone(&Utc),
+                extra: Some(json!({ "endpoint": "cloud" })),
+            }),
         })
         .await
         .expect("checkpoint update should succeed");

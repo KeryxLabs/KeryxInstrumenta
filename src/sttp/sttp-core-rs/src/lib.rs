@@ -59,10 +59,12 @@ pub mod storage;
 
 pub use application::services::{
 	CalibrationService, ContextQueryService, MonthlyRollupService, MoodCatalogService,
-	RekeyScopeService, StoreContextService,
+	RekeyScopeService, StoreContextService, SyncCoordinatorService,
 };
 pub use application::validation::TreeSitterValidator;
-pub use domain::contracts::{NodeStore, NodeStoreInitializer, NodeValidator};
+pub use domain::contracts::{
+	NodeStore, NodeStoreInitializer, NodeValidator, SyncChangeSource, SyncCoordinatorPolicy,
+};
 pub use domain::models::*;
 pub use parsing::SttpNodeParser;
 pub use storage::{

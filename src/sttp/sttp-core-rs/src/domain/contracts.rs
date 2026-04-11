@@ -2,8 +2,8 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, ChangeQueryResult, NodeQuery, NodeUpsertResult,
-    SttpNode, SyncCheckpoint, SyncCursor, ValidationResult,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
+    NodeUpsertResult, SttpNode, SyncCheckpoint, SyncCursor, ValidationResult,
 };
 
 /// Storage abstraction for STTP nodes and calibration data.
@@ -98,4 +98,32 @@ pub trait NodeValidator: Send + Sync {
     fn validate(&self, raw_node: &str) -> ValidationResult;
     /// Verify PSI coherence between fields and computed values.
     fn verify_psi(&self, node: &SttpNode) -> bool;
+}
+
+#[async_trait]
+pub trait SyncChangeSource: Send + Sync {
+    async fn read_changes_async(
+        &self,
+        session_id: &str,
+        connector_id: &str,
+        cursor: Option<SyncCursor>,
+        limit: usize,
+    ) -> Result<ChangeQueryResult>;
+}
+
+pub trait SyncCoordinatorPolicy: Send + Sync {
+    fn should_accept_node(&self, _node: &SttpNode) -> bool {
+        true
+    }
+
+    fn checkpoint_metadata(
+        &self,
+        _session_id: &str,
+        _connector_id: &str,
+        previous: Option<&SyncCheckpoint>,
+        _last_applied_node: Option<&SttpNode>,
+        _next_cursor: Option<&SyncCursor>,
+    ) -> Option<ConnectorMetadata> {
+        previous.and_then(|checkpoint| checkpoint.metadata.clone())
+    }
 }

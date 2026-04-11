@@ -1,4 +1,5 @@
 use serde::Deserialize;
+use crate::domain::models::ConnectorMetadata;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -20,7 +21,7 @@ pub struct SurrealNodeRecord {
     #[serde(rename = "UpdatedAt", default)]
     pub updated_at: Option<String>,
     #[serde(rename = "SourceMetadata", default)]
-    pub source_metadata: Option<Value>,
+    pub source_metadata: Option<ConnectorMetadata>,
     #[serde(rename = "Psi", default)]
     pub psi: f64,
     #[serde(rename = "Rho", default)]
@@ -87,7 +88,7 @@ pub struct SurrealExistingNodeRecord {
     #[serde(rename = "Id", default)]
     pub id: Value,
     #[serde(rename = "SourceMetadata", default)]
-    pub source_metadata: Option<Value>,
+    pub source_metadata: Option<ConnectorMetadata>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -103,5 +104,5 @@ pub struct SurrealCheckpointRecord {
     #[serde(rename = "UpdatedAt")]
     pub updated_at: String,
     #[serde(rename = "Metadata", default)]
-    pub metadata: Option<Value>,
+    pub metadata: Option<ConnectorMetadata>,
 }

@@ -1,14 +1,14 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
 use chrono::Utc;
-use serde_json::Value;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, ChangeQueryResult, NodeQuery, NodeUpsertResult,
-    NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint, SyncCursor,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
+    NodeUpsertResult, NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint,
+    SyncCursor,
 };
 
 const DEFAULT_TENANT: &str = "default";
@@ -461,6 +461,6 @@ fn normalize_temporal_node_id(value: &str) -> Option<String> {
     }
 }
 
-fn normalize_metadata(metadata: Option<&Value>) -> Option<String> {
+fn normalize_metadata(metadata: Option<&ConnectorMetadata>) -> Option<String> {
     metadata.and_then(|value| serde_json::to_string(value).ok())
 }

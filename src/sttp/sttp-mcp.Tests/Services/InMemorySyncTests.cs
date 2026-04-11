@@ -1,5 +1,5 @@
-using System.Text.Json;
 using Shouldly;
+using System.Text.Json;
 using SttpMcp.Domain.Models;
 using SttpMcp.Storage;
 
@@ -81,7 +81,15 @@ public sealed class InMemorySyncTests
                 SyncKey = "sync-a"
             },
             UpdatedAt = DateTime.Parse("2026-03-05T06:36:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind),
-            Metadata = JsonDocument.Parse("{\"endpoint\":\"local\"}").RootElement.Clone()
+            Metadata = new ConnectorMetadata
+            {
+                ConnectorId = "cloud-primary",
+                SourceKind = "local",
+                UpstreamId = "node-a",
+                Revision = "1",
+                ObservedAtUtc = DateTime.Parse("2026-03-05T06:36:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind),
+                Extra = JsonDocument.Parse("{\"endpoint\":\"local\"}").RootElement.Clone()
+            }
         }, ct);
 
         await store.PutCheckpointAsync(new SyncCheckpoint
@@ -94,7 +102,15 @@ public sealed class InMemorySyncTests
                 SyncKey = "sync-b"
             },
             UpdatedAt = DateTime.Parse("2026-03-05T06:41:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind),
-            Metadata = JsonDocument.Parse("{\"endpoint\":\"cloud\"}").RootElement.Clone()
+            Metadata = new ConnectorMetadata
+            {
+                ConnectorId = "cloud-primary",
+                SourceKind = "cloud",
+                UpstreamId = "node-b",
+                Revision = "2",
+                ObservedAtUtc = DateTime.Parse("2026-03-05T06:41:00Z", null, System.Globalization.DateTimeStyles.RoundtripKind),
+                Extra = JsonDocument.Parse("{\"endpoint\":\"cloud\"}").RootElement.Clone()
+            }
         }, ct);
 
         var checkpoint = await store.GetCheckpointAsync("sync-session", "cloud-primary", ct);
@@ -103,7 +119,10 @@ public sealed class InMemorySyncTests
         checkpoint!.Cursor.ShouldNotBeNull();
         checkpoint.Cursor.SyncKey.ShouldBe("sync-b");
         checkpoint.Metadata.ShouldNotBeNull();
-        checkpoint.Metadata!.Value.GetProperty("endpoint").GetString().ShouldBe("cloud");
+        checkpoint.Metadata!.SourceKind.ShouldBe("cloud");
+        checkpoint.Metadata.Revision.ShouldBe("2");
+        checkpoint.Metadata.Extra.ShouldNotBeNull();
+        checkpoint.Metadata.Extra!.Value.GetProperty("endpoint").GetString().ShouldBe("cloud");
     }
 
     private static SttpNode BuildNode(string sessionId) => new()

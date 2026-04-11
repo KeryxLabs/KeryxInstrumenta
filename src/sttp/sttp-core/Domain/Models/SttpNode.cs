@@ -14,7 +14,7 @@ public record SttpNode
     public string? ParentNodeId { get; init; }
     public required string SyncKey { get; init; }
     public required DateTime UpdatedAt { get; init; }
-    public JsonElement? SourceMetadata { get; init; }
+    public ConnectorMetadata? SourceMetadata { get; init; }
     public required AvecState UserAvec { get; init; }
     public required AvecState ModelAvec { get; init; }
     public AvecState? CompressionAvec { get; init; }
