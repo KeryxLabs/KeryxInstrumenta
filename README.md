@@ -19,7 +19,7 @@ Each instrument is standalone and can be used independently.
 
 | Instrument | Current Line | What It Does |
 |---|---|---|
-| [`sttp`](./src/sttp) | `0.3.x` | Full-stack persistent AI memory: MCP tools, HTTP/gRPC gateway, mobile UI, shared core |
+| [`sttp`](./src/sttp) | `1.2.x` | Full-stack persistent AI memory: MCP tools, HTTP/gRPC gateway, mobile UI, shared core |
 | [`acc`](./src/acc) | `0.3.x` | Indexes repositories into AVEC-space and exposes dependency/risk/pattern queries |
 
 ## STTP Components

@@ -25,3 +25,8 @@ DELETE temporal_node:smoke_tenant_1775871620
 DELETE calibration:smoke_cal_1775871620
 SELECT id FROM temporal_node WHERE id = temporal_node:smoke_tenant_1775871620 LIMIT 1
 SELECT id FROM calibration WHERE id = calibration:smoke_cal_1775871620 LIMIT 1
+SELECT count() AS c FROM temporal_node WHERE comp_psi = NONE OR comp_stability = NONE OR comp_friction = NONE OR comp_logic = NONE OR comp_autonomy = NONE OR user_psi = NONE OR model_psi = NONE LIMIT 1
+SELECT count() AS c FROM temporal_node WHERE timestamp = NONE LIMIT 1
+SELECT count() AS c FROM temporal_node WHERE session_id = NONE OR raw = NONE OR tier = NONE LIMIT 1
+SELECT count() AS c FROM temporal_node GROUP ALL
+SELECT count() AS c FROM temporal_node WHERE comp_psi = NONE OR comp_stability = NONE OR comp_friction = NONE OR comp_logic = NONE OR comp_autonomy = NONE OR user_psi = NONE OR model_psi = NONE GROUP ALL

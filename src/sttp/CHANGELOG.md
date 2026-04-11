@@ -2,7 +2,32 @@
 
 All notable changes across STTP components are documented in this file.
 
-## [0.3.1-beta] - 2026-04-06
+## [1.2.0] - 2026-04-11
+
+### Fixed
+
+- **`sttp-core` / `sttp-mcp` — SurrealDB tenant-schema compatibility regression**
+  - Resolved MCP tool failures observed in:
+    - `calibrate_session`
+    - `list_nodes`
+  - Root cause: stricter tenant-aware schema (`tenant_id` required under `SCHEMAFULL`) after newer gateway/storage migrations.
+  - `SurrealDbNodeStore` updated to:
+    - define `tenant_id` fields for `temporal_node` and `calibration`
+    - define tenant+session composite indexes
+    - write `tenant_id` for node and calibration inserts (`default` tenant path)
+    - apply tenant-compatible read predicates with legacy fallback (`tenant_id = NONE` or empty)
+    - use datetime-cast predicates for range filters in query paths
+
+### Validated
+
+- `dotnet build` passes for:
+  - `src/sttp/sttp-core/sttp-core.csproj`
+  - `src/sttp/sttp-mcp/sttp-mcp.csproj`
+- Live MCP smoke checks against the rebuilt image:
+  - `calibrate_session` returns successful calibration payload
+  - `list_nodes` succeeds for both filtered and unfiltered queries
+
+## [1.1.0] - 2026-04-06
 
 ### Added
 
@@ -46,7 +71,7 @@ All notable changes across STTP components are documented in this file.
   - `src/sttp/sttp-ui/Components/Pages/Home.razor`
   - `src/sttp/sttp-ui/Components/Pages/Home.razor.css`
 
-## [0.3.0-beta] - 2026-04-05
+## [1.0.0] - 2026-04-05
 
 ### Added
 
