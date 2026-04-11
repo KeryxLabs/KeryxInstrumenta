@@ -3,7 +3,7 @@
 # Usage: ./build.sh [--publish]
 set -e
 
-VERSION="1.0.0"
+VERSION="1.2.1"
 TAG_PREFIX="sttp-gateway"
 RELEASE="${TAG_PREFIX}/v$VERSION"
 NAME="sttp-gateway"
