@@ -90,7 +90,7 @@ pub fn create_temporal_node_query(record_id: &str, include_parent_assignment: bo
                 session_id = $session_id,
                 raw = $raw,
                 tier = $tier,
-                timestamp = $timestamp,
+                timestamp = <datetime>$timestamp,
                 compression_depth = $compression_depth,{parent_assignment}
                 psi = $psi,
                 rho = $rho,
@@ -175,5 +175,5 @@ pub const STORE_CALIBRATION_QUERY: &str = r#"
                 autonomy = $autonomy,
                 psi = $psi,
                 trigger = $trigger,
-                created_at = $created_at;
+                created_at = <datetime>$created_at;
             "#;

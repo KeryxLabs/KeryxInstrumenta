@@ -8,7 +8,7 @@ use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
@@ -16,6 +16,8 @@ use tonic::transport::Server;
 use tonic::{Request, Response, Status};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
+
+mod surreal_client;
 
 use sttp_core_rs::application::services::{
     CalibrationService, ContextQueryService, MonthlyRollupService, MoodCatalogService,
@@ -26,7 +28,12 @@ use sttp_core_rs::domain::contracts::{NodeStore, NodeStoreInitializer, NodeValid
 use sttp_core_rs::domain::models::{
     self as core_models, ConfidenceBandSummary, MonthlyRollupRequest, NumericRange, PsiRange,
 };
-use sttp_core_rs::storage::InMemoryNodeStore;
+use sttp_core_rs::storage::{
+    InMemoryNodeStore, SurrealDbEndpointsSettings, SurrealDbNodeStore, SurrealDbRuntimeOptions,
+    SurrealDbSettings,
+};
+
+use crate::surreal_client::RuntimeSurrealDbClient;
 
 pub mod proto {
     tonic::include_proto!("sttp.v1");
@@ -42,6 +49,39 @@ struct GatewayArgs {
 
     #[arg(long, env = "STTP_GATEWAY_GRPC_PORT", default_value_t = 8081)]
     grpc_port: u16,
+
+    #[arg(long, env = "STTP_GATEWAY_BACKEND", value_enum, default_value = "in-memory")]
+    backend: GatewayBackend,
+
+    #[arg(long, env = "STTP_GATEWAY_ROOT_DIR_NAME", default_value = ".sttp-gateway")]
+    root_dir_name: String,
+
+    #[arg(long, env = "STTP_GATEWAY_REMOTE", default_value_t = false)]
+    remote: bool,
+
+    #[arg(long, env = "STTP_SURREAL_EMBEDDED_ENDPOINT")]
+    surreal_embedded_endpoint: Option<String>,
+
+    #[arg(long, env = "STTP_SURREAL_REMOTE_ENDPOINT")]
+    surreal_remote_endpoint: Option<String>,
+
+    #[arg(long, env = "STTP_SURREAL_NAMESPACE", default_value = "keryx")]
+    surreal_namespace: String,
+
+    #[arg(long, env = "STTP_SURREAL_DATABASE", default_value = "sttp-mcp")]
+    surreal_database: String,
+
+    #[arg(long, env = "STTP_SURREAL_USER", default_value = "root")]
+    surreal_user: String,
+
+    #[arg(long, env = "STTP_SURREAL_PASSWORD", default_value = "root")]
+    surreal_password: String,
+}
+
+#[derive(Debug, Clone, ValueEnum)]
+enum GatewayBackend {
+    InMemory,
+    Surreal,
 }
 
 #[derive(Clone)]
@@ -280,7 +320,7 @@ async fn main() -> Result<()> {
         ));
     }
 
-    let state = Arc::new(build_state().await?);
+    let state = Arc::new(build_state(&args).await?);
 
     let http_router = Router::new()
         .route("/health", get(health_handler))
@@ -329,7 +369,28 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn build_state() -> Result<AppState> {
+async fn build_state_with_backend(
+    backend: &GatewayBackend,
+    options: Option<&GatewayArgs>,
+) -> Result<AppState> {
+    match backend {
+        GatewayBackend::InMemory => build_in_memory_state().await,
+        GatewayBackend::Surreal => {
+            let options = options.ok_or_else(|| {
+                anyhow!(
+                    "Surreal backend selected, but no gateway runtime options were provided."
+                )
+            })?;
+            build_surreal_state(options).await
+        }
+    }
+}
+
+async fn build_state(args: &GatewayArgs) -> Result<AppState> {
+    build_state_with_backend(&args.backend, Some(args)).await
+}
+
+async fn build_in_memory_state() -> Result<AppState> {
     let store = Arc::new(InMemoryNodeStore::new());
 
     let initializer: Arc<dyn NodeStoreInitializer> = store.clone();
@@ -338,7 +399,11 @@ async fn build_state() -> Result<AppState> {
     let store_trait: Arc<dyn NodeStore> = store;
     let validator: Arc<dyn NodeValidator> = Arc::new(TreeSitterValidator);
 
-    Ok(AppState {
+    Ok(build_services(store_trait, validator))
+}
+
+fn build_services(store_trait: Arc<dyn NodeStore>, validator: Arc<dyn NodeValidator>) -> AppState {
+    AppState {
         calibration: Arc::new(CalibrationService::new(store_trait.clone())),
         context_query: Arc::new(ContextQueryService::new(store_trait.clone())),
         mood_catalog: Arc::new(MoodCatalogService::new()),
@@ -347,7 +412,64 @@ async fn build_state() -> Result<AppState> {
             validator.clone(),
         )),
         monthly_rollup: Arc::new(MonthlyRollupService::new(store_trait, validator)),
-    })
+    }
+}
+
+async fn build_surreal_state(args: &GatewayArgs) -> Result<AppState> {
+    let mut settings = SurrealDbSettings::default();
+    settings.endpoints = SurrealDbEndpointsSettings {
+        embedded: args
+            .surreal_embedded_endpoint
+            .clone()
+            .or(settings.endpoints.embedded),
+        remote: args
+            .surreal_remote_endpoint
+            .clone()
+            .or(settings.endpoints.remote),
+    };
+    settings.namespace = args.surreal_namespace.clone();
+    settings.database = args.surreal_database.clone();
+    settings.user = Some(args.surreal_user.clone());
+    settings.password = Some(args.surreal_password.clone());
+
+    let mut runtime_args = Vec::new();
+    if args.remote {
+        runtime_args.push("--remote".to_string());
+    }
+
+    let runtime = SurrealDbRuntimeOptions::from_args(
+        &runtime_args,
+        &settings,
+        Some(args.root_dir_name.as_str()),
+    )?;
+
+    info!(
+        backend = "surreal",
+        root_dir = runtime.root_dir,
+        mode = if runtime.use_remote { "remote" } else { "embedded" },
+        endpoint = runtime.endpoint,
+        namespace = runtime.namespace,
+        database = runtime.database,
+        "Surreal backend requested"
+    );
+
+    let client = Arc::new(
+        RuntimeSurrealDbClient::connect(
+            &runtime,
+            settings.user.as_deref(),
+            settings.password.as_deref(),
+        )
+        .await?,
+    );
+
+    let store = Arc::new(SurrealDbNodeStore::new(client));
+
+    let initializer: Arc<dyn NodeStoreInitializer> = store.clone();
+    initializer.initialize_async().await?;
+
+    let store_trait: Arc<dyn NodeStore> = store;
+    let validator: Arc<dyn NodeValidator> = Arc::new(TreeSitterValidator);
+    Ok(build_services(store_trait, validator))
 }
 
 async fn shutdown_signal() {
@@ -1055,5 +1177,171 @@ fn clamp_usize_to_i32(value: usize) -> i32 {
         i32::MAX
     } else {
         value as i32
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::proto::sttp_gateway_service_server::SttpGatewayService;
+
+    fn sample_node(session_id: &str) -> String {
+        format!(
+            r#"
+⊕⟨ {{ trigger: manual, response_format: temporal_node, origin_session: "{session_id}", compression_depth: 1, parent_node: null, prime: {{ attractor_config: {{ stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70 }}, context_summary: "gateway test", relevant_tier: raw, retrieval_budget: 3 }} }} ⟩
+⦿⟨ {{ timestamp: "2026-03-05T06:30:00Z", tier: raw, session_id: "{session_id}", user_avec: {{ stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70, psi: 2.60 }}, model_avec: {{ stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70, psi: 2.60 }} }} ⟩
+◈⟨ {{ test(.99): "gateway parser check" }} ⟩
+⍉⟨ {{ rho: 0.96, kappa: 0.94, psi: 2.60, compression_avec: {{ stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70, psi: 2.60 }} }} ⟩
+"#
+        )
+    }
+
+    fn surreal_test_args() -> GatewayArgs {
+        GatewayArgs {
+            http_port: 8080,
+            grpc_port: 8081,
+            backend: GatewayBackend::Surreal,
+            root_dir_name: ".sttp-gateway".to_string(),
+            remote: true,
+            surreal_embedded_endpoint: None,
+            surreal_remote_endpoint: Some("ws://127.0.0.1:8000/rpc".to_string()),
+            surreal_namespace: "keryx".to_string(),
+            surreal_database: "sttp-mcp".to_string(),
+            surreal_user: "root".to_string(),
+            surreal_password: "root".to_string(),
+        }
+    }
+
+    #[test]
+    fn surreal_runtime_options_are_derived_from_gateway_args() {
+        let args = surreal_test_args();
+        let mut settings = SurrealDbSettings::default();
+        settings.endpoints = SurrealDbEndpointsSettings {
+            embedded: args.surreal_embedded_endpoint.clone(),
+            remote: args.surreal_remote_endpoint.clone(),
+        };
+        settings.namespace = args.surreal_namespace.clone();
+        settings.database = args.surreal_database.clone();
+
+        let runtime_args = vec!["--remote".to_string()];
+        let runtime = SurrealDbRuntimeOptions::from_args(
+            &runtime_args,
+            &settings,
+            Some(args.root_dir_name.as_str()),
+        )
+        .expect("runtime options should be computed");
+
+        assert!(runtime.use_remote);
+        assert_eq!(runtime.endpoint, "ws://127.0.0.1:8000/rpc");
+        assert_eq!(runtime.namespace, "keryx");
+        assert_eq!(runtime.database, "sttp-mcp");
+    }
+
+    #[tokio::test]
+    async fn http_calibrate_defaults_trigger_to_manual() {
+        let state = Arc::new(build_in_memory_state().await.expect("state should build"));
+
+        let request = CalibrateSessionHttpRequest {
+            session_id: "http-calibrate-session".to_string(),
+            stability: 0.8,
+            friction: 0.2,
+            logic: 0.8,
+            autonomy: 0.7,
+            trigger: None,
+        };
+
+        let Json(reply) = calibrate_handler(State(state), Json(request))
+            .await
+            .expect("calibrate should succeed");
+
+        assert_eq!(reply.trigger, "manual");
+        assert!(reply.is_first_calibration);
+    }
+
+    #[tokio::test]
+    async fn http_store_then_get_context_roundtrip() {
+        let state = Arc::new(build_in_memory_state().await.expect("state should build"));
+        let session_id = "http-store-session";
+
+        let Json(store_reply) = store_context_handler(
+            State(state.clone()),
+            Json(StoreContextHttpRequest {
+                node: sample_node(session_id),
+                session_id: session_id.to_string(),
+            }),
+        )
+        .await
+        .expect("store should succeed");
+
+        assert!(store_reply.valid);
+        assert!(!store_reply.node_id.is_empty());
+
+        let Json(context_reply) = get_context_handler(
+            State(state),
+            Json(GetContextHttpRequest {
+                session_id: session_id.to_string(),
+                stability: 0.85,
+                friction: 0.25,
+                logic: 0.80,
+                autonomy: 0.70,
+                limit: Some(5),
+            }),
+        )
+        .await
+        .expect("get_context should succeed");
+
+        assert!(context_reply.retrieved >= 1);
+        assert!(context_reply
+            .nodes
+            .iter()
+            .any(|node| node.session_id == session_id));
+    }
+
+    #[tokio::test]
+    async fn grpc_service_roundtrip_for_calibrate_store_and_list() {
+        let state = Arc::new(build_in_memory_state().await.expect("state should build"));
+        let service = GrpcGatewayService::new(state);
+        let session_id = "grpc-store-session";
+
+        let calibrate_reply = service
+            .calibrate_session(Request::new(proto::CalibrateSessionRequest {
+                session_id: session_id.to_string(),
+                stability: 0.8,
+                friction: 0.2,
+                logic: 0.8,
+                autonomy: 0.7,
+                trigger: String::new(),
+            }))
+            .await
+            .expect("gRPC calibrate should succeed")
+            .into_inner();
+
+        assert_eq!(calibrate_reply.trigger, "manual");
+
+        let store_reply = service
+            .store_context(Request::new(proto::StoreContextRequest {
+                node: sample_node(session_id),
+                session_id: session_id.to_string(),
+            }))
+            .await
+            .expect("gRPC store should succeed")
+            .into_inner();
+
+        assert!(store_reply.valid);
+
+        let list_reply = service
+            .list_nodes(Request::new(proto::ListNodesRequest {
+                limit: 50,
+                session_id: Some(session_id.to_string()),
+            }))
+            .await
+            .expect("gRPC list_nodes should succeed")
+            .into_inner();
+
+        assert!(list_reply.retrieved >= 1);
+        assert!(list_reply
+            .nodes
+            .iter()
+            .any(|node| node.session_id == session_id));
     }
 }

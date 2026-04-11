@@ -48,12 +48,12 @@ impl NodeStore for SurrealDbNodeStore {
         }
 
         if let Some(from_utc) = query.from_utc {
-            clauses.push("timestamp >= $from_utc".to_string());
+            clauses.push("timestamp >= <datetime>$from_utc".to_string());
             parameters.insert("from_utc".to_string(), json!(from_utc.to_rfc3339()));
         }
 
         if let Some(to_utc) = query.to_utc {
-            clauses.push("timestamp <= $to_utc".to_string());
+            clauses.push("timestamp <= <datetime>$to_utc".to_string());
             parameters.insert("to_utc".to_string(), json!(to_utc.to_rfc3339()));
         }
 
