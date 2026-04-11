@@ -7,6 +7,10 @@ Deployable STTP network host with dual transport in one process:
 
 This gateway reuses `sttp-core` services directly, so behavior matches `sttp-mcp` tooling semantics.
 
+It is a good fit when you want STTP behind a normal network boundary instead of an MCP stdio server.
+
+Recent releases also made the underlying storage sync-ready, but the gateway still stays intentionally simple for ordinary use: store nodes, retrieve context, list memory, and create rollups without requiring any cloud/local sync setup.
+
 ## Run
 
 ```bash
@@ -65,6 +69,22 @@ Optional local config file:
 - `GET /api/v1/nodes?limit=50&sessionId=...`
 - `GET /api/v1/moods?targetMood=focused&blend=1`
 - `POST /api/v1/rollups/monthly`
+
+## Storage And Compatibility
+
+`sttp-gateway` sits on top of the same core storage layer as `sttp-mcp`.
+
+That means:
+
+- existing STTP storage continues to work
+- legacy rows without newer sync fields are still readable
+- sync-related schema additions are additive rather than disruptive
+
+The gateway is therefore sync-ready, but not sync-opinionated.
+
+In practice, that means the gateway can live happily as a straightforward STTP API even if you never build a cloud/local sync workflow.
+
+If you do build one later, the core already has the low-level pieces for node identity, incremental changes, checkpoints, and typed connector metadata.
 
 Example health check:
 

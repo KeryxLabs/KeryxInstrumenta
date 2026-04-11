@@ -52,16 +52,18 @@ A fresh model receiving a STTP node doesn't get a summary. It gets a mathematica
 
 ```
 src/sttp/
-├── sttp-core/          — domain models, services, storage adapters (shared library)
+├── sttp-core/          — C# core library: models, services, storage, sync-ready primitives
+├── sttp-core-rs/       — Rust core library with the same STTP and sync-ready semantics
 ├── sttp-mcp/           — MCP server exposing STTP tools over stdio
-├── sttp-gateway/       — deployable HTTP + gRPC host (dual transport)
+├── sttp-gateway/       — C# deployable HTTP + gRPC host
+├── sttp-gateway-rs/    — Rust deployable HTTP + gRPC host
 ├── sttp-ui/            — Blazor Server mobile console
 ├── sttp-mcp.Tests/     — integration test suite
 ├── sttp-demo/          — usage examples
 └── docker-compose.yml  — gateway + ui stack
 ```
 
-`sttp-core` is the single source of truth for all STTP behavior. Both `sttp-mcp` and `sttp-gateway` consume it directly — same semantics, different transport.
+The C# and Rust cores are intended to stay behaviorally aligned. The transport hosts reuse those cores directly so parsing, storage, retrieval, and sync-related storage semantics stay consistent across transports.
 
 ---
 
@@ -69,20 +71,37 @@ src/sttp/
 
 ### `sttp-core`
 
-The reusable application layer. Contains:
+The reusable C# application layer. Contains:
 
 - Domain models (nodes, AVEC state, tiers, envelopes)
 - STTP node parser
 - Core services: calibration, store, context retrieval, list, moods, monthly rollups
 - Storage adapters: in-memory and SurrealDB (embedded SurrealKv)
+- Sync-ready primitives: deterministic sync keys, idempotent upserts, incremental change queries, checkpoints, and a narrow coordinator surface for host apps
 
-Not a runnable host — consumed by the transport layers.
+It is not a runnable host. It is the reusable layer consumed by `sttp-mcp` and `sttp-gateway`.
+
+Important boundary: the core owns sync mechanics, not sync policy. That means the core is ready for cloud/local sync scenarios without forcing connector logic, conflict rules, or scheduling decisions on every app.
+
+---
+
+### `sttp-core-rs`
+
+The reusable Rust application layer.
+
+- Same STTP data model and storage semantics as the C# core
+- In-memory and SurrealDB-backed storage
+- The same sync-ready foundation: sync keys, checkpoints, typed connector metadata, and opt-in coordination hooks
+
+This is the Rust building block for `sttp-gateway-rs` and any Rust-based STTP host or service.
 
 ---
 
 ### `sttp-mcp`
 
 MCP server that exposes STTP as tools over stdio. Designed to run inside any MCP-compatible client (VS Code, Claude Desktop, Cursor, etc.).
+
+For most users, this is the simplest entry point: store context, retrieve context, list nodes, calibrate sessions, and create rollups without thinking about cloud/local sync at all.
 
 **Tools:**
 
@@ -101,7 +120,7 @@ MCP server that exposes STTP as tools over stdio. Designed to run inside any MCP
 mkdir -p "$PWD/sttp-data"
 docker run --rm -i \
   -v "$PWD/sttp-data:/data" \
-  ghcr.io/keryxlabs/sttp-mcp:1.0.0
+  ghcr.io/keryxlabs/sttp-mcp:1.2.1
 ```
 
 **MCP client config:**
@@ -114,7 +133,7 @@ docker run --rm -i \
       "args": [
         "run", "--rm", "-i",
         "-v", "/absolute/path/to/sttp-data:/data",
-        "ghcr.io/keryxlabs/sttp-mcp:1.0.0"
+        "ghcr.io/keryxlabs/sttp-mcp:1.2.1"
       ]
     }
   }
@@ -124,7 +143,7 @@ docker run --rm -i \
 **Binary releases** are published per platform:
 
 ```bash
-VERSION="1.0.0"
+VERSION="1.2.1"
 curl -fL -o sttp-mcp.tar.gz \
   "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
 tar -xzf sttp-mcp.tar.gz && chmod +x sttp-mcp
@@ -143,6 +162,8 @@ Deployable network host with two transports in one process:
 - **gRPC (h2c)** on `8081` — typed low-latency service calls
 
 Supports embedded SurrealKv storage (default) or remote SurrealDB.
+
+Like `sttp-mcp`, the gateway is sync-ready at the storage layer but does not force a cloud/local sync strategy on callers. If you never add sync adapters, it continues to behave like a normal STTP host.
 
 **Run locally:**
 
@@ -166,7 +187,7 @@ dotnet run --project sttp-gateway/sttp-gateway.csproj -- \
 docker run --rm \
   -p 8080:8080 \
   -p 8081:8081 \
-  ghcr.io/keryxlabs/sttp-gateway:1.0.0 \
+  ghcr.io/keryxlabs/sttp-gateway:1.2.1 \
   --remote --remote-endpoint "ws://10.12.0.11:9096/rpc" \
   --username root --password root --database sttp_mcp
 ```
@@ -212,7 +233,7 @@ dotnet run --project sttp-ui/sttp-ui.csproj
 docker run --rm \
   -p 5000:8080 \
   -e Gateway__BaseUrl=http://gateway:8080 \
-  ghcr.io/keryxlabs/sttp-ui:1.0.0
+  ghcr.io/keryxlabs/sttp-ui:1.2.1
 ```
 
 ---
@@ -227,6 +248,21 @@ docker compose up -d
 ```
 
 The gateway connects to a remote SurrealDB instance. The UI is available at `http://localhost:5257`.
+
+## Sync-Ready, But Optional
+
+Recent STTP releases added a sync-ready storage model across the C# and Rust cores:
+
+- nodes can carry deterministic sync identity
+- updates can be queried incrementally with cursors
+- connectors can persist checkpoints
+- provenance can be stored as typed connector metadata
+
+Most users do not need to think about any of this.
+
+If you are only using `sttp-mcp` or `sttp-gateway` for persistent conversational memory, everything still works the same way. Existing nodes remain readable, and the new schema fields are additive.
+
+If you are building cloud/local sync later, the core libraries already provide the mechanical pieces. The application layer is still responsible for connector implementations, filtering, conflict policy, retry behavior, and scheduling.
 
 To build both images locally first:
 

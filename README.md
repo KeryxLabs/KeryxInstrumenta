@@ -2,97 +2,172 @@
 
 > Protocol-first infrastructure for persistent AI memory and adaptive code intelligence.
 
-Language models are stateless by default. KeryxInstrumenta provides open, production-oriented instruments that make state portable and code understanding queryable.
+Language models are stateless by default, and codebases are harder to understand than they should be. KeryxInstrumenta is a collection of open instruments built to address both problems without hiding the machinery behind vague magic.
 
-Licensed under Apache-2.0. See `LICENSE`.
+Some parts of this repository help conversations survive across sessions and models. Other parts help developers and agents reason about real codebases as living systems.
+
+Licensed under Apache-2.0. See [LICENSE](LICENSE).
 
 ## What This Repo Contains
 
 KeryxInstrumenta currently ships two independent instruments:
 
-- `sttp`: Spatio-Temporal Transfer Protocol — full stack for persistent AI memory, from protocol to UI.
-- `acc`: Adaptive Codec Context — dimensional code-intelligence system for repository indexing and analysis.
+- [`sttp`](./src/sttp): Spatio-Temporal Transfer Protocol, a full stack for persistent AI memory.
+- [`acc`](./src/acc): Adaptive Codec Context, a dimensional code-intelligence system for repository indexing and analysis.
 
 Each instrument is standalone and can be used independently.
 
 ## Instrument Overview
 
 | Instrument | Current Line | What It Does |
-|---|---|---|
-| [`sttp`](./src/sttp) | `1.2.x` | Full-stack persistent AI memory: MCP tools, HTTP/gRPC gateway, mobile UI, shared core |
-| [`acc`](./src/acc) | `0.3.x` | Indexes repositories into AVEC-space and exposes dependency/risk/pattern queries |
+| --- | --- | --- |
+| [`sttp`](./src/sttp) | `1.2.x` | Persistent AI memory across MCP, network services, shared cores, and UI |
+| [`acc`](./src/acc) | `0.3.x` | Turns codebases into a dimensional graph you can query for risk, structure, and patterns |
 
-## STTP Components
+## Start Here
 
-STTP ships as a layered stack. All components share the same protocol and `sttp-core` foundation:
+If you only read one extra document, read the one for the instrument you care about most:
+
+- Want the STTP overview: [src/sttp/README.md](./src/sttp/README.md)
+- Want STTP inside an AI assistant through MCP: [src/sttp/sttp-mcp/README.md](./src/sttp/sttp-mcp/README.md)
+- Want STTP as an HTTP/gRPC service: [src/sttp/sttp-gateway/README.md](./src/sttp/sttp-gateway/README.md)
+- Want the Rust STTP core: [src/sttp/sttp-core-rs/README.md](./src/sttp/sttp-core-rs/README.md)
+- Want the ACC overview: [src/acc/README.md](./src/acc/README.md)
+- Want ACC in VS Code: [src/acc/acc-vscode/README.md](./src/acc/acc-vscode/README.md)
+- Want ACC in Neovim: [src/acc/acc-nvim/README.md](./src/acc/acc-nvim/README.md)
+- Want ACC via CLI or MCP: [src/acc/acc-cli/AccCli/README.md](./src/acc/acc-cli/AccCli/README.md) and [src/acc/acc-mcp/AccMcpServer/README.md](./src/acc/acc-mcp/AccMcpServer/README.md)
+
+This README is meant to orient you, not exhaust you.
+
+## STTP At A Glance
+
+STTP is a memory substrate for AI conversations.
+
+The short version:
+
+- it lets models store compressed state instead of raw chat logs
+- it lets later sessions retrieve that state by relevance to the current reasoning posture
+- it works across transports: MCP, HTTP, gRPC, UI, and shared libraries
+- it is now sync-ready at the storage layer, but sync is still optional
+
+If you are curious but not ready to dive deep, the main thing to understand is this: STTP is trying to preserve what remains true about a conversation, not just what was said.
+
+### STTP Components
 
 | Component | What It Is |
-|---|---|
-| [`sttp-core`](./src/sttp/sttp-core) | Shared domain models, storage adapters, and service layer |
-| [`sttp-mcp`](./src/sttp/sttp-mcp) | MCP server — exposes STTP tools over stdio for MCP-capable AI clients |
-| [`sttp-gateway`](./src/sttp/sttp-gateway) | Deployable HTTP + gRPC host (dual-transport: port 8080 / 8081) |
-| [`sttp-ui`](./src/sttp/sttp-ui) | Blazor Server mobile console — browse sessions, view nodes, AI summaries |
+| --- | --- |
+| [src/sttp/sttp-core](./src/sttp/sttp-core) | Reusable C# core library for parsing, storage, retrieval, rollups, and sync-ready primitives |
+| [src/sttp/sttp-core-rs](./src/sttp/sttp-core-rs) | Reusable Rust core library with the same STTP and sync-ready semantics |
+| [src/sttp/sttp-mcp](./src/sttp/sttp-mcp) | MCP server for AI clients that want memory over stdio |
+| [src/sttp/sttp-gateway](./src/sttp/sttp-gateway) | Deployable C# HTTP + gRPC host |
+| [src/sttp/sttp-gateway-rs](./src/sttp/sttp-gateway-rs) | Deployable Rust HTTP + gRPC host |
+| [src/sttp/sttp-ui](./src/sttp/sttp-ui) | Mobile-friendly browser UI for browsing sessions and nodes |
 
-## Quick Start
+### STTP Boundary
 
-### 1. Clone
+One architectural line matters a lot:
+
+- the STTP cores own storage and sync mechanics
+- the host application owns sync policy
+
+That means the cores can handle things like deterministic node identity, incremental changes, checkpoints, and typed provenance metadata without forcing every consumer to adopt cloud/local sync, conflict resolution rules, or connector logic.
+
+If you never need synchronization, STTP still behaves like a normal persistent memory stack.
+
+## ACC At A Glance
+
+ACC is a code-intelligence system built around a dimensional graph model.
+
+The short version:
+
+- it indexes code entities and relationships into a structured graph
+- it measures code along four AVEC dimensions: stability, logic, friction, and autonomy
+- it exposes that graph through editor integrations, CLI tools, MCP, and dashboards
+- it is built to help people and tools reason about codebases instead of treating them like opaque blobs
+
+ACC is useful when you want answers like:
+
+- what parts of this codebase are risky to touch?
+- what depends on this symbol?
+- where is complexity concentrated?
+- which nodes look structurally similar?
+
+### ACC Surfaces
+
+| Surface | What It Is |
+| --- | --- |
+| [src/acc/acc-vscode](./src/acc/acc-vscode) | VS Code extension for graph workflows inside the editor |
+| [src/acc/acc-nvim](./src/acc/acc-nvim) | Neovim plugin for terminal-native workflows |
+| [src/acc/acc-cli](./src/acc/acc-cli) | CLI for scripts, automation, and direct querying |
+| [src/acc/acc-mcp](./src/acc/acc-mcp) | MCP server for agent integrations |
+
+## If You Want To Try Something Today
+
+You do not need to understand the whole repository before getting value from it.
+
+### Option 1: Use STTP through MCP
+
+If you want persistent conversational memory inside an MCP-capable AI client, start with [src/sttp/sttp-mcp/README.md](./src/sttp/sttp-mcp/README.md).
+
+Fast path:
 
 ```bash
-git clone https://github.com/KeryxLabs/KeryxInstrumenta.git
-cd KeryxInstrumenta
+docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/keryxlabs/sttp-mcp:1.2.1
 ```
 
-### 2. STTP Full Stack (Docker Compose)
+### Option 2: Run the STTP stack in a browser
 
-The fastest way to run the full STTP stack against a SurrealDB instance:
+If you want a network host and UI, start with [src/sttp/README.md](./src/sttp/README.md).
+
+Fast path:
 
 ```bash
 cd src/sttp
 docker compose up
 ```
 
-This starts `sttp-gateway` (port 8080/8081) and `sttp-ui` (port 5257) connected on the `sttp-bridge` network.
+That brings up the gateway and UI together.
 
-See [`src/sttp/docker-compose.yml`](./src/sttp/docker-compose.yml) for configuration.
+### Option 3: Explore ACC for code intelligence
 
-### 3. STTP-MCP only (Docker — stdio MCP)
+If you want repository analysis, start with [src/acc/README.md](./src/acc/README.md).
 
-To use only the MCP server with an MCP-capable AI client:
+That doc will point you to the best entry path depending on whether you want VS Code, Neovim, CLI, or MCP.
+
+## Quick Start
+
+### 1. Clone the repository
 
 ```bash
-docker run --rm -i -v "$PWD/data:/data" ghcr.io/keryxlabs/sttp-mcp:latest
+git clone https://github.com/KeryxLabs/KeryxInstrumenta.git
+cd KeryxInstrumenta
 ```
 
-Minimal MCP client config:
+### 2. Choose an instrument
 
-```json
-{
-  "servers": {
-    "sttp-mcp": {
-      "type": "stdio",
-      "command": "docker",
-      "args": [
-        "run",
-        "--rm",
-        "-i",
-        "-v",
-        "/absolute/path/to/sttp-data:/data",
-        "ghcr.io/keryxlabs/sttp-mcp:latest"
-      ]
-    }
-  }
-}
+- For persistent AI memory: go to [src/sttp/README.md](./src/sttp/README.md)
+- For code intelligence: go to [src/acc/README.md](./src/acc/README.md)
+
+### 3. Use the fast path if you want to test quickly
+
+STTP full stack:
+
+```bash
+cd src/sttp
+docker compose up
 ```
 
-### 4. ACC
+STTP MCP only:
 
-For full ACC setup and per-tool instructions:
+```bash
+docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/keryxlabs/sttp-mcp:1.2.1
+```
 
-- [`src/acc/README.md`](./src/acc/README.md)
+For anything deeper than that, the component readmes are the better source of truth.
 
-## Release Tags
+## Release Tags And Artifacts
 
-KeryxInstrumenta uses namespaced release tags per component so each artifact stream is independent:
+KeryxInstrumenta uses namespaced release tags per component so each stream can evolve independently.
 
 - `sttp-mcp/v...`
 - `sttp-gateway/v...`
@@ -102,101 +177,42 @@ KeryxInstrumenta uses namespaced release tags per component so each artifact str
 - `acc-mcp/v...`
 - `acc-vscode/v...`
 
-## Install from GitHub Releases
+Published examples:
 
-### STTP (published GHCR images)
+- STTP images are published on GHCR
+- ACC binaries and VS Code extension are published through GitHub Releases
 
-```bash
-# MCP server (stdio)
-docker pull ghcr.io/keryxlabs/sttp-mcp:latest
+## How People Usually Use STTP
 
-# HTTP + gRPC gateway
-docker pull ghcr.io/keryxlabs/sttp-gateway:latest
+There are three common paths:
 
-# Mobile UI console
-docker pull ghcr.io/keryxlabs/sttp-ui:latest
-```
+### Through an MCP client
 
-### ACC Engine/CLI/MCP Binaries (example: linux-x64)
+Use [src/sttp/sttp-mcp/README.md](./src/sttp/sttp-mcp/README.md) when you want an assistant to:
 
-```bash
-# ACC engine
-curl -fsSL \
-  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-engine/v0.3.1/acc-0.3.1-linux-x64.tar.gz \
-  | tar -xz
+- calibrate its current reasoning state
+- store context checkpoints
+- retrieve prior context later
+- list memory nodes and create rollups
 
-# ACC CLI
-curl -fsSL \
-  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-cli/v0.1.0/acc-cli-0.1.0-linux-x64.tar.gz \
-  | tar -xz
+### Through a network API
 
-# ACC MCP server
-curl -fsSL \
-  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-mcp/v0.1.0/acc-mcp-0.1.0-linux-x64.tar.gz \
-  | tar -xz
-```
+Use [src/sttp/sttp-gateway/README.md](./src/sttp/sttp-gateway/README.md) or [src/sttp/sttp-gateway-rs/README.md](./src/sttp/sttp-gateway-rs/README.md) when you want STTP as a service behind HTTP or gRPC.
 
-### ACC VS Code Extension
+### Through a browser UI
 
-Install from a release `.vsix`:
+Use [src/sttp/sttp-ui/README.md](./src/sttp/sttp-ui/README.md) when you want a session browser and node viewer on top of the gateway.
 
-```bash
-code --install-extension acc-vscode-0.3.1.vsix
-```
+## How People Usually Use ACC
 
-## How To Use STTP
+ACC has four main usage surfaces:
 
-STTP has three usage surfaces depending on how you want to interact with it.
+- VS Code for in-editor exploration
+- Neovim for terminal-native workflows
+- CLI for scripting and automation
+- MCP for agent-facing queries
 
-### Via MCP client (AI assistant)
-
-The `sttp-mcp` server exposes STTP as MCP tools directly inside any MCP-capable AI client:
-
-1. Calibrate at session start with `calibrate_session`.
-2. Persist key milestones with `store_context`.
-3. Rehydrate in new sessions with `get_context`.
-4. Inspect stored state with `list_nodes`.
-5. Shift reasoning posture with `get_moods`, then recalibrate.
-
-### Via HTTP/gRPC gateway
-
-`sttp-gateway` exposes the same operations over HTTP (port 8080) and gRPC (port 8081) for direct integration from services, scripts, or custom clients.
-
-### Via browser UI
-
-`sttp-ui` is a Blazor Server console (port 5257) designed for phone and desktop use:
-
-- Browse sessions via the Session Directory
-- Tap any node to view the Unwinder summary, AVEC state, and AI-generated interpretation
-- Navigate nodes with swipe gestures or arrow controls
-
-Primary docs:
-
-- [`src/sttp/README.md`](./src/sttp/README.md)
-
-## How To Use ACC
-
-ACC exposes four interaction surfaces:
-
-- VS Code extension (`acc-vscode`)
-- Neovim plugin (`acc.nvim`)
-- CLI (`acc-cli`)
-- MCP server (`acc-mcp`)
-
-Typical ACC loop:
-
-1. Build or update the dependency graph.
-2. Query risk (`high friction`, `unstable`) and dependencies.
-3. Run pattern searches in AVEC-space.
-4. Feed structured results into planning/review loops.
-
-Primary docs:
-
-- [`src/acc/README.md`](./src/acc/README.md)
-- [`src/acc/acc-vscode/README.md`](./src/acc/acc-vscode/README.md)
-- [`src/acc/acc-nvim/README.md`](./src/acc/acc-nvim/README.md)
-- [`src/acc/acc-cli/AccCli/README.md`](./src/acc/acc-cli/AccCli/README.md)
-- [`src/acc/acc-mcp/AccMcpServer/README.md`](./src/acc/acc-mcp/AccMcpServer/README.md)
+Start at [src/acc/README.md](./src/acc/README.md), then branch into the surface you care about.
 
 ## Demo
 
@@ -218,11 +234,21 @@ Real-time ACC health tracking (Grafana):
 
 <img width="1920" height="1080" alt="ACC Grafana Dashboard" src="https://github.com/user-attachments/assets/51b3d2a2-35e8-4eec-a8c3-cb91a1900122" />
 
+## Why The Repo Looks This Way
+
+KeryxInstrumenta is organized around instruments rather than one monolithic platform.
+
+- STTP is about persistent conversational state.
+- ACC is about queryable code understanding.
+- They share some conceptual language, especially AVEC, but they are not forced into one deployment or one workflow.
+
+That separation is deliberate. You should be able to adopt one without buying into the whole universe.
+
 ## Philosophy
 
-- Protocol first: contracts are open and documented.
-- Model agnostic: tools are provider- and model-independent.
-- Infrastructure, not opinion: instruments provide substrate, not ideology.
+- Protocol first: contracts are explicit and reusable.
+- Model agnostic: the instruments are not tied to one provider or one interface.
+- Infrastructure, not ideology: the goal is to give people and tools better substrate, not to bury decisions behind hype.
 
 ## Keryx Ecosystem
 
@@ -235,20 +261,23 @@ KeryxInstrumenta   Tools.    You are here.
 
 ## AVEC Glossary
 
-AVEC (Attractor Vector Encoding Configuration) is the state vector used across STTP/ACC dimensions:
+AVEC is the shared dimensional vocabulary used across STTP and ACC.
 
-- Stability: baseline steadiness vs volatility
+- Stability: steadiness vs volatility
 - Friction: resistance vs flow
 - Logic: structured reasoning vs intuitive association
 - Autonomy: self-directed vs guided execution
-- Psi (`Psi`): vector magnitude `sqrt(stability^2 + friction^2 + logic^2 + autonomy^2)`
-- Drift class: interpretation of attractor movement (`Intentional` vs `Uncontrolled`)
+- Psi (`Psi`): a scalar derived from the vector, often used as a compact signal summary
+- Drift class: interpretation of movement between attractor states
 
-## Contributing
+You do not need to master AVEC to use the tools, but it is the language the instruments use to talk about state in a compact way.
 
-Contributions are welcome across instruments, adapters, and docs.
+## Contributing And Release History
 
-- See [`CONTRIBUTING.md`](./CONTRIBUTING.md)
-- See [`CHANGELOG.md`](./CHANGELOG.md)
+Contributions are welcome across instruments, adapters, docs, and integrations.
+
+- Contributing guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
+- STTP changelog: [src/sttp/CHANGELOG.md](./src/sttp/CHANGELOG.md)
+- Component-level docs live beside the code for each instrument
 
 Part of the KeryxLabs ecosystem.

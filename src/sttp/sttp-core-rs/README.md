@@ -1,8 +1,19 @@
 # sttp-core-rs
 
-Core Rust library for STTP domain modeling, validation, parsing, and storage-backed services.
+Core Rust library for STTP domain modeling, validation, parsing, storage, and sync-ready coordination primitives.
 
-This crate is designed to be embedded in apps, MCP servers, and gateways that need to store and retrieve STTP nodes with AVEC-aware semantics.
+This crate is designed for Rust apps, MCP servers, gateways, and services that need to store and retrieve STTP nodes with AVEC-aware semantics while staying open to future cloud/local sync scenarios.
+
+## What It Is Good At
+
+`sttp-core-rs` is meant to do the reusable, low-level work well:
+
+- parse and validate STTP nodes
+- persist and retrieve nodes consistently
+- support AVEC-aware retrieval and rollups
+- provide sync-ready mechanics without forcing application-specific sync rules
+
+It is not a full product framework. It does not decide which side is authoritative, how conflicts should be resolved, or when synchronization should run.
 
 ## What You Get
 
@@ -22,14 +33,26 @@ This crate is designed to be embedded in apps, MCP servers, and gateways that ne
     - deterministic sync keys for STTP nodes,
     - idempotent node upserts,
     - incremental change queries with cursors,
-    - connector checkpoints for cloud/local sync state.
+    - connector checkpoints for cloud/local sync state,
+    - typed connector metadata for provenance,
+    - a narrow coordinator surface for paging changes and advancing checkpoints.
 - Parser and validator primitives for raw STTP node text.
+
+## Backward Compatibility
+
+The sync-related additions are designed to be additive.
+
+- Existing nodes that do not have `sync_key`, `updated_at`, or connector metadata still load correctly.
+- Existing callers can continue using the simple store/query APIs.
+- If you never implement cloud/local sync, the crate still works as a normal STTP storage and retrieval library.
+
+In other words: the crate is sync-ready, not sync-mandatory.
 
 ## Installation
 
 ```toml
 [dependencies]
-sttp-core-rs = "0.1"
+sttp-core-rs = "0.1.2"
 ```
 
 ## Quick Start
@@ -80,7 +103,25 @@ runtime.block_on(async {
 - Validation: `TreeSitterValidator`.
 - Storage: `InMemoryNodeStore`, `SurrealDbNodeStore`, `SurrealDbRuntimeOptions`, `SurrealDbSettings`.
 - Contracts: `NodeStore`, `NodeStoreInitializer`, `NodeValidator`, `SyncChangeSource`, `SyncCoordinatorPolicy`.
-- Core models: `SttpNode`, `AvecState`, `NodeQuery`, `MonthlyRollupRequest`, `BatchRekeyResult`, `NodeUpsertResult`, `SyncCursor`, `SyncCheckpoint`.
+- Core models: `SttpNode`, `AvecState`, `NodeQuery`, `MonthlyRollupRequest`, `BatchRekeyResult`, `NodeUpsertResult`, `SyncCursor`, `SyncCheckpoint`, `SyncPullRequest`, `SyncPullResult`, `ConnectorMetadata`.
+
+## Sync Model In Plain English
+
+The sync surface is intentionally narrow.
+
+- The crate can identify nodes deterministically.
+- It can tell you what changed since a cursor.
+- It can remember where a connector last stopped.
+- It can coordinate the mechanics of pulling changes and storing them.
+
+What it does not do is own business logic.
+
+- It does not decide whether cloud or local is the source of truth.
+- It does not decide conflict resolution.
+- It does not schedule sync.
+- It does not know anything about your product rules.
+
+Those decisions belong in the host application.
 
 ## Build And Test
 

@@ -50,6 +50,8 @@ A fresh model receiving a STTP node doesn't get a summary. It gets a mathematica
 
 You have three ways to run `sttp-mcp`.
 
+If all you want is persistent conversational memory, you can ignore the newer sync-ready storage features entirely. They are present underneath the server, but they do not add extra setup or extra concepts for normal MCP usage.
+
 ### Option A: Run from GitHub Container Registry (fastest)
 
 ```bash
@@ -57,14 +59,14 @@ mkdir -p "$PWD/sttp-data"
 docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/keryxlabs/sttp-mcp:<version>
 ```
 
-Use a published tag from releases, for example `0.1.2-beta`.
+Use a published tag from releases, for example `1.2.1`.
 
 ### Option B: Download and run the single binary (no Docker)
 
 Linux x64 example:
 
 ```bash
-VERSION="0.1.0"
+VERSION="1.2.1"
 curl -fL -o sttp-mcp.tar.gz \
   "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
 tar -xzf sttp-mcp.tar.gz
@@ -146,6 +148,8 @@ dotnet run --project ./sttp-mcp.csproj
 ## Tools
 
 sttp-mcp provides six MCP tools that enable models to persist, retrieve, and roll up conversational state:
+
+Under the hood, the storage layer is now sync-ready and backward-compatible. That matters if you later want cloud/local synchronization, but it does not change how these tools are used today.
 
 ### `calibrate_session`
 
@@ -272,6 +276,23 @@ dotnet run --project ./sttp-mcp.csproj -- --remote
 ```
 
 By default, embedded storage resolves under `STTP_MCP_DATA_ROOT` (defaults to `~/.sttp-mcp`).
+
+### Backward-Compatible Sync-Ready Storage
+
+Recent releases added a few storage concepts that prepare STTP for cloud/local sync later on:
+
+- deterministic sync identity for nodes
+- incremental change cursors
+- connector checkpoints
+- typed connector metadata for provenance
+
+If you are just using `sttp-mcp` as an MCP memory server, nothing special is required.
+
+- Existing nodes continue to load correctly.
+- Existing MCP tools continue to work the same way.
+- No cloud/local coordinator is enabled by default.
+
+That last point is deliberate: `sttp-mcp` stores and retrieves memory, but application-level sync decisions still belong to the app or host integrating STTP.
 
 
 ---

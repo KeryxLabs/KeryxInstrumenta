@@ -4,6 +4,8 @@ Rust STTP gateway exposing a unified HTTP + gRPC surface over `sttp-core-rs`.
 
 It is intended to be deployable as a single binary in front of STTP storage backends.
 
+Like the C# gateway, it is meant to stay easy to reason about: it exposes STTP over network transports and reuses the Rust core for parsing, storage, retrieval, and sync-ready storage semantics.
+
 ## What It Provides
 
 - HTTP API using axum.
@@ -13,6 +15,20 @@ It is intended to be deployable as a single binary in front of STTP storage back
   - SurrealDB backend for persistent deployments.
 - Multi-tenant scoping with backward-compatible default tenant behavior.
 - Batch scope rekey operation (dry-run + apply), anchored by node IDs.
+- Sync-ready storage primitives under the hood, without forcing application-specific sync policy.
+
+## What "Sync-Ready" Means Here
+
+The Rust core can now support:
+
+- deterministic node identity for synchronization
+- incremental change queries
+- checkpoint persistence per connector
+- typed connector metadata
+
+But this gateway does not assume your cloud/local strategy for you.
+
+If you only want a deployable STTP API, that is still the default experience. The extra sync pieces are there to support future application-level sync implementations, not to make normal gateway usage more complicated.
 
 ## Quick Start
 
