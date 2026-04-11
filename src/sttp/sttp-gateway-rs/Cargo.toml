@@ -1,0 +1,26 @@
+[package]
+name = "sttp-gateway-rs"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[dependencies]
+anyhow = "1"
+axum = { version = "0.8", features = ["json", "macros"] }
+chrono = { version = "0.4", features = ["clock", "serde"] }
+clap = { version = "4", features = ["derive", "env"] }
+prost = "0.13"
+prost-types = "0.13"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+surrealdb = { version = "3", default-features = false, features = ["protocol-http", "protocol-ws", "kv-surrealkv", "rustls", "kv-mem"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tonic = { version = "0.12", features = ["transport"] }
+tonic-reflection = "0.12"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+sttp-core-rs = { path = "../sttp-core-rs" }
+
+[build-dependencies]
+protoc-bin-vendored = "3"
+tonic-build = "0.12"

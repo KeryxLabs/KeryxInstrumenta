@@ -11,3 +11,6 @@ _deps/surrealdb.net/**/bin
 _deps/surrealdb.net/**/obj
 *.swp
 *.tmp
+**/target
+**/*.log
+**/.DS_Store

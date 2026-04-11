@@ -3,6 +3,7 @@ export function attach(elementId, dotNetRef) {
     if (!el) return;
 
     let startX = 0, startY = 0, dx = 0, dy = 0, active = false;
+    let pointerType = 'mouse';
     const THRESHOLD = 72;
 
     function hint(dir) {
@@ -29,6 +30,7 @@ export function attach(elementId, dotNetRef) {
         startY = e.clientY;
         dx = 0; dy = 0;
         active = true;
+        pointerType = e.pointerType || 'mouse';
         el.setPointerCapture(e.pointerId);
         el.style.transition = 'none';
     });
@@ -84,7 +86,10 @@ export function attach(elementId, dotNetRef) {
             }, 230);
         } else if (absDy > absDx && absDy > THRESHOLD) {
             springBack();
-            dotNetRef.invokeMethodAsync(dy < 0 ? 'OnSwipeUp' : 'OnSwipeDown');
+            // On touch devices, keep vertical gestures reserved for page scrolling.
+            if (pointerType !== 'touch') {
+                dotNetRef.invokeMethodAsync(dy < 0 ? 'OnSwipeUp' : 'OnSwipeDown');
+            }
         } else {
             springBack();
         }

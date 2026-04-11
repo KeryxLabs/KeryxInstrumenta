@@ -92,6 +92,7 @@
 					<button class="mode-chip @(insightMode == "inspect" ? "active" : string.Empty)" @onclick="SetInspectMode">Inspect</button>
 				</div>
 				<span class="deck-guide">Swipe left or right to switch sessions.</span>
+				<span class="deck-guide deck-guide-mobile">Mobile: scroll up/down normally, swipe sideways on the card to switch.</span>
 				<div class="theme-drawer-wrap">
 					<button class="action action-muted theme-drawer-trigger @(themeDrawerOpen ? "open" : string.Empty)"
 						type="button"
@@ -527,8 +528,8 @@
 					}
 
 					<div class="nav-arrows">
-						<button class="nav-arrow" @onclick="GoOlder" disabled="@(currentSessionIndex >= sessions.Count - 1)" title="Older">←</button>
-						<button class="nav-arrow" @onclick="GoNewer" disabled="@(currentSessionIndex <= 0)" title="Newer">→</button>
+						<button class="nav-arrow" @onclick="GoNewer" disabled="@(currentSessionIndex <= 0)" title="Newer">←</button>
+						<button class="nav-arrow" @onclick="GoOlder" disabled="@(currentSessionIndex >= sessions.Count - 1)" title="Older">→</button>
 					</div>
 				</div>
 			}

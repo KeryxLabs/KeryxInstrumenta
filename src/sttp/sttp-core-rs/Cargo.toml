@@ -1,0 +1,25 @@
+[package]
+name = "sttp-core-rs"
+version = "0.1.0"
+edition = "2024"
+description = "Core STTP parsing, validation, storage contracts, and application services for Rust"
+license = "Apache-2.0"
+readme = "README.md"
+documentation = "https://docs.rs/sttp-core-rs"
+keywords = ["sttp", "context", "memory", "mcp", "surrealdb"]
+categories = ["parser-implementations", "asynchronous"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+anyhow = "1"
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["clock"] }
+once_cell = "1"
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["macros", "rt", "sync"] }
+uuid = { version = "1", features = ["v4"] }
