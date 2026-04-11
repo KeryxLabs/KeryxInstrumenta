@@ -11,6 +11,7 @@ service SttpGatewayService {
   rpc GetContext (GetContextRequest) returns (GetContextReply);
   rpc ListNodes (ListNodesRequest) returns (ListNodesReply);
   rpc GetMoods (GetMoodsRequest) returns (GetMoodsReply);
+  rpc BatchRekey (BatchRekeyRequest) returns (BatchRekeyReply);
   rpc CreateMonthlyRollup (CreateMonthlyRollupRequest) returns (CreateMonthlyRollupReply);
 }
 
@@ -137,6 +138,40 @@ message GetMoodsReply {
   repeated MoodPreset presets = 1;
   string apply_guide = 2;
   optional MoodSwapPreview swap_preview = 3;
+}
+
+message BatchRekeyRequest {
+  repeated string node_ids = 1;
+  string target_session_id = 2;
+  optional string target_tenant_id = 3;
+  optional bool dry_run = 4;
+  optional bool allow_merge = 5;
+}
+
+message ScopeRekeyResult {
+  string source_tenant_id = 1;
+  string source_session_id = 2;
+  string target_tenant_id = 3;
+  string target_session_id = 4;
+  int32 temporal_nodes = 5;
+  int32 calibrations = 6;
+  int32 target_temporal_nodes = 7;
+  int32 target_calibrations = 8;
+  bool applied = 9;
+  bool conflict = 10;
+  optional string message = 11;
+}
+
+message BatchRekeyReply {
+  bool dry_run = 1;
+  int32 requested_node_ids = 2;
+  int32 resolved_node_ids = 3;
+  repeated string missing_node_ids = 4;
+  repeated ScopeRekeyResult scopes = 5;
+  int32 temporal_nodes_updated = 6;
+  int32 calibrations_updated = 7;
+  int32 updated_scopes = 8;
+  int32 conflict_scopes = 9;
 }
 
 message CreateMonthlyRollupRequest {

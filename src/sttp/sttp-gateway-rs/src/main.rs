@@ -1355,6 +1355,46 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         Ok(Response::new(reply))
     }
 
+    async fn batch_rekey(
+        &self,
+        request: Request<proto::BatchRekeyRequest>,
+    ) -> Result<Response<proto::BatchRekeyReply>, Status> {
+        let metadata_tenant = resolve_grpc_tenant(request.metadata());
+        let request = request.into_inner();
+
+        if request.node_ids.is_empty() {
+            return Err(Status::invalid_argument(
+                "node_ids must contain at least one value",
+            ));
+        }
+
+        if request.target_session_id.trim().is_empty() {
+            return Err(Status::invalid_argument("target_session_id cannot be empty"));
+        }
+
+        let target_tenant = request
+            .target_tenant_id
+            .as_deref()
+            .and_then(normalize_tenant_value)
+            .unwrap_or(metadata_tenant);
+        let scoped_target_session = scope_session_id(&target_tenant, request.target_session_id.trim());
+
+        let result = self
+            .state
+            .rekey_scope
+            .rekey_async(
+                request.node_ids,
+                &target_tenant,
+                &scoped_target_session,
+                request.dry_run.unwrap_or(true),
+                request.allow_merge.unwrap_or(false),
+            )
+            .await
+            .map_err(|err| Status::internal(err.to_string()))?;
+
+        Ok(Response::new(to_grpc_batch_rekey_reply(result)))
+    }
+
     async fn create_monthly_rollup(
         &self,
         request: Request<proto::CreateMonthlyRollupRequest>,
@@ -1452,6 +1492,43 @@ fn to_grpc_confidence_bands(value: ConfidenceBandSummary) -> proto::ConfidenceBa
         low: clamp_usize_to_i32(value.low),
         medium: clamp_usize_to_i32(value.medium),
         high: clamp_usize_to_i32(value.high),
+    }
+}
+
+fn to_grpc_scope_rekey_result(value: core_models::ScopeRekeyResult) -> proto::ScopeRekeyResult {
+    proto::ScopeRekeyResult {
+        source_tenant_id: value.source_tenant_id,
+        source_session_id: display_session_id(&value.source_session_id),
+        target_tenant_id: value.target_tenant_id,
+        target_session_id: display_session_id(&value.target_session_id),
+        temporal_nodes: clamp_usize_to_i32(value.temporal_nodes),
+        calibrations: clamp_usize_to_i32(value.calibrations),
+        target_temporal_nodes: clamp_usize_to_i32(value.target_temporal_nodes),
+        target_calibrations: clamp_usize_to_i32(value.target_calibrations),
+        applied: value.applied,
+        conflict: value.conflict,
+        message: value.message,
+    }
+}
+
+fn to_grpc_batch_rekey_reply(value: core_models::BatchRekeyResult) -> proto::BatchRekeyReply {
+    let updated_scopes = value.scopes.iter().filter(|scope| scope.applied).count();
+    let conflict_scopes = value.scopes.iter().filter(|scope| scope.conflict).count();
+
+    proto::BatchRekeyReply {
+        dry_run: value.dry_run,
+        requested_node_ids: clamp_usize_to_i32(value.requested_node_ids),
+        resolved_node_ids: clamp_usize_to_i32(value.resolved_node_ids),
+        missing_node_ids: value.missing_node_ids,
+        scopes: value
+            .scopes
+            .into_iter()
+            .map(to_grpc_scope_rekey_result)
+            .collect(),
+        temporal_nodes_updated: clamp_usize_to_i32(value.temporal_nodes_updated),
+        calibrations_updated: clamp_usize_to_i32(value.calibrations_updated),
+        updated_scopes: clamp_usize_to_i32(updated_scopes),
+        conflict_scopes: clamp_usize_to_i32(conflict_scopes),
     }
 }
 
@@ -1642,6 +1719,22 @@ mod tests {
             .into_inner();
 
         assert!(store_reply.valid);
+
+        let rekey_reply = service
+            .batch_rekey(Request::new(proto::BatchRekeyRequest {
+                node_ids: vec![store_reply.node_id.clone()],
+                target_session_id: session_id.to_string(),
+                target_tenant_id: Some("default".to_string()),
+                dry_run: Some(true),
+                allow_merge: Some(false),
+            }))
+            .await
+            .expect("gRPC batch_rekey should succeed")
+            .into_inner();
+
+        assert_eq!(rekey_reply.requested_node_ids, 1);
+        assert_eq!(rekey_reply.resolved_node_ids, 1);
+        assert!(rekey_reply.scopes.iter().any(|scope| !scope.applied));
 
         let list_reply = service
             .list_nodes(Request::new(proto::ListNodesRequest {
