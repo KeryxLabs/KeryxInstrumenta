@@ -9,6 +9,8 @@ namespace SttpMcp.Storage.SurrealDb;
 
 public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsyncDisposable
 {
+    private const string DefaultTenantId = "default";
+
     private readonly ISurrealDbClient _db;
     private readonly ILogger<SurrealDbNodeStore> _logger;
 
@@ -22,6 +24,7 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
     {
         var schema = @"
             DEFINE TABLE IF NOT EXISTS temporal_node SCHEMAFULL;
+            DEFINE FIELD IF NOT EXISTS tenant_id         ON temporal_node TYPE string;
             DEFINE FIELD IF NOT EXISTS session_id        ON temporal_node TYPE string;
             DEFINE FIELD IF NOT EXISTS raw               ON temporal_node TYPE string;
             DEFINE FIELD IF NOT EXISTS tier              ON temporal_node TYPE string;
@@ -48,6 +51,7 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             DEFINE FIELD IF NOT EXISTS comp_psi          ON temporal_node TYPE float;
 
             DEFINE TABLE IF NOT EXISTS calibration SCHEMAFULL;
+            DEFINE FIELD IF NOT EXISTS tenant_id   ON calibration TYPE string;
             DEFINE FIELD IF NOT EXISTS session_id  ON calibration TYPE string;
             DEFINE FIELD IF NOT EXISTS stability   ON calibration TYPE float;
             DEFINE FIELD IF NOT EXISTS friction    ON calibration TYPE float;
@@ -58,7 +62,9 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             DEFINE FIELD IF NOT EXISTS created_at  ON calibration TYPE datetime;
 
             DEFINE INDEX IF NOT EXISTS idx_node_session ON temporal_node FIELDS session_id;
+            DEFINE INDEX IF NOT EXISTS idx_node_tenant_session ON temporal_node FIELDS tenant_id, session_id;
             DEFINE INDEX IF NOT EXISTS idx_cal_session ON calibration FIELDS session_id;
+            DEFINE INDEX IF NOT EXISTS idx_cal_tenant_session ON calibration FIELDS tenant_id, session_id;
             SELECT * FROM calibration LIMIT 0;
             ";
 
@@ -76,7 +82,12 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
     {
         var cappedLimit = Math.Max(1, query.Limit);
         var clauses = new List<string>();
-        var parameters = new Dictionary<string, object?>();
+        var parameters = new Dictionary<string, object?>
+        {
+            ["tenant_id"] = DefaultTenantId
+        };
+
+        clauses.Add("(tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')");
 
         if (!string.IsNullOrWhiteSpace(query.SessionId))
         {
@@ -86,13 +97,13 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
 
         if (query.FromUtc is not null)
         {
-            clauses.Add("timestamp >= $from_utc");
+            clauses.Add("timestamp >= <datetime>$from_utc");
             parameters["from_utc"] = query.FromUtc.Value;
         }
 
         if (query.ToUtc is not null)
         {
-            clauses.Add("timestamp <= $to_utc");
+            clauses.Add("timestamp <= <datetime>$to_utc");
             parameters["to_utc"] = query.ToUtc.Value;
         }
 
@@ -131,7 +142,7 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             LIMIT {cappedLimit};
             """;
 
-        var results = await _db.RawQuery(queryText, parameters, ct);
+        var results = await _db.RawQuery(queryText, parameters.Count == 0 ? null : parameters, ct);
         var records = results.GetValue<List<SurrealNodeRecord>>(0);
         return records?.Select(MapToNode).ToList() ?? [];
     }
@@ -148,6 +159,7 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
 
         var parameters = new Dictionary<string, object?>
         {
+            ["tenant_id"] = DefaultTenantId,
             ["session_id"] = node.SessionId,
             ["raw"] = node.Raw,
             ["tier"] = node.Tier,
@@ -181,10 +193,11 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
         await _db.RawQuery(
             $"""
             CREATE temporal_node:`{recordId}` SET
+                tenant_id = $tenant_id,
                 session_id = $session_id,
                 raw = $raw,
                 tier = $tier,
-                timestamp = $timestamp,
+                timestamp = <datetime>$timestamp,
                 compression_depth = $compression_depth,{parentAssignment}
                 psi = $psi,
                 rho = $rho,
@@ -243,14 +256,19 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
                 comp_psi AS CompPsi,
                 math::abs(psi - {current.Psi.ToString("F4", System.Globalization.CultureInfo.InvariantCulture)}) AS ResonanceDelta
             FROM temporal_node
-            WHERE session_id = $session_id
+                        WHERE session_id = $session_id
+                            AND (tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')
             ORDER BY ResonanceDelta ASC
             LIMIT {limit};
             """;
 
         var results = await _db.RawQuery(
             queryText,
-            new Dictionary<string, object?> { ["session_id"] = sessionId },
+                        new Dictionary<string, object?>
+                        {
+                                ["session_id"] = sessionId,
+                                ["tenant_id"] = DefaultTenantId
+                        },
             ct);
 
         var records = results.GetValue<List<SurrealNodeRecord>>(0);
@@ -267,10 +285,15 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             SELECT stability, friction, logic, autonomy, psi, created_at
             FROM calibration
             WHERE session_id = $session_id
+                            AND (tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')
             ORDER BY created_at DESC
             LIMIT 1;
             """,
-            new Dictionary<string, object?> { ["session_id"] = sessionId },
+                        new Dictionary<string, object?>
+                        {
+                                ["session_id"] = sessionId,
+                                ["tenant_id"] = DefaultTenantId
+                        },
             ct);
 
         var records = results.GetValue<List<SurrealAvecRecord>>(0);
@@ -292,9 +315,14 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             """
             SELECT trigger, created_at FROM calibration
             WHERE session_id = $session_id
+                            AND (tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')
             ORDER BY created_at ASC;
             """,
-            new Dictionary<string, object?> { ["session_id"] = sessionId },
+                        new Dictionary<string, object?>
+                        {
+                                ["session_id"] = sessionId,
+                                ["tenant_id"] = DefaultTenantId
+                        },
             ct);
 
         var records = results.GetValue<List<SurrealTriggerRecord>>(0);
@@ -305,6 +333,7 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
     {
         await _db.Create("calibration", new
         {
+            tenant_id = DefaultTenantId,
             session_id = sessionId,
             stability = avec.Stability,
             friction = avec.Friction,
