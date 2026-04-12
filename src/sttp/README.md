@@ -1,4 +1,5 @@
 # STTP - Spatio-Temporal Transfer Protocol
+<img width="1167" height="336" alt="image" src="https://github.com/user-attachments/assets/394dc30b-32c6-47b7-bc22-1b6545bcd0d4" />
 
 > Language models are stateless. Every session starts cold. STTP gives conversational state somewhere to go.
 
