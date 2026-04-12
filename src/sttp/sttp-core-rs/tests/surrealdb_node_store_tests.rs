@@ -129,7 +129,7 @@ async fn initialize_backfills_tenant_ids_for_legacy_rows() {
     let queries = client.queries().await;
     assert!(queries
         .iter()
-        .any(|query| query.contains("UPDATE temporal_node:legacy_node")));
+        .any(|query| query.contains("UPDATE temporal_node:`legacy_node`")));
     assert!(queries
         .iter()
         .any(|query| query.contains("UPDATE calibration:legacy_cal")));
@@ -141,6 +141,64 @@ async fn initialize_backfills_tenant_ids_for_legacy_rows() {
     assert!(params
         .iter()
         .any(|param| param.get("tenant_id") == Some(&json!("default"))));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn initialize_backfills_missing_temporal_sync_fields() {
+    let client = Arc::new(MockSurrealDbClient::default());
+
+    client.queue_response(vec![]).await;
+
+    client
+        .queue_response(vec![json!({
+            "id": "temporal_node:legacy_sync",
+            "session_id": "tenant:acme::session:alpha",
+            "timestamp": "2026-03-05T06:30:00Z",
+            "sync_key": null,
+            "updated_at": null
+        })])
+        .await;
+
+    client.queue_response(vec![]).await;
+    client.queue_response(vec![]).await;
+
+    let store = SurrealDbNodeStore::new(client.clone());
+    store
+        .initialize_async()
+        .await
+        .expect("schema initialization should succeed");
+
+    let queries = client.queries().await;
+    assert!(queries
+        .iter()
+        .any(|query| query.contains("UPDATE temporal_node:`legacy_sync`")));
+
+    let params = client.parameters().await;
+    let temporal_params = params
+        .iter()
+        .find(|param| param.get("sync_key").is_some() && param.get("updated_at").is_some())
+        .expect("temporal backfill update should include sync_key and updated_at");
+
+    assert_eq!(temporal_params.get("tenant_id"), Some(&json!("acme")));
+    assert_eq!(
+        temporal_params.get("sync_key"),
+        Some(&json!("legacy:legacy_sync"))
+    );
+
+    let updated_at = temporal_params
+        .get("updated_at")
+        .and_then(Value::as_str)
+        .expect("updated_at should be serialized as RFC3339 string");
+    let parsed_updated_at = DateTime::parse_from_rfc3339(updated_at)
+        .expect("updated_at should parse")
+        .with_timezone(&Utc);
+
+    assert_eq!(
+        parsed_updated_at,
+        DateTime::parse_from_rfc3339("2026-03-05T06:30:00Z")
+            .expect("timestamp should parse")
+            .with_timezone(&Utc)
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]

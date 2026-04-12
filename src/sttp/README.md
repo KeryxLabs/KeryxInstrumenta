@@ -299,4 +299,13 @@ bash sttp-ui/build-image.sh sttp-ui:local
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for release history across all STTP components.
+See [CHANGELOG.md](CHANGELOG.md) for consolidated STTP release history.
+
+Per-project changelogs:
+
+- [sttp-core/CHANGELOG.md](sttp-core/CHANGELOG.md)
+- [sttp-core-rs/CHANGELOG.md](sttp-core-rs/CHANGELOG.md)
+- [sttp-gateway/CHANGELOG.md](sttp-gateway/CHANGELOG.md)
+- [sttp-gateway-rs/CHANGELOG.md](sttp-gateway-rs/CHANGELOG.md)
+- [sttp-mcp/CHANGELOG.md](sttp-mcp/CHANGELOG.md)
+- [sttp-ui/CHANGELOG.md](sttp-ui/CHANGELOG.md)

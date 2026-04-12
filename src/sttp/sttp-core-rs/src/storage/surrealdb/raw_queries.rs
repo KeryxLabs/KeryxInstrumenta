@@ -214,11 +214,22 @@ pub const STORE_CALIBRATION_QUERY: &str = r#"
                 created_at = <datetime>$created_at;
             "#;
 
-pub const SELECT_TEMPORAL_NODE_MISSING_TENANT_QUERY: &str = r#"
-            SELECT id, session_id
+pub const SELECT_TEMPORAL_NODE_LEGACY_SYNC_QUERY: &str = r#"
+            SELECT id, session_id, timestamp, sync_key, updated_at
             FROM temporal_node
-            WHERE tenant_id = NONE OR tenant_id = '';
+            WHERE tenant_id = NONE OR tenant_id = '' OR sync_key = NONE OR sync_key = '' OR updated_at = NONE;
             "#;
+
+pub fn update_temporal_node_legacy_sync_query(record_id: &str) -> String {
+    format!(
+        r#"
+            UPDATE temporal_node:`{record_id}` SET
+                tenant_id = $tenant_id,
+                sync_key = $sync_key,
+                updated_at = <datetime>$updated_at;
+            "#
+    )
+}
 
 pub const FIND_EXISTING_NODE_BY_SYNC_KEY_QUERY: &str = r#"
             SELECT

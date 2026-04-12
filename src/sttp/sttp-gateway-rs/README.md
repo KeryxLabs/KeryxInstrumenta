@@ -51,6 +51,9 @@ cargo run --manifest-path src/sttp/sttp-gateway-rs/Cargo.toml -- \
   --surreal-password root
 ```
 
+Important: `--remote` and `--surreal-remote-endpoint` do not change backend mode by themselves.
+You must set `--backend surreal` (or `STTP_GATEWAY_BACKEND=surreal`) or the gateway will continue using the default `in-memory` backend.
+
 Check health:
 
 ```bash
@@ -359,6 +362,7 @@ cargo test --manifest-path src/sttp/sttp-gateway-rs/Cargo.toml
 
 - If HTTP `404` appears for newly added endpoints, restart the gateway binary to load the latest build.
 - If gRPC methods are missing in reflection, rebuild and restart after proto changes.
+- If `/api/v1/nodes` is unexpectedly empty while using Surreal flags, verify backend mode is actually `surreal` (`--backend surreal` or `STTP_GATEWAY_BACKEND=surreal`).
 - If tenant-scoped queries return no data, verify `x-tenant-id`/`tenantId` and session ID pairing.
 - For rekey operations, always run dry-run first and inspect conflicts before apply mode.
 - If Docker still feels slow, run `build-image.sh` so only packaging runs in Docker and compilation stays on the host cache.
