@@ -1,4 +1,5 @@
 # KeryxInstrumenta
+<img width="892" height="848" alt="image" src="https://github.com/user-attachments/assets/185d4675-a7cc-4784-bec1-136d79f61df2" />
 
 > Protocol-first infrastructure for persistent AI memory and adaptive code intelligence.
 
