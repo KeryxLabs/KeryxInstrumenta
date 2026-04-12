@@ -1,4 +1,7 @@
 # ACC - Adaptive Codec Context
+<img width="593" height="704" alt="image" src="https://github.com/user-attachments/assets/77457026-1564-4108-bb59-92d1fa86e9c0" />
+
+
 
 > A living physics engine for codebases. ACC models structure, stability, and complexity as continuous dimensional metrics. Giving you and your tools queryable intelligence over how your code actually behaves.
 
