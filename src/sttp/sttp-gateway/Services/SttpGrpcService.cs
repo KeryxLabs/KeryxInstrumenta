@@ -11,13 +11,21 @@ public sealed class SttpGrpcService(
     StoreContextService storeContextService,
     ContextQueryService contextQueryService,
     MoodCatalogService moodCatalogService,
-    MonthlyRollupService monthlyRollupService)
+    MonthlyRollupService monthlyRollupService,
+    RekeyScopeService rekeyScopeService)
     : SttpGatewayService.SttpGatewayServiceBase
 {
+    private const string TenantHeader = "x-tenant-id";
+    private const string DefaultTenant = "default";
+    private const string TenantScopePrefix = "tenant:";
+    private const string TenantScopeSeparator = "::session:";
+    private const int TenantScanLimit = 200;
+
     public override async Task<CalibrateSessionReply> CalibrateSession(CalibrateSessionRequest request, ServerCallContext context)
     {
+        var tenant = ResolveGrpcTenant(context.RequestHeaders);
         var result = await calibrationService.CalibrateAsync(
-            request.SessionId,
+            ScopeSessionId(tenant, request.SessionId),
             request.Stability,
             request.Friction,
             request.Logic,
@@ -40,7 +48,11 @@ public sealed class SttpGrpcService(
 
     public override async Task<StoreContextReply> StoreContext(StoreContextRequest request, ServerCallContext context)
     {
-        var result = await storeContextService.StoreAsync(request.Node, request.SessionId, context.CancellationToken);
+        var tenant = ResolveGrpcTenant(context.RequestHeaders);
+        var result = await storeContextService.StoreAsync(
+            request.Node,
+            ScopeSessionId(tenant, request.SessionId),
+            context.CancellationToken);
 
         return new StoreContextReply
         {
@@ -53,8 +65,9 @@ public sealed class SttpGrpcService(
 
     public override async Task<GetContextReply> GetContext(GetContextRequest request, ServerCallContext context)
     {
+        var tenant = ResolveGrpcTenant(context.RequestHeaders);
         var result = await contextQueryService.GetContextAsync(
-            request.SessionId,
+            ScopeSessionId(tenant, request.SessionId),
             request.Stability,
             request.Friction,
             request.Logic,
@@ -68,23 +81,38 @@ public sealed class SttpGrpcService(
             PsiRange = ToGrpc(result.PsiRange)
         };
 
-        reply.Nodes.AddRange(result.Nodes.Select(ToGrpc));
+        reply.Nodes.AddRange(result.Nodes.Select(node => NormalizeNodeForTenant(node, tenant)).Where(node => node is not null).Select(node => ToGrpc(node!)));
+        reply.Retrieved = reply.Nodes.Count;
         return reply;
     }
 
     public override async Task<ListNodesReply> ListNodes(ListNodesRequest request, ServerCallContext context)
     {
+        var tenant = ResolveGrpcTenant(context.RequestHeaders);
+        var requestedLimit = Math.Clamp(request.Limit <= 0 ? 50 : request.Limit, 1, TenantScanLimit);
+        var scopedSessionId = string.IsNullOrWhiteSpace(request.SessionId)
+            ? null
+            : ScopeSessionId(tenant, request.SessionId);
+        var backendLimit = scopedSessionId is null ? TenantScanLimit : requestedLimit;
+
         var result = await contextQueryService.ListNodesAsync(
-            request.Limit <= 0 ? 50 : request.Limit,
-            string.IsNullOrWhiteSpace(request.SessionId) ? null : request.SessionId,
+            backendLimit,
+            scopedSessionId,
             context.CancellationToken);
+
+        var nodes = result.Nodes
+            .Select(node => NormalizeNodeForTenant(node, tenant))
+            .Where(node => node is not null)
+            .Take(requestedLimit)
+            .Select(node => node!)
+            .ToList();
 
         var reply = new ListNodesReply
         {
-            Retrieved = result.Retrieved
+            Retrieved = nodes.Count
         };
 
-        reply.Nodes.AddRange(result.Nodes.Select(ToGrpc));
+        reply.Nodes.AddRange(nodes.Select(ToGrpc));
         return reply;
     }
 
@@ -125,14 +153,40 @@ public sealed class SttpGrpcService(
         return reply;
     }
 
+    public override async Task<BatchRekeyReply> BatchRekey(BatchRekeyRequest request, ServerCallContext context)
+    {
+        if (request.NodeIds.Count == 0)
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "node_ids must contain at least one value"));
+
+        if (string.IsNullOrWhiteSpace(request.TargetSessionId))
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "target_session_id cannot be empty"));
+
+        var metadataTenant = ResolveGrpcTenant(context.RequestHeaders);
+        var targetTenant = NormalizeTenantValue(request.TargetTenantId) ?? metadataTenant;
+        var scopedTargetSession = ScopeSessionId(targetTenant, request.TargetSessionId.Trim());
+
+        var result = await rekeyScopeService.RekeyAsync(
+            request.NodeIds,
+            targetTenant,
+            scopedTargetSession,
+            request.HasDryRun ? request.DryRun : true,
+            request.HasAllowMerge ? request.AllowMerge : false,
+            context.CancellationToken);
+
+        return ToGrpc(result);
+    }
+
     public override async Task<CreateMonthlyRollupReply> CreateMonthlyRollup(CreateMonthlyRollupRequest request, ServerCallContext context)
     {
+        var tenant = ResolveGrpcTenant(context.RequestHeaders);
         var monthlyRequest = new MonthlyRollupRequest
         {
-            SessionId = request.SessionId,
+            SessionId = ScopeSessionId(tenant, request.SessionId),
             StartUtc = request.StartUtc.ToDateTime(),
             EndUtc = request.EndUtc.ToDateTime(),
-            SourceSessionId = string.IsNullOrWhiteSpace(request.SourceSessionId) ? null : request.SourceSessionId,
+            SourceSessionId = string.IsNullOrWhiteSpace(request.SourceSessionId)
+                ? null
+                : ScopeSessionId(tenant, request.SourceSessionId),
             ParentNodeId = string.IsNullOrWhiteSpace(request.ParentNodeId) ? null : request.ParentNodeId,
             Persist = request.Persist,
             Limit = request.Limit <= 0 ? 5000 : request.Limit
@@ -173,7 +227,7 @@ public sealed class SttpGrpcService(
         var node = new Grpc.SttpNode
         {
             Raw = value.Raw,
-            SessionId = value.SessionId,
+            SessionId = DisplaySessionId(value.SessionId),
             Tier = value.Tier,
             Timestamp = Timestamp.FromDateTime(value.Timestamp.ToUniversalTime()),
             CompressionDepth = value.CompressionDepth,
@@ -213,4 +267,83 @@ public sealed class SttpGrpcService(
         Medium = value.Medium,
         High = value.High
     };
+
+    private static BatchRekeyReply ToGrpc(SttpMcp.Domain.Models.BatchRekeyResult value)
+    {
+        var updatedScopes = value.Scopes.Count(scope => scope.Applied);
+        var conflictScopes = value.Scopes.Count(scope => scope.Conflict);
+
+        var reply = new BatchRekeyReply
+        {
+            DryRun = value.DryRun,
+            RequestedNodeIds = value.RequestedNodeIds,
+            ResolvedNodeIds = value.ResolvedNodeIds,
+            TemporalNodesUpdated = value.TemporalNodesUpdated,
+            CalibrationsUpdated = value.CalibrationsUpdated,
+            UpdatedScopes = updatedScopes,
+            ConflictScopes = conflictScopes
+        };
+
+        reply.MissingNodeIds.AddRange(value.MissingNodeIds);
+        reply.Scopes.AddRange(value.Scopes.Select(scope => new Grpc.ScopeRekeyResult
+        {
+            SourceTenantId = scope.SourceTenantId,
+            SourceSessionId = DisplaySessionId(scope.SourceSessionId),
+            TargetTenantId = scope.TargetTenantId,
+            TargetSessionId = DisplaySessionId(scope.TargetSessionId),
+            TemporalNodes = scope.TemporalNodes,
+            Calibrations = scope.Calibrations,
+            TargetTemporalNodes = scope.TargetTemporalNodes,
+            TargetCalibrations = scope.TargetCalibrations,
+            Applied = scope.Applied,
+            Conflict = scope.Conflict,
+            Message = scope.Message ?? string.Empty
+        }));
+
+        return reply;
+    }
+
+    private static string ResolveGrpcTenant(Metadata metadata)
+        => NormalizeTenantValue(metadata.GetValue(TenantHeader)) ?? DefaultTenant;
+
+    private static string? NormalizeTenantValue(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var normalized = value.Trim().ToLowerInvariant();
+        return normalized.All(ch => char.IsAsciiLetterOrDigit(ch) || ch == '-' || ch == '_')
+            ? normalized
+            : null;
+    }
+
+    private static string ScopeSessionId(string tenant, string sessionId)
+        => string.Equals(tenant, DefaultTenant, StringComparison.Ordinal)
+            ? sessionId
+            : $"{TenantScopePrefix}{tenant}{TenantScopeSeparator}{sessionId}";
+
+    private static string DisplaySessionId(string sessionId)
+    {
+        if (!sessionId.StartsWith(TenantScopePrefix, StringComparison.Ordinal))
+            return sessionId;
+
+        var remainder = sessionId[TenantScopePrefix.Length..];
+        var parts = remainder.Split(TenantScopeSeparator, 2, StringSplitOptions.None);
+        return parts.Length == 2 ? parts[1] : sessionId;
+    }
+
+    private static bool SessionBelongsToTenant(string sessionId, string tenant)
+    {
+        if (!sessionId.StartsWith(TenantScopePrefix, StringComparison.Ordinal))
+            return string.Equals(tenant, DefaultTenant, StringComparison.Ordinal);
+
+        var remainder = sessionId[TenantScopePrefix.Length..];
+        var parts = remainder.Split(TenantScopeSeparator, 2, StringSplitOptions.None);
+        return parts.Length == 2 && string.Equals(parts[0], tenant, StringComparison.Ordinal);
+    }
+
+    private static SttpMcp.Domain.Models.SttpNode? NormalizeNodeForTenant(SttpMcp.Domain.Models.SttpNode node, string tenant)
+        => SessionBelongsToTenant(node.SessionId, tenant)
+            ? node with { SessionId = DisplaySessionId(node.SessionId) }
+            : null;
 }

@@ -1,6 +1,57 @@
 # STTP Changelog
 
-All notable changes across STTP components are documented in this file.
+Historical STTP-wide changes are documented in this file.
+Project-specific changes are now tracked in per-service changelogs.
+
+## Changelog Index
+
+- `sttp-core/CHANGELOG.md`
+- `sttp-core-rs/CHANGELOG.md`
+- `sttp-gateway/CHANGELOG.md`
+- `sttp-gateway-rs/CHANGELOG.md`
+- `sttp-mcp/CHANGELOG.md`
+- `sttp-ui/CHANGELOG.md`
+
+## [1.2.3] - 2026-04-14
+
+### Fixed
+
+- **`sttp-core` / `sttp-mcp` - SurrealDB mutation and metadata robustness**
+  - Added strict mutation response verification in C# Surreal upsert/checkpoint paths.
+  - Added explicit mutation success/failure logging for easier runtime diagnosis.
+  - Updated metadata transport records to decode via untyped object payloads first, then map safely into typed metadata.
+  - Prevented `option<object>` coercion failures by avoiding `NULL` assignments and preserving `NONE` semantics when metadata is missing.
+- **`sttp-core-rs` - metadata write parity for optional object fields**
+  - Added `NONE`-aware query generation for optional connector metadata/source metadata writes.
+- **`sttp-gateway-rs` - query observability**
+  - Added explicit query outcome logging (success/failure and row counts) in the Surreal client.
+
+### Changed
+
+- **Release/version alignment for packages, services, scripts, and image examples**
+  - .NET services/tooling aligned to `1.2.3`.
+  - `sttp-gateway-rs` crate aligned to `1.2.3`.
+  - `sttp-core-rs` crate bumped to `0.1.4`.
+  - Build scripts, compose tags, and README examples updated to the same release set.
+  - Added root `src/sttp/build.sh` orchestration wrapper with per-target version overrides, stack/target filtering, and dry-run support.
+- **`sttp-core` NuGet packaging metadata**
+  - Added package metadata and packaged README support for cleaner NuGet consumption.
+
+## [1.2.2] - 2026-04-12
+
+### Fixed
+
+- **`sttp-core-rs` — legacy temporal sync-field coercion regression under SCHEMAFULL**
+  - Startup backfill now repairs legacy `temporal_node` rows missing persisted sync fields before tenant backfill writes.
+  - Legacy `updated_at` fallback order: persisted `updated_at` -> `timestamp` -> current UTC.
+  - Legacy `sync_key` fallback for blank/missing rows: `legacy:<node_id>`.
+  - Prevents SurrealDB write failures such as: `Expected datetime but found NONE` when mutating legacy rows.
+
+### Changed
+
+- **STTP changelog layout**
+  - Added per-project changelog files under each active STTP service/project directory.
+  - This consolidated file remains as the historical cross-project release stream.
 
 ## [1.2.1] - 2026-04-11
 

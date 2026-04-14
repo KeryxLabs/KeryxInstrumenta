@@ -35,6 +35,20 @@ struct MissingTenantRecord {
     session_id: String,
 }
 
+#[derive(Debug, Deserialize)]
+struct LegacyTemporalRecord {
+    #[serde(default)]
+    id: Value,
+    #[serde(default)]
+    session_id: String,
+    #[serde(default)]
+    timestamp: Option<String>,
+    #[serde(default)]
+    sync_key: Option<String>,
+    #[serde(default)]
+    updated_at: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct ScopeAnchorRecord {
     #[serde(rename = "TenantId", default)]
@@ -65,17 +79,59 @@ impl SurrealDbNodeStore {
     }
 
     async fn backfill_missing_tenant_ids_async(&self) -> Result<()> {
-        self.backfill_table_tenant_ids_async(
-            "temporal_node",
-            raw_queries::SELECT_TEMPORAL_NODE_MISSING_TENANT_QUERY,
-        )
-        .await?;
+        self.backfill_temporal_node_legacy_fields_async().await?;
 
         self.backfill_table_tenant_ids_async(
             "calibration",
             raw_queries::SELECT_CALIBRATION_MISSING_TENANT_QUERY,
         )
         .await?;
+
+        Ok(())
+    }
+
+    async fn backfill_temporal_node_legacy_fields_async(&self) -> Result<()> {
+        let rows = self
+            .client
+            .raw_query(
+                raw_queries::SELECT_TEMPORAL_NODE_LEGACY_SYNC_QUERY,
+                QueryParams::new(),
+            )
+            .await?;
+        let records: Vec<LegacyTemporalRecord> = decode_rows(rows)?;
+
+        for record in records {
+            let session_id = record.session_id;
+            if session_id.trim().is_empty() {
+                continue;
+            }
+
+            let Some(record_id) = normalize_record_id(record.id, "temporal_node")
+                .and_then(|value| normalize_temporal_node_id(&value))
+            else {
+                continue;
+            };
+
+            let mut parameters = QueryParams::new();
+            parameters.insert(
+                "tenant_id".to_string(),
+                json!(derive_tenant_id_from_session(&session_id)),
+            );
+            parameters.insert(
+                "sync_key".to_string(),
+                json!(normalize_legacy_sync_key(record.sync_key.as_deref(), &record_id)),
+            );
+            parameters.insert(
+                "updated_at".to_string(),
+                json!(resolve_legacy_updated_at(
+                    record.updated_at.as_deref(),
+                    record.timestamp.as_deref(),
+                )),
+            );
+
+            let query = raw_queries::update_temporal_node_legacy_sync_query(&record_id);
+            self.client.raw_query(&query, parameters).await?;
+        }
 
         Ok(())
     }
@@ -245,16 +301,20 @@ impl NodeStore for SurrealDbNodeStore {
                 != normalize_metadata(candidate.source_metadata.as_ref())
             {
                 let mut update_parameters = QueryParams::new();
-                update_parameters.insert(
-                    "source_metadata".to_string(),
-                    candidate.source_metadata.clone().map_or(Value::Null, |metadata| {
-                        serde_json::to_value(metadata).unwrap_or(Value::Null)
-                    }),
-                );
+                let clear_source_metadata = candidate.source_metadata.is_none();
+                if let Some(metadata) = candidate.source_metadata.clone() {
+                    update_parameters.insert(
+                        "source_metadata".to_string(),
+                        serde_json::to_value(metadata).unwrap_or(Value::Null),
+                    );
+                }
                 update_parameters
                     .insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
 
-                let update_query = raw_queries::update_temporal_node_sync_metadata_query(&existing_id);
+                let update_query = raw_queries::update_temporal_node_sync_metadata_query(
+                    &existing_id,
+                    clear_source_metadata,
+                );
                 self.client.raw_query(&update_query, update_parameters).await?;
 
                 return Ok(NodeUpsertResult {
@@ -274,6 +334,7 @@ impl NodeStore for SurrealDbNodeStore {
         }
 
         let include_parent_assignment = candidate.parent_node_id.is_some();
+        let include_source_metadata_assignment = candidate.source_metadata.is_some();
         let mut parameters = QueryParams::new();
         let tenant_id = derive_tenant_id_from_session(&candidate.session_id);
 
@@ -291,12 +352,12 @@ impl NodeStore for SurrealDbNodeStore {
         );
         parameters.insert("sync_key".to_string(), json!(&sync_key));
         parameters.insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
-        parameters.insert(
-            "source_metadata".to_string(),
-            candidate.source_metadata.clone().map_or(Value::Null, |metadata| {
-                serde_json::to_value(metadata).unwrap_or(Value::Null)
-            }),
-        );
+        if let Some(metadata) = candidate.source_metadata.clone() {
+            parameters.insert(
+                "source_metadata".to_string(),
+                serde_json::to_value(metadata).unwrap_or(Value::Null),
+            );
+        }
         parameters.insert("psi".to_string(), json!(candidate.psi));
         parameters.insert("rho".to_string(), json!(candidate.rho));
         parameters.insert("kappa".to_string(), json!(candidate.kappa));
@@ -348,8 +409,11 @@ impl NodeStore for SurrealDbNodeStore {
         }
 
         let record_id = Uuid::new_v4().simple().to_string();
-        let query_text =
-            raw_queries::create_temporal_node_query(&record_id, include_parent_assignment);
+        let query_text = raw_queries::create_temporal_node_query(
+            &record_id,
+            include_parent_assignment,
+            include_source_metadata_assignment,
+        );
         self.client.raw_query(&query_text, parameters).await?;
 
         Ok(NodeUpsertResult {
@@ -531,6 +595,7 @@ impl NodeStore for SurrealDbNodeStore {
     async fn put_checkpoint_async(&self, checkpoint: SyncCheckpoint) -> Result<()> {
         let tenant_id = derive_tenant_id_from_session(&checkpoint.session_id);
         let record_id = checkpoint_record_id(&tenant_id, &checkpoint.session_id, &checkpoint.connector_id);
+        let include_metadata_assignment = checkpoint.metadata.is_some();
         let mut parameters = QueryParams::new();
         parameters.insert("tenant_id".to_string(), json!(tenant_id));
         parameters.insert("session_id".to_string(), json!(&checkpoint.session_id));
@@ -551,18 +616,21 @@ impl NodeStore for SurrealDbNodeStore {
                 .map(|cursor| json!(&cursor.sync_key))
                 .unwrap_or(Value::Null),
         );
-        parameters.insert(
-            "metadata".to_string(),
-            checkpoint.metadata.clone().map_or(Value::Null, |value| {
-                serde_json::to_value(value).unwrap_or(Value::Null)
-            }),
-        );
+        if let Some(metadata) = checkpoint.metadata.clone() {
+            parameters.insert(
+                "metadata".to_string(),
+                serde_json::to_value(metadata).unwrap_or(Value::Null),
+            );
+        }
         parameters.insert(
             "updated_at".to_string(),
             json!(checkpoint.updated_at.to_rfc3339()),
         );
 
-        let query_text = raw_queries::upsert_sync_checkpoint_query(&record_id);
+        let query_text = raw_queries::upsert_sync_checkpoint_query(
+            &record_id,
+            include_metadata_assignment,
+        );
         self.client.raw_query(&query_text, parameters).await?;
         Ok(())
     }
@@ -797,6 +865,21 @@ fn parse_timestamp(value: &str) -> DateTime<Utc> {
         .unwrap_or_else(|_| Utc::now())
 }
 
+fn resolve_legacy_updated_at(primary: Option<&str>, fallback: Option<&str>) -> String {
+    parse_optional_timestamp(primary)
+        .or_else(|| parse_optional_timestamp(fallback))
+        .unwrap_or_else(Utc::now)
+        .to_rfc3339()
+}
+
+fn parse_optional_timestamp(value: Option<&str>) -> Option<DateTime<Utc>> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| value.with_timezone(&Utc))
+}
+
 fn decode_rows<T>(rows: Vec<serde_json::Value>) -> Result<Vec<T>>
 where
     T: DeserializeOwned,
@@ -884,6 +967,14 @@ fn normalize_temporal_node_id(value: &str) -> Option<String> {
 
 fn normalize_metadata(metadata: Option<&ConnectorMetadata>) -> Option<String> {
     metadata.and_then(|value| serde_json::to_string(value).ok())
+}
+
+fn normalize_legacy_sync_key(value: Option<&str>, node_id: &str) -> String {
+    value
+        .map(str::trim)
+        .filter(|sync_key| !sync_key.is_empty())
+        .map(ToString::to_string)
+        .unwrap_or_else(|| format!("legacy:{node_id}"))
 }
 
 fn checkpoint_record_id(tenant_id: &str, session_id: &str, connector_id: &str) -> String {

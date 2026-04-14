@@ -3,7 +3,8 @@
 # Usage: ./build.sh [--publish]
 set -e
 
-VERSION="1.2.1"
+# Override order: STTP_MCP_VERSION -> STTP_VERSION -> script default.
+VERSION="${STTP_MCP_VERSION:-${STTP_VERSION:-1.2.3}}"
 TAG_PREFIX="sttp-mcp"
 RELEASE="${TAG_PREFIX}/v$VERSION"
 NAME="sttp-mcp"

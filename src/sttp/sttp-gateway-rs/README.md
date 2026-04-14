@@ -51,6 +51,9 @@ cargo run --manifest-path src/sttp/sttp-gateway-rs/Cargo.toml -- \
   --surreal-password root
 ```
 
+Important: `--remote` and `--surreal-remote-endpoint` do not change backend mode by themselves.
+You must set `--backend surreal` (or `STTP_GATEWAY_BACKEND=surreal`) or the gateway will continue using the default `in-memory` backend.
+
 Check health:
 
 ```bash
@@ -277,7 +280,7 @@ No Rust toolchain is installed in the container image.
 Custom tag:
 
 ```bash
-./src/sttp/sttp-gateway-rs/build-image.sh ghcr.io/keryxlabs/sttp-gateway-rs:latest
+./src/sttp/sttp-gateway-rs/build-image.sh ghcr.io/keryxlabs/sttp-gateway-rs:1.2.3
 ```
 
 ### Manual Build And Package
@@ -301,13 +304,13 @@ Build image from repository root:
 ```bash
 docker build \
   -f src/sttp/sttp-gateway-rs/Dockerfile \
-  -t sttp-gateway-rs:latest \
+  -t sttp-gateway-rs:1.2.3 \
   .
 ```
 
 ### Runtime Image Details
 
-- Base image: debian:bookworm-slim.
+- Base image: ubuntu:24.04.
 - Runtime dependency installed: ca-certificates.
 - Binary location: /app/sttp-gateway-rs.
 - Persistent volume: /data.
@@ -319,7 +322,7 @@ docker build \
 docker run --rm \
   -p 8080:8080 \
   -p 8081:8081 \
-  sttp-gateway-rs:latest
+  sttp-gateway-rs:1.2.3
 ```
 
 ### Run: Surreal Remote Backend
@@ -335,7 +338,7 @@ docker run --rm \
   -e STTP_SURREAL_DATABASE=sttp_mcp \
   -e STTP_SURREAL_USER=root \
   -e STTP_SURREAL_PASSWORD=root \
-  sttp-gateway-rs:latest
+  sttp-gateway-rs:1.2.3
 ```
 
 ### Run: Embedded Mode With Persistent Volume
@@ -345,7 +348,7 @@ docker run --rm \
   -p 8080:8080 \
   -p 8081:8081 \
   -v sttp-gateway-data:/data \
-  sttp-gateway-rs:latest
+  sttp-gateway-rs:1.2.3
 ```
 
 ## Build And Test
@@ -359,6 +362,7 @@ cargo test --manifest-path src/sttp/sttp-gateway-rs/Cargo.toml
 
 - If HTTP `404` appears for newly added endpoints, restart the gateway binary to load the latest build.
 - If gRPC methods are missing in reflection, rebuild and restart after proto changes.
+- If `/api/v1/nodes` is unexpectedly empty while using Surreal flags, verify backend mode is actually `surreal` (`--backend surreal` or `STTP_GATEWAY_BACKEND=surreal`).
 - If tenant-scoped queries return no data, verify `x-tenant-id`/`tenantId` and session ID pairing.
 - For rekey operations, always run dry-run first and inspect conflicts before apply mode.
 - If Docker still feels slow, run `build-image.sh` so only packaging runs in Docker and compilation stays on the host cache.

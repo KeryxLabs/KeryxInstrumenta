@@ -4,6 +4,7 @@ use sttp_core_rs::storage::surrealdb::QueryParams;
 use sttp_core_rs::storage::{SurrealDbClient, SurrealDbRuntimeOptions};
 use surrealdb::engine::any::{Any, connect};
 use surrealdb::opt::auth::Root;
+use tracing::{debug, error};
 
 pub struct RuntimeSurrealDbClient {
     db: surrealdb::Surreal<Any>,
@@ -70,25 +71,56 @@ impl RuntimeSurrealDbClient {
 #[tonic::async_trait]
 impl SurrealDbClient for RuntimeSurrealDbClient {
     async fn raw_query(&self, query: &str, parameters: QueryParams) -> Result<Vec<Value>> {
+        let operation = query
+            .split_whitespace()
+            .next()
+            .unwrap_or("UNKNOWN")
+            .to_ascii_uppercase();
+        let is_read_query = Self::is_read_query(query);
+        let has_parameters = !parameters.is_empty();
+
         let response = if parameters.is_empty() {
             self.db.query(query).await?
         } else {
             self.db.query(query).bind(parameters).await?
         };
 
-        let mut response = response.check()?;
+        let mut response = match response.check() {
+            Ok(value) => value,
+            Err(err) => {
+                error!(
+                    operation = %operation,
+                    read_query = is_read_query,
+                    has_parameters,
+                    error = %err,
+                    "Surreal query failed"
+                );
+                return Err(err.into());
+            }
+        };
 
-        if !Self::is_read_query(query) {
+        debug!(
+            operation = %operation,
+            read_query = is_read_query,
+            has_parameters,
+            "Surreal query succeeded"
+        );
+
+        if !is_read_query {
             return Ok(Vec::new());
         }
 
         if let Ok(rows) = response.take::<Vec<Value>>(0) {
+            debug!(operation = %operation, row_count = rows.len(), "Surreal read query returned rows");
             return Ok(rows);
         }
 
         if let Ok(Some(row)) = response.take::<Option<Value>>(0) {
+            debug!(operation = %operation, row_count = 1, "Surreal read query returned a single row");
             return Ok(vec![row]);
         }
+
+        debug!(operation = %operation, row_count = 0, "Surreal read query returned no rows");
 
         Ok(Vec::new())
     }

@@ -4,7 +4,7 @@
 # Usage:
 #   ./build-image.sh [IMAGE_TAG]
 #
-# Default IMAGE_TAG: ghcr.io/keryxlabs/sttp-gateway-rs:latest
+# Default IMAGE_TAG: ghcr.io/keryxlabs/sttp-gateway-rs:1.2.3
 #
 # Builds the Rust binary on the host first, then packages publish output into
 # a minimal runtime image. No Rust toolchain is required inside the container.
@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-IMAGE_TAG="${1:-ghcr.io/keryxlabs/sttp-gateway-rs:latest}"
+IMAGE_TAG="${1:-ghcr.io/keryxlabs/sttp-gateway-rs:1.2.3}"
 PUBLISH_DIR="$SCRIPT_DIR/publish"
 
 if ! command -v cargo >/dev/null 2>&1; then

@@ -3,7 +3,8 @@
 # Usage: ./build.sh [--publish]
 set -e
 
-VERSION="1.0.0"
+# Override order: STTP_UI_VERSION -> STTP_VERSION -> script default.
+VERSION="${STTP_UI_VERSION:-${STTP_VERSION:-1.2.3}}"
 TAG_PREFIX="sttp-ui"
 RELEASE="${TAG_PREFIX}/v$VERSION"
 NAME="sttp-ui"

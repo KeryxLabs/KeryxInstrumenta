@@ -6,6 +6,10 @@ namespace SttpMcp.Storage;
 
 public sealed class InMemoryNodeStore : INodeStore, INodeStoreInitializer
 {
+    private const string DefaultTenantId = "default";
+    private const string TenantScopePrefix = "tenant:";
+    private const string TenantScopeSeparator = "::session:";
+
     private readonly List<SttpNode> _nodes = [];
     private readonly List<(string SessionId, AvecState Avec, string Trigger)> _calibrations = [];
     private readonly List<SyncCheckpoint> _checkpoints = [];
@@ -183,6 +187,131 @@ public sealed class InMemoryNodeStore : INodeStore, INodeStoreInitializer
         return Task.CompletedTask;
     }
 
+    public Task<BatchRekeyResult> BatchRekeyScopesAsync(
+        IReadOnlyList<string> nodeIds,
+        string targetTenantId,
+        string targetSessionId,
+        bool dryRun,
+        bool allowMerge,
+        CancellationToken ct = default)
+    {
+        if (nodeIds.Count == 0)
+            throw new ArgumentException("at least one node id is required", nameof(nodeIds));
+
+        if (string.IsNullOrWhiteSpace(targetSessionId))
+            throw new ArgumentException("target session id cannot be empty", nameof(targetSessionId));
+
+        var normalizedTargetTenantId = NormalizeTenantId(targetTenantId);
+        var normalizedNodeIds = nodeIds
+            .Select(NormalizeTemporalNodeId)
+            .Where(nodeId => !string.IsNullOrWhiteSpace(nodeId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (normalizedNodeIds.Count == 0)
+            throw new ArgumentException("no valid node ids were provided", nameof(nodeIds));
+
+        var missingNodeIds = new List<string>();
+        var scopeKeys = new SortedSet<(string TenantId, string SessionId)>();
+
+        foreach (var nodeId in normalizedNodeIds)
+        {
+            var anchor = _nodes.FirstOrDefault(node => string.Equals(GetNodeId(node), nodeId, StringComparison.Ordinal));
+            if (anchor is null || string.IsNullOrWhiteSpace(anchor.SessionId))
+            {
+                missingNodeIds.Add(nodeId!);
+                continue;
+            }
+
+            scopeKeys.Add((DeriveTenantIdFromSession(anchor.SessionId), anchor.SessionId));
+        }
+
+        var scopeResults = new List<ScopeRekeyResult>();
+        var temporalNodesUpdated = 0;
+        var calibrationsUpdated = 0;
+
+        foreach (var scope in scopeKeys)
+        {
+            var temporalNodes = _nodes.Count(node =>
+                node.SessionId == scope.SessionId &&
+                MatchesTenant(node.SessionId, scope.TenantId));
+            var calibrations = _calibrations.Count(calibration =>
+                calibration.SessionId == scope.SessionId &&
+                MatchesTenant(calibration.SessionId, scope.TenantId));
+
+            var sameScope = scope.TenantId == normalizedTargetTenantId && scope.SessionId == targetSessionId;
+            var targetTemporalNodes = sameScope
+                ? 0
+                : _nodes.Count(node =>
+                    node.SessionId == targetSessionId &&
+                    MatchesTenant(node.SessionId, normalizedTargetTenantId));
+            var targetCalibrations = sameScope
+                ? 0
+                : _calibrations.Count(calibration =>
+                    calibration.SessionId == targetSessionId &&
+                    MatchesTenant(calibration.SessionId, normalizedTargetTenantId));
+
+            var conflict = !allowMerge && !sameScope && (targetTemporalNodes > 0 || targetCalibrations > 0);
+            var applied = false;
+            string? message = null;
+
+            if (sameScope)
+            {
+                message = "source and target scopes are identical";
+            }
+            else if (conflict)
+            {
+                message = "target scope already contains rows; set allowMerge=true to override";
+            }
+            else if (!dryRun)
+            {
+                for (var index = 0; index < _nodes.Count; index++)
+                {
+                    var node = _nodes[index];
+                    if (node.SessionId == scope.SessionId && MatchesTenant(node.SessionId, scope.TenantId))
+                        _nodes[index] = node with { SessionId = targetSessionId };
+                }
+
+                for (var index = 0; index < _calibrations.Count; index++)
+                {
+                    var calibration = _calibrations[index];
+                    if (calibration.SessionId == scope.SessionId && MatchesTenant(calibration.SessionId, scope.TenantId))
+                        _calibrations[index] = (targetSessionId, calibration.Avec, calibration.Trigger);
+                }
+
+                applied = true;
+                temporalNodesUpdated += temporalNodes;
+                calibrationsUpdated += calibrations;
+            }
+
+            scopeResults.Add(new ScopeRekeyResult
+            {
+                SourceTenantId = scope.TenantId,
+                SourceSessionId = scope.SessionId,
+                TargetTenantId = normalizedTargetTenantId,
+                TargetSessionId = targetSessionId,
+                TemporalNodes = temporalNodes,
+                Calibrations = calibrations,
+                TargetTemporalNodes = targetTemporalNodes,
+                TargetCalibrations = targetCalibrations,
+                Applied = applied,
+                Conflict = conflict,
+                Message = message
+            });
+        }
+
+        return Task.FromResult(new BatchRekeyResult
+        {
+            DryRun = dryRun,
+            RequestedNodeIds = normalizedNodeIds.Count,
+            ResolvedNodeIds = normalizedNodeIds.Count - missingNodeIds.Count,
+            MissingNodeIds = missingNodeIds,
+            Scopes = scopeResults,
+            TemporalNodesUpdated = temporalNodesUpdated,
+            CalibrationsUpdated = calibrationsUpdated
+        });
+    }
+
     private static bool AreEquivalent(SttpNode left, SttpNode right)
         => left.Raw == right.Raw
             && left.SessionId == right.SessionId
@@ -206,4 +335,37 @@ public sealed class InMemoryNodeStore : INodeStore, INodeStoreInitializer
 
     private static string? NormalizeMetadata(ConnectorMetadata? metadata)
         => metadata is null ? null : JsonSerializer.Serialize(metadata);
+
+    private static string DeriveTenantIdFromSession(string sessionId)
+    {
+        if (!sessionId.StartsWith(TenantScopePrefix, StringComparison.Ordinal))
+            return DefaultTenantId;
+
+        var remainder = sessionId[TenantScopePrefix.Length..];
+        var separatorIndex = remainder.IndexOf(TenantScopeSeparator, StringComparison.Ordinal);
+        if (separatorIndex <= 0)
+            return DefaultTenantId;
+
+        var tenantId = remainder[..separatorIndex].Trim();
+        return string.IsNullOrWhiteSpace(tenantId) ? DefaultTenantId : tenantId;
+    }
+
+    private static string NormalizeTenantId(string? tenantId)
+        => string.IsNullOrWhiteSpace(tenantId) ? DefaultTenantId : tenantId.Trim();
+
+    private static bool MatchesTenant(string sessionId, string tenantId)
+        => string.Equals(DeriveTenantIdFromSession(sessionId), tenantId, StringComparison.Ordinal);
+
+    private static string? NormalizeTemporalNodeId(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        var trimmed = value.Trim();
+        if (!trimmed.StartsWith("temporal_node:", StringComparison.Ordinal))
+            return trimmed;
+
+        var normalized = trimmed["temporal_node:".Length..].Trim();
+        return string.IsNullOrWhiteSpace(normalized) ? null : normalized;
+    }
 }

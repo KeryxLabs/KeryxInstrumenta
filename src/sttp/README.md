@@ -121,7 +121,7 @@ For most users, this is the simplest entry point: store context, retrieve contex
 mkdir -p "$PWD/sttp-data"
 docker run --rm -i \
   -v "$PWD/sttp-data:/data" \
-  ghcr.io/keryxlabs/sttp-mcp:1.2.1
+  ghcr.io/keryxlabs/sttp-mcp:1.2.3
 ```
 
 **MCP client config:**
@@ -134,7 +134,7 @@ docker run --rm -i \
       "args": [
         "run", "--rm", "-i",
         "-v", "/absolute/path/to/sttp-data:/data",
-        "ghcr.io/keryxlabs/sttp-mcp:1.2.1"
+        "ghcr.io/keryxlabs/sttp-mcp:1.2.3"
       ]
     }
   }
@@ -144,7 +144,7 @@ docker run --rm -i \
 **Binary releases** are published per platform:
 
 ```bash
-VERSION="1.2.1"
+VERSION="1.2.3"
 curl -fL -o sttp-mcp.tar.gz \
   "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
 tar -xzf sttp-mcp.tar.gz && chmod +x sttp-mcp
@@ -188,7 +188,7 @@ dotnet run --project sttp-gateway/sttp-gateway.csproj -- \
 docker run --rm \
   -p 8080:8080 \
   -p 8081:8081 \
-  ghcr.io/keryxlabs/sttp-gateway:1.2.1 \
+  ghcr.io/keryxlabs/sttp-gateway:1.2.3 \
   --remote --remote-endpoint "ws://10.12.0.11:9096/rpc" \
   --username root --password root --database sttp_mcp
 ```
@@ -234,7 +234,7 @@ dotnet run --project sttp-ui/sttp-ui.csproj
 docker run --rm \
   -p 5000:8080 \
   -e Gateway__BaseUrl=http://gateway:8080 \
-  ghcr.io/keryxlabs/sttp-ui:1.2.1
+  ghcr.io/keryxlabs/sttp-ui:1.2.3
 ```
 
 ---
@@ -275,6 +275,21 @@ bash build-and-up.sh
 
 ## Building from Source
 
+For multi-project release orchestration, use the root wrapper:
+
+```bash
+# run release + image builds for default targets (mcp, gateway, ui, gateway-rs)
+bash build.sh --default-version 1.2.4
+
+# mix per-project versions and targets
+bash build.sh --mode all --targets mcp,gateway-rs \
+  --mcp-version 1.2.4 \
+  --gateway-rs-version 1.3.0 \
+  --local-image-tags
+```
+
+Run `bash build.sh --help` for full options (`--stack`, `--targets`, per-project versions, publish forwarding, and dry-run mode).
+
 Each component has its own `build.sh` for multi-platform release packaging:
 
 ```bash
@@ -300,4 +315,13 @@ bash sttp-ui/build-image.sh sttp-ui:local
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for release history across all STTP components.
+See [CHANGELOG.md](CHANGELOG.md) for consolidated STTP release history.
+
+Per-project changelogs:
+
+- [sttp-core/CHANGELOG.md](sttp-core/CHANGELOG.md)
+- [sttp-core-rs/CHANGELOG.md](sttp-core-rs/CHANGELOG.md)
+- [sttp-gateway/CHANGELOG.md](sttp-gateway/CHANGELOG.md)
+- [sttp-gateway-rs/CHANGELOG.md](sttp-gateway-rs/CHANGELOG.md)
+- [sttp-mcp/CHANGELOG.md](sttp-mcp/CHANGELOG.md)
+- [sttp-ui/CHANGELOG.md](sttp-ui/CHANGELOG.md)
