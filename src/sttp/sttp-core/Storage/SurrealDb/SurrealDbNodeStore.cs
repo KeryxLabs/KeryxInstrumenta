@@ -3,6 +3,7 @@ using SttpMcp.Domain.Contracts;
 using SttpMcp.Domain.Models;
 using SttpMcp.Storage.SurrealDb.Models;
 using SurrealDb.Net;
+using SurrealDb.Net.Models.Response;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
@@ -226,7 +227,17 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
     }
 
     public async Task<string> StoreAsync(SttpNode node, CancellationToken ct = default)
-        => (await UpsertNodeAsync(node, ct)).NodeId;
+    {
+        var result = await UpsertNodeAsync(node, ct);
+        _logger.LogInformation(
+            "StoreAsync completed - SessionId: {SessionId}, NodeId: {NodeId}, Status: {Status}, SyncKey: {SyncKey}, UpdatedAt: {UpdatedAt}",
+            node.SessionId,
+            result.NodeId,
+            result.Status,
+            result.SyncKey,
+            result.UpdatedAt);
+        return result.NodeId;
+    }
 
     public async Task<NodeUpsertResult> UpsertNodeAsync(SttpNode node, CancellationToken ct = default)
     {
@@ -263,24 +274,51 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             },
             ct);
 
+        existingResults.EnsureAllOks();
         var existing = existingResults.GetValue<List<SurrealExistingNodeRecord>>(0)?.FirstOrDefault();
         if (existing is not null)
         {
             var existingId = NormalizeTemporalNodeId(existing.Id);
-            if (NormalizeMetadata(existing.SourceMetadata) != NormalizeMetadata(candidate.SourceMetadata))
+            if (string.IsNullOrWhiteSpace(existingId))
             {
-                await _db.RawQuery(
-                    $"""
+                _logger.LogError(
+                    "Upsert returned an existing row with an invalid temporal_node id - SessionId: {SessionId}, SyncKey: {SyncKey}",
+                    candidate.SessionId,
+                    syncKey);
+                throw new InvalidOperationException(
+                    "existing temporal_node id is missing or invalid");
+            }
+
+            var existingMetadata = ParseConnectorMetadata(existing.SourceMetadata);
+            if (NormalizeMetadata(existingMetadata) != NormalizeMetadata(candidate.SourceMetadata))
+            {
+                var updateQuery = candidate.SourceMetadata is null
+                    ? $"""
+                    UPDATE temporal_node:`{existingId}` SET
+                        source_metadata = NONE,
+                        updated_at = <datetime>$updated_at;
+                    """
+                    : $"""
                     UPDATE temporal_node:`{existingId}` SET
                         source_metadata = $source_metadata,
                         updated_at = <datetime>$updated_at;
-                    """,
-                    new Dictionary<string, object?>
-                    {
-                        ["source_metadata"] = ToSurrealValue(candidate.SourceMetadata),
-                        ["updated_at"] = updatedAt
-                    },
-                    ct);
+                    """;
+
+                var updateParameters = new Dictionary<string, object?>
+                {
+                    ["updated_at"] = updatedAt
+                };
+
+                if (candidate.SourceMetadata is not null)
+                    updateParameters["source_metadata"] = ToSurrealValue(candidate.SourceMetadata);
+
+                var updateResponse = await _db.RawQuery(updateQuery, updateParameters, ct);
+                LogMutationResponse(
+                    updateResponse,
+                    operation: "UpdateTemporalNodeSyncMetadata",
+                    sessionId: candidate.SessionId,
+                    nodeId: existingId,
+                    syncKey: syncKey);
 
                 return new NodeUpsertResult
                 {
@@ -290,6 +328,12 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
                     UpdatedAt = updatedAt
                 };
             }
+
+            _logger.LogInformation(
+                "Upsert deduplicated existing node - SessionId: {SessionId}, NodeId: {NodeId}, SyncKey: {SyncKey}",
+                candidate.SessionId,
+                existingId,
+                syncKey);
 
             return new NodeUpsertResult
             {
@@ -314,7 +358,6 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             ["compression_depth"] = candidate.CompressionDepth,
             ["sync_key"] = syncKey,
             ["updated_at"] = updatedAt,
-            ["source_metadata"] = ToSurrealValue(candidate.SourceMetadata),
             ["psi"] = candidate.Psi,
             ["rho"] = candidate.Rho,
             ["kappa"] = candidate.Kappa,
@@ -340,8 +383,37 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
 
         var recordId = Guid.NewGuid().ToString("N");
 
-        await _db.RawQuery(
-            $"""
+        var createQuery = candidate.SourceMetadata is null
+            ? $"""
+            CREATE temporal_node:`{recordId}` SET
+                tenant_id = $tenant_id,
+                session_id = $session_id,
+                raw = $raw,
+                tier = $tier,
+                timestamp = <datetime>$timestamp,
+                compression_depth = $compression_depth,{parentAssignment}
+                sync_key = $sync_key,
+                updated_at = <datetime>$updated_at,
+                psi = $psi,
+                rho = $rho,
+                kappa = $kappa,
+                user_stability = $user_stability,
+                user_friction = $user_friction,
+                user_logic = $user_logic,
+                user_autonomy = $user_autonomy,
+                user_psi = $user_psi,
+                model_stability = $model_stability,
+                model_friction = $model_friction,
+                model_logic = $model_logic,
+                model_autonomy = $model_autonomy,
+                model_psi = $model_psi,
+                comp_stability = $comp_stability,
+                comp_friction = $comp_friction,
+                comp_logic = $comp_logic,
+                comp_autonomy = $comp_autonomy,
+                comp_psi = $comp_psi;
+            """
+            : $"""
             CREATE temporal_node:`{recordId}` SET
                 tenant_id = $tenant_id,
                 session_id = $session_id,
@@ -370,9 +442,21 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
                 comp_logic = $comp_logic,
                 comp_autonomy = $comp_autonomy,
                 comp_psi = $comp_psi;
-            """,
+            """;
+
+        if (candidate.SourceMetadata is not null)
+            parameters["source_metadata"] = ToSurrealValue(candidate.SourceMetadata);
+
+        var createResponse = await _db.RawQuery(
+            createQuery,
             parameters,
             cancellationToken: ct);
+        LogMutationResponse(
+            createResponse,
+            operation: "CreateTemporalNode",
+            sessionId: candidate.SessionId,
+            nodeId: recordId,
+            syncKey: syncKey);
 
         return new NodeUpsertResult
         {
@@ -633,7 +717,7 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
                     SyncKey = record.CursorSyncKey
                 },
             UpdatedAt = record.UpdatedAt,
-            Metadata = record.Metadata
+            Metadata = ParseConnectorMetadata(record.Metadata)
         };
     }
 
@@ -641,6 +725,22 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
     {
         var tenantId = DeriveTenantIdFromSession(checkpoint.SessionId);
         var recordId = BuildCheckpointRecordId(tenantId, checkpoint.SessionId, checkpoint.ConnectorId);
+        var metadataAssignment = checkpoint.Metadata is null
+            ? "metadata = NONE,"
+            : "metadata = $metadata,";
+
+        var parameters = new Dictionary<string, object?>
+        {
+            ["tenant_id"] = tenantId,
+            ["session_id"] = checkpoint.SessionId,
+            ["connector_id"] = checkpoint.ConnectorId,
+            ["cursor_updated_at"] = checkpoint.Cursor?.UpdatedAt,
+            ["cursor_sync_key"] = checkpoint.Cursor?.SyncKey,
+            ["updated_at"] = checkpoint.UpdatedAt
+        };
+
+        if (checkpoint.Metadata is not null)
+            parameters["metadata"] = ToSurrealValue(checkpoint.Metadata);
 
         await _db.RawQuery(
             $"""
@@ -650,19 +750,10 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
                 connector_id = $connector_id,
                 cursor_updated_at = <datetime>$cursor_updated_at,
                 cursor_sync_key = $cursor_sync_key,
-                metadata = $metadata,
+                {metadataAssignment}
                 updated_at = <datetime>$updated_at;
             """,
-            new Dictionary<string, object?>
-            {
-                ["tenant_id"] = tenantId,
-                ["session_id"] = checkpoint.SessionId,
-                ["connector_id"] = checkpoint.ConnectorId,
-                ["cursor_updated_at"] = checkpoint.Cursor?.UpdatedAt,
-                ["cursor_sync_key"] = checkpoint.Cursor?.SyncKey,
-                ["metadata"] = ToSurrealValue(checkpoint.Metadata),
-                ["updated_at"] = checkpoint.UpdatedAt
-            },
+            parameters,
             ct);
     }
 
@@ -900,7 +991,7 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
             ParentNodeId = record.ParentNodeId,
             SyncKey = string.IsNullOrWhiteSpace(record.SyncKey) ? string.Empty : record.SyncKey,
             UpdatedAt = record.UpdatedAt ?? record.Timestamp,
-            SourceMetadata = record.SourceMetadata,
+            SourceMetadata = ParseConnectorMetadata(record.SourceMetadata),
             Psi = (float)record.Psi,
             Rho = (float)record.Rho,
             Kappa = (float)record.Kappa,
@@ -932,6 +1023,59 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
 
         return node;
     }
+
+    private void LogMutationResponse(
+        SurrealDbResponse response,
+        string operation,
+        string sessionId,
+        string? nodeId,
+        string? syncKey)
+    {
+        if (response.HasErrors)
+        {
+            var errors = response.Errors.Select(FormatSurrealError).ToArray();
+            _logger.LogError(
+                "SurrealDB mutation failed - Operation: {Operation}, SessionId: {SessionId}, NodeId: {NodeId}, SyncKey: {SyncKey}, ResultCount: {ResultCount}, Errors: {Errors}",
+                operation,
+                sessionId,
+                nodeId,
+                syncKey,
+                response.Count,
+                string.Join(" | ", errors));
+            response.EnsureAllOks();
+        }
+
+        var firstOk = response.FirstOk;
+        _logger.LogInformation(
+            "SurrealDB mutation succeeded - Operation: {Operation}, SessionId: {SessionId}, NodeId: {NodeId}, SyncKey: {SyncKey}, ResultCount: {ResultCount}, IsEmpty: {IsEmpty}, FirstOkType: {FirstOkType}, FirstOkDurationMs: {FirstOkDurationMs}",
+            operation,
+            sessionId,
+            nodeId,
+            syncKey,
+            response.Count,
+            response.IsEmpty,
+            firstOk?.Type.ToString() ?? "none",
+            firstOk?.Time.TotalMilliseconds ?? 0d);
+
+        if (response.IsEmpty)
+        {
+            _logger.LogWarning(
+                "SurrealDB mutation returned an empty response - Operation: {Operation}, SessionId: {SessionId}, NodeId: {NodeId}, SyncKey: {SyncKey}",
+                operation,
+                sessionId,
+                nodeId,
+                syncKey);
+        }
+    }
+
+    private static string FormatSurrealError(ISurrealDbErrorResult error)
+        => error switch
+        {
+            SurrealDbErrorResult typed => typed.Details,
+            SurrealDbProtocolErrorResult protocol =>
+                $"{(int)protocol.Code} {protocol.Code}: {protocol.Details}; {protocol.Description}; {protocol.Information}",
+            _ => error.ToString() ?? error.GetType().Name
+        };
 
     private static string DeriveTenantIdFromSession(string? sessionId)
     {
@@ -1014,6 +1158,27 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
     private static string? NormalizeMetadata(ConnectorMetadata? metadata)
     {
         return metadata is null ? null : JsonSerializer.Serialize(metadata);
+    }
+
+    private static ConnectorMetadata? ParseConnectorMetadata(object? value)
+    {
+        if (value is null)
+            return null;
+
+        if (value is ConnectorMetadata metadata)
+            return metadata;
+
+        try
+        {
+            var json = JsonSerializer.Serialize(value);
+            return JsonSerializer.Deserialize<ConnectorMetadata>(
+                json,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static string BuildCheckpointRecordId(string tenantId, string sessionId, string connectorId)

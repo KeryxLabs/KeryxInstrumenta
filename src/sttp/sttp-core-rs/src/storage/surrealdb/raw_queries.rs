@@ -100,14 +100,22 @@ pub fn query_nodes_query(where_clause: &str, capped_limit: usize) -> String {
     )
 }
 
-pub fn create_temporal_node_query(record_id: &str, include_parent_assignment: bool) -> String {
+pub fn create_temporal_node_query(
+    record_id: &str,
+    include_parent_assignment: bool,
+    include_source_metadata_assignment: bool,
+) -> String {
     let parent_assignment = if include_parent_assignment {
         "\n                parent_node_id = $parent_node_id,"
     } else {
         ""
     };
 
-    let source_metadata_assignment = "\n                source_metadata = $source_metadata,";
+    let source_metadata_assignment = if include_source_metadata_assignment {
+        "\n                source_metadata = $source_metadata,"
+    } else {
+        ""
+    };
 
     format!(
         r#"
@@ -242,11 +250,17 @@ pub const FIND_EXISTING_NODE_BY_SYNC_KEY_QUERY: &str = r#"
             LIMIT 1;
             "#;
 
-pub fn update_temporal_node_sync_metadata_query(record_id: &str) -> String {
+pub fn update_temporal_node_sync_metadata_query(record_id: &str, clear_source_metadata: bool) -> String {
+    let source_metadata_assignment = if clear_source_metadata {
+        "source_metadata = NONE,"
+    } else {
+        "source_metadata = $source_metadata,"
+    };
+
     format!(
         r#"
             UPDATE temporal_node:`{record_id}` SET
-                source_metadata = $source_metadata,
+                {source_metadata_assignment}
                 updated_at = <datetime>$updated_at;
             "#
     )
@@ -317,7 +331,13 @@ pub const GET_SYNC_CHECKPOINT_QUERY: &str = r#"
             LIMIT 1;
             "#;
 
-pub fn upsert_sync_checkpoint_query(record_id: &str) -> String {
+pub fn upsert_sync_checkpoint_query(record_id: &str, include_metadata_assignment: bool) -> String {
+    let metadata_assignment = if include_metadata_assignment {
+        "metadata = $metadata,"
+    } else {
+        "metadata = NONE,"
+    };
+
     format!(
         r#"
             UPSERT sync_checkpoint:`{record_id}` SET
@@ -326,7 +346,7 @@ pub fn upsert_sync_checkpoint_query(record_id: &str) -> String {
                 connector_id = $connector_id,
                 cursor_updated_at = <datetime>$cursor_updated_at,
                 cursor_sync_key = $cursor_sync_key,
-                metadata = $metadata,
+                {metadata_assignment}
                 updated_at = <datetime>$updated_at;
             "#
     )

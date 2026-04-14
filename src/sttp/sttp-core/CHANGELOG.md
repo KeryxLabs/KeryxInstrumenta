@@ -5,10 +5,24 @@ For historical entries before this split, see ../CHANGELOG.md.
 
 ## [Unreleased]
 
-### Notes
+## [1.2.3] - 2026-04-14
 
-- Per-project changelog tracking initialized on 2026-04-12.
-- Historical entries prior to this split remain in ../CHANGELOG.md.
+### Added
+
+- Added NuGet package metadata for `Sttp.Core` (package ID, authors, license, repository/project URLs, tags).
+- Added packaged README support for NuGet consumers.
+
+### Fixed
+
+- Added explicit SurrealDB mutation response verification/logging in `SurrealDbNodeStore` upsert flow.
+- `StoreAsync` now logs upsert outcome (`Created`/`Updated`/`Duplicate`) with node and sync context.
+- Upsert now treats non-OK query responses as failures instead of silently returning a node ID.
+- Metadata payload transport records now decode as untyped objects first, then map safely to typed connector metadata.
+- Optional metadata writes now preserve `NONE` semantics and avoid `NULL` coercion failures in SurrealDB.
+
+### Changed
+
+- Package/service version metadata aligned to `1.2.3`.
 
 ## Historical Highlights
 

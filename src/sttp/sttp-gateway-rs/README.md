@@ -280,7 +280,7 @@ No Rust toolchain is installed in the container image.
 Custom tag:
 
 ```bash
-./src/sttp/sttp-gateway-rs/build-image.sh ghcr.io/keryxlabs/sttp-gateway-rs:latest
+./src/sttp/sttp-gateway-rs/build-image.sh ghcr.io/keryxlabs/sttp-gateway-rs:1.2.3
 ```
 
 ### Manual Build And Package
@@ -304,13 +304,13 @@ Build image from repository root:
 ```bash
 docker build \
   -f src/sttp/sttp-gateway-rs/Dockerfile \
-  -t sttp-gateway-rs:latest \
+  -t sttp-gateway-rs:1.2.3 \
   .
 ```
 
 ### Runtime Image Details
 
-- Base image: debian:bookworm-slim.
+- Base image: ubuntu:24.04.
 - Runtime dependency installed: ca-certificates.
 - Binary location: /app/sttp-gateway-rs.
 - Persistent volume: /data.
@@ -322,7 +322,7 @@ docker build \
 docker run --rm \
   -p 8080:8080 \
   -p 8081:8081 \
-  sttp-gateway-rs:latest
+  sttp-gateway-rs:1.2.3
 ```
 
 ### Run: Surreal Remote Backend
@@ -338,7 +338,7 @@ docker run --rm \
   -e STTP_SURREAL_DATABASE=sttp_mcp \
   -e STTP_SURREAL_USER=root \
   -e STTP_SURREAL_PASSWORD=root \
-  sttp-gateway-rs:latest
+  sttp-gateway-rs:1.2.3
 ```
 
 ### Run: Embedded Mode With Persistent Volume
@@ -348,7 +348,7 @@ docker run --rm \
   -p 8080:8080 \
   -p 8081:8081 \
   -v sttp-gateway-data:/data \
-  sttp-gateway-rs:latest
+  sttp-gateway-rs:1.2.3
 ```
 
 ## Build And Test

@@ -1,6 +1,6 @@
 services:
   gateway:
-    image: ghcr.io/keryxlabs/sttp-gateway:1.0.0
+    image: ghcr.io/keryxlabs/sttp-gateway:1.2.3
     command:
       - --remote
       - --remote-endpoint
@@ -19,7 +19,7 @@ services:
     restart: unless-stopped
 
   ui:
-    image: ghcr.io/keryxlabs/sttp-ui:1.2.0
+    image: ghcr.io/keryxlabs/sttp-ui:1.2.3
     ports:
       - "5257:8080"
     environment:

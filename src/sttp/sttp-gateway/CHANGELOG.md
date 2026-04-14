@@ -5,10 +5,12 @@ For historical entries before this split, see ../CHANGELOG.md.
 
 ## [Unreleased]
 
-### Notes
+## [1.2.3] - 2026-04-14
 
-- Per-project changelog tracking initialized on 2026-04-12.
-- Historical entries prior to this split remain in ../CHANGELOG.md.
+### Changed
+
+- Added explicit project version metadata (`Version`, `AssemblyVersion`, `FileVersion`) to `sttp-gateway.csproj`.
+- Updated release/build script version to `1.2.3`.
 
 ## Historical Highlights
 

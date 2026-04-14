@@ -59,14 +59,14 @@ mkdir -p "$PWD/sttp-data"
 docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/keryxlabs/sttp-mcp:<version>
 ```
 
-Use a published tag from releases, for example `1.2.1`.
+Use a published tag from releases, for example `1.2.3`.
 
 ### Option B: Download and run the single binary (no Docker)
 
 Linux x64 example:
 
 ```bash
-VERSION="1.2.1"
+VERSION="1.2.3"
 curl -fL -o sttp-mcp.tar.gz \
   "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
 tar -xzf sttp-mcp.tar.gz

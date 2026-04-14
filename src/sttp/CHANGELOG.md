@@ -12,6 +12,30 @@ Project-specific changes are now tracked in per-service changelogs.
 - `sttp-mcp/CHANGELOG.md`
 - `sttp-ui/CHANGELOG.md`
 
+## [1.2.3] - 2026-04-14
+
+### Fixed
+
+- **`sttp-core` / `sttp-mcp` - SurrealDB mutation and metadata robustness**
+  - Added strict mutation response verification in C# Surreal upsert/checkpoint paths.
+  - Added explicit mutation success/failure logging for easier runtime diagnosis.
+  - Updated metadata transport records to decode via untyped object payloads first, then map safely into typed metadata.
+  - Prevented `option<object>` coercion failures by avoiding `NULL` assignments and preserving `NONE` semantics when metadata is missing.
+- **`sttp-core-rs` - metadata write parity for optional object fields**
+  - Added `NONE`-aware query generation for optional connector metadata/source metadata writes.
+- **`sttp-gateway-rs` - query observability**
+  - Added explicit query outcome logging (success/failure and row counts) in the Surreal client.
+
+### Changed
+
+- **Release/version alignment for packages, services, scripts, and image examples**
+  - .NET services/tooling aligned to `1.2.3`.
+  - `sttp-gateway-rs` crate aligned to `1.2.3`.
+  - `sttp-core-rs` crate bumped to `0.1.4`.
+  - Build scripts, compose tags, and README examples updated to the same release set.
+- **`sttp-core` NuGet packaging metadata**
+  - Added package metadata and packaged README support for cleaner NuGet consumption.
+
 ## [1.2.2] - 2026-04-12
 
 ### Fixed

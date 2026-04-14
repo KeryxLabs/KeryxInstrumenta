@@ -5,10 +5,19 @@ For historical entries before this split, see ../CHANGELOG.md.
 
 ## [Unreleased]
 
-### Notes
+## [1.2.3] - 2026-04-14
 
-- Per-project changelog tracking initialized on 2026-04-12.
-- Historical entries prior to this split remain in ../CHANGELOG.md.
+### Fixed
+
+- Store/mutation paths now validate Surreal query response statuses and fail fast on non-OK results.
+- Added explicit mutation result logging so runtime insert/upsert failures are visible in logs.
+- Metadata transport records now decode through object-based payloads before typed mapping, preventing CBOR typed payload coercion failures.
+- Optional `source_metadata`/checkpoint metadata writes now preserve `NONE` semantics instead of sending `NULL` into `option<object>` fields.
+
+### Changed
+
+- MCP package/project version metadata bumped to `1.2.3`.
+- Build/release script examples updated to `1.2.3`.
 
 ## Historical Highlights
 

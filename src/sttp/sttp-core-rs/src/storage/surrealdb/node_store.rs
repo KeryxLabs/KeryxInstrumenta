@@ -301,16 +301,20 @@ impl NodeStore for SurrealDbNodeStore {
                 != normalize_metadata(candidate.source_metadata.as_ref())
             {
                 let mut update_parameters = QueryParams::new();
-                update_parameters.insert(
-                    "source_metadata".to_string(),
-                    candidate.source_metadata.clone().map_or(Value::Null, |metadata| {
-                        serde_json::to_value(metadata).unwrap_or(Value::Null)
-                    }),
-                );
+                let clear_source_metadata = candidate.source_metadata.is_none();
+                if let Some(metadata) = candidate.source_metadata.clone() {
+                    update_parameters.insert(
+                        "source_metadata".to_string(),
+                        serde_json::to_value(metadata).unwrap_or(Value::Null),
+                    );
+                }
                 update_parameters
                     .insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
 
-                let update_query = raw_queries::update_temporal_node_sync_metadata_query(&existing_id);
+                let update_query = raw_queries::update_temporal_node_sync_metadata_query(
+                    &existing_id,
+                    clear_source_metadata,
+                );
                 self.client.raw_query(&update_query, update_parameters).await?;
 
                 return Ok(NodeUpsertResult {
@@ -330,6 +334,7 @@ impl NodeStore for SurrealDbNodeStore {
         }
 
         let include_parent_assignment = candidate.parent_node_id.is_some();
+        let include_source_metadata_assignment = candidate.source_metadata.is_some();
         let mut parameters = QueryParams::new();
         let tenant_id = derive_tenant_id_from_session(&candidate.session_id);
 
@@ -347,12 +352,12 @@ impl NodeStore for SurrealDbNodeStore {
         );
         parameters.insert("sync_key".to_string(), json!(&sync_key));
         parameters.insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
-        parameters.insert(
-            "source_metadata".to_string(),
-            candidate.source_metadata.clone().map_or(Value::Null, |metadata| {
-                serde_json::to_value(metadata).unwrap_or(Value::Null)
-            }),
-        );
+        if let Some(metadata) = candidate.source_metadata.clone() {
+            parameters.insert(
+                "source_metadata".to_string(),
+                serde_json::to_value(metadata).unwrap_or(Value::Null),
+            );
+        }
         parameters.insert("psi".to_string(), json!(candidate.psi));
         parameters.insert("rho".to_string(), json!(candidate.rho));
         parameters.insert("kappa".to_string(), json!(candidate.kappa));
@@ -404,8 +409,11 @@ impl NodeStore for SurrealDbNodeStore {
         }
 
         let record_id = Uuid::new_v4().simple().to_string();
-        let query_text =
-            raw_queries::create_temporal_node_query(&record_id, include_parent_assignment);
+        let query_text = raw_queries::create_temporal_node_query(
+            &record_id,
+            include_parent_assignment,
+            include_source_metadata_assignment,
+        );
         self.client.raw_query(&query_text, parameters).await?;
 
         Ok(NodeUpsertResult {
@@ -587,6 +595,7 @@ impl NodeStore for SurrealDbNodeStore {
     async fn put_checkpoint_async(&self, checkpoint: SyncCheckpoint) -> Result<()> {
         let tenant_id = derive_tenant_id_from_session(&checkpoint.session_id);
         let record_id = checkpoint_record_id(&tenant_id, &checkpoint.session_id, &checkpoint.connector_id);
+        let include_metadata_assignment = checkpoint.metadata.is_some();
         let mut parameters = QueryParams::new();
         parameters.insert("tenant_id".to_string(), json!(tenant_id));
         parameters.insert("session_id".to_string(), json!(&checkpoint.session_id));
@@ -607,18 +616,21 @@ impl NodeStore for SurrealDbNodeStore {
                 .map(|cursor| json!(&cursor.sync_key))
                 .unwrap_or(Value::Null),
         );
-        parameters.insert(
-            "metadata".to_string(),
-            checkpoint.metadata.clone().map_or(Value::Null, |value| {
-                serde_json::to_value(value).unwrap_or(Value::Null)
-            }),
-        );
+        if let Some(metadata) = checkpoint.metadata.clone() {
+            parameters.insert(
+                "metadata".to_string(),
+                serde_json::to_value(metadata).unwrap_or(Value::Null),
+            );
+        }
         parameters.insert(
             "updated_at".to_string(),
             json!(checkpoint.updated_at.to_rfc3339()),
         );
 
-        let query_text = raw_queries::upsert_sync_checkpoint_query(&record_id);
+        let query_text = raw_queries::upsert_sync_checkpoint_query(
+            &record_id,
+            include_metadata_assignment,
+        );
         self.client.raw_query(&query_text, parameters).await?;
         Ok(())
     }

@@ -52,7 +52,7 @@ In other words: the crate is sync-ready, not sync-mandatory.
 
 ```toml
 [dependencies]
-sttp-core-rs = "0.1.2"
+sttp-core-rs = "0.1.4"
 ```
 
 ## Quick Start
