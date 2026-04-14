@@ -244,7 +244,7 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
         var syncKey = string.IsNullOrWhiteSpace(node.SyncKey)
             ? node.CanonicalSyncKey()
             : node.SyncKey.Trim();
-        var updatedAt = DateTime.UtcNow;
+        var updatedAt = ResolveIncomingUpdatedAt(node.UpdatedAt);
         var candidate = node with
         {
             SyncKey = syncKey,
@@ -1158,6 +1158,19 @@ public sealed class SurrealDbNodeStore : INodeStore, INodeStoreInitializer, IAsy
     private static string? NormalizeMetadata(ConnectorMetadata? metadata)
     {
         return metadata is null ? null : JsonSerializer.Serialize(metadata);
+    }
+
+    private static DateTime ResolveIncomingUpdatedAt(DateTime value)
+    {
+        if (value == default)
+            return DateTime.UtcNow;
+
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+            _ => value.ToUniversalTime()
+        };
     }
 
     private static ConnectorMetadata? ParseConnectorMetadata(object? value)

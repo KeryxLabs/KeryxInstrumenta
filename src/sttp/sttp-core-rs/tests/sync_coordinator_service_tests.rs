@@ -81,6 +81,52 @@ fn build_test_node(session_id: &str, raw: &str, sync_key: &str, updated_at: &str
 }
 
 #[tokio::test(flavor = "current_thread")]
+async fn pull_does_not_resurface_remote_rows_as_local_changes() {
+    let store = Arc::new(InMemoryNodeStore::new());
+    let source = Arc::new(StubChangeSource::new(vec![ChangeQueryResult {
+        nodes: vec![build_test_node(
+            "sync-session",
+            "remote",
+            "sync-a",
+            "2026-03-05T06:41:00Z",
+        )],
+        next_cursor: Some(SyncCursor {
+            updated_at: DateTime::parse_from_rfc3339("2026-03-05T06:41:00Z")
+                .expect("timestamp should parse")
+                .with_timezone(&Utc),
+            sync_key: "sync-a".to_string(),
+        }),
+        has_more: false,
+    }]));
+    let coordinator = SyncCoordinatorService::new(store.clone(), source);
+
+    let result = coordinator
+        .pull_async(SyncPullRequest {
+            session_id: "sync-session".to_string(),
+            connector_id: "cloud-primary".to_string(),
+            page_size: 50,
+            max_batches: Some(1),
+        })
+        .await
+        .expect("pull should succeed");
+
+    let changes = store
+        .query_changes_since_async(
+            "sync-session",
+            result
+                .checkpoint
+                .as_ref()
+                .and_then(|checkpoint| checkpoint.cursor.clone()),
+            50,
+        )
+        .await
+        .expect("change query should succeed");
+
+    assert!(changes.nodes.is_empty());
+    assert!(!changes.has_more);
+}
+
+#[tokio::test(flavor = "current_thread")]
 async fn coordinator_pages_changes_and_advances_checkpoint_without_owning_policy() {
     let store = Arc::new(InMemoryNodeStore::new());
     let source = Arc::new(StubChangeSource::new(vec![ChangeQueryResult {

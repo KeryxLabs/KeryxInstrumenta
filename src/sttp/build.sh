@@ -47,7 +47,7 @@ Version controls:
 
 Image controls:
   --image-prefix ghcr.io/keryxlabs   Prefix for non-local image tags
-  --local-image-tags                 Use local tags like sttp-mcp:1.2.3
+  --local-image-tags                 Use local tags like sttp-mcp:1.2.4
 
 Other:
   --publish    Forward --publish into per-project release build.sh scripts
@@ -137,16 +137,16 @@ resolve_version_for_target() {
   local target="$1"
   case "$target" in
     mcp)
-      echo "${MCP_VERSION:-${DEFAULT_VERSION:-1.2.3}}"
+      echo "${MCP_VERSION:-${DEFAULT_VERSION:-1.2.4}}"
       ;;
     gateway)
-      echo "${GATEWAY_VERSION:-${DEFAULT_VERSION:-1.2.3}}"
+      echo "${GATEWAY_VERSION:-${DEFAULT_VERSION:-1.2.4}}"
       ;;
     ui)
-      echo "${UI_VERSION:-${DEFAULT_VERSION:-1.2.3}}"
+      echo "${UI_VERSION:-${DEFAULT_VERSION:-1.2.4}}"
       ;;
     gateway-rs)
-      echo "${GATEWAY_RS_VERSION:-${DEFAULT_VERSION:-1.2.3}}"
+      echo "${GATEWAY_RS_VERSION:-${DEFAULT_VERSION:-1.2.4}}"
       ;;
     *)
       die "Unknown target in version resolver: $target"

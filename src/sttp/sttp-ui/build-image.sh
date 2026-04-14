@@ -4,7 +4,7 @@
 # Usage:
 #   ./build-image.sh [IMAGE_TAG]
 #
-# Default IMAGE_TAG: ghcr.io/keryxlabs/sttp-ui:1.2.3
+# Default IMAGE_TAG: ghcr.io/keryxlabs/sttp-ui:1.2.4
 #
 # Publishes the app on the host first, then packages it into a slim
 # aspnet runtime image. No dotnet toolchain required inside the container.
@@ -13,7 +13,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-IMAGE_TAG="${1:-ghcr.io/keryxlabs/sttp-ui:1.2.3}"
+IMAGE_TAG="${1:-ghcr.io/keryxlabs/sttp-ui:1.2.5}"
 
 echo "▶ Publishing on host..."
 dotnet publish "$SCRIPT_DIR/sttp-ui.csproj" \

@@ -22,10 +22,10 @@
     <!-- Set recommended package metadata -->
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageId>SttpMcp</PackageId>
-    <Version>1.2.3</Version>
-    <PackageVersion>1.2.3</PackageVersion>
-    <AssemblyVersion>1.2.3.0</AssemblyVersion>
-    <FileVersion>1.2.3.0</FileVersion>
+    <Version>1.2.5</Version>
+    <PackageVersion>1.2.5</PackageVersion>
+    <AssemblyVersion>1.2.4.0</AssemblyVersion>
+    <FileVersion>1.2.4.0</FileVersion>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <RepositoryUrl>https://github.com/KeryxLabs/KeryxInstrumenta</RepositoryUrl>
     <PackageProjectUrl>https://github.com/KeryxLabs/KeryxInstrumenta/tree/main/src/sttp/sttp-mcp</PackageProjectUrl>

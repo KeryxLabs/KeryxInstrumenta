@@ -5,7 +5,7 @@
     <RootNamespace>sttp_mcp.Tests</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <Version>1.2.3</Version>
+    <Version>1.2.5</Version>
     <IsPackable>false</IsPackable>
     <OutputType>Exe</OutputType>
     <TestingPlatformDotnetTestSupport>true</TestingPlatformDotnetTestSupport>
