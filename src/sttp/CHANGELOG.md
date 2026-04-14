@@ -33,6 +33,7 @@ Project-specific changes are now tracked in per-service changelogs.
   - `sttp-gateway-rs` crate aligned to `1.2.3`.
   - `sttp-core-rs` crate bumped to `0.1.4`.
   - Build scripts, compose tags, and README examples updated to the same release set.
+  - Added root `src/sttp/build.sh` orchestration wrapper with per-target version overrides, stack/target filtering, and dry-run support.
 - **`sttp-core` NuGet packaging metadata**
   - Added package metadata and packaged README support for cleaner NuGet consumption.
 

@@ -3,7 +3,8 @@
 # Usage: ./build.sh [--publish]
 set -e
 
-VERSION="1.2.3"
+# Override order: STTP_GATEWAY_VERSION -> STTP_VERSION -> script default.
+VERSION="${STTP_GATEWAY_VERSION:-${STTP_VERSION:-1.2.3}}"
 TAG_PREFIX="sttp-gateway"
 RELEASE="${TAG_PREFIX}/v$VERSION"
 NAME="sttp-gateway"

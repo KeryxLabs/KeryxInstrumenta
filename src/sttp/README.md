@@ -274,6 +274,21 @@ bash build-and-up.sh
 
 ## Building from Source
 
+For multi-project release orchestration, use the root wrapper:
+
+```bash
+# run release + image builds for default targets (mcp, gateway, ui, gateway-rs)
+bash build.sh --default-version 1.2.4
+
+# mix per-project versions and targets
+bash build.sh --mode all --targets mcp,gateway-rs \
+  --mcp-version 1.2.4 \
+  --gateway-rs-version 1.3.0 \
+  --local-image-tags
+```
+
+Run `bash build.sh --help` for full options (`--stack`, `--targets`, per-project versions, publish forwarding, and dry-run mode).
+
 Each component has its own `build.sh` for multi-platform release packaging:
 
 ```bash
