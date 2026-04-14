@@ -36,11 +36,11 @@ public sealed class InMemoryNodeStore : INodeStore, INodeStoreInitializer
         var syncKey = string.IsNullOrWhiteSpace(node.SyncKey)
             ? node.CanonicalSyncKey()
             : node.SyncKey.Trim();
-        var now = DateTime.UtcNow;
+        var updatedAt = ResolveIncomingUpdatedAt(node.UpdatedAt);
         var candidate = node with
         {
             SyncKey = syncKey,
-            UpdatedAt = now
+            UpdatedAt = updatedAt
         };
 
         var existingIndex = _nodes.FindIndex(existing =>
@@ -58,7 +58,7 @@ public sealed class InMemoryNodeStore : INodeStore, INodeStoreInitializer
                     NodeId = GetNodeId(existing),
                     SyncKey = syncKey,
                     Status = NodeUpsertStatus.Updated,
-                    UpdatedAt = now
+                    UpdatedAt = updatedAt
                 });
             }
 
@@ -77,7 +77,7 @@ public sealed class InMemoryNodeStore : INodeStore, INodeStoreInitializer
             NodeId = GetNodeId(candidate),
             SyncKey = syncKey,
             Status = NodeUpsertStatus.Created,
-            UpdatedAt = now
+            UpdatedAt = updatedAt
         });
     }
 
@@ -335,6 +335,19 @@ public sealed class InMemoryNodeStore : INodeStore, INodeStoreInitializer
 
     private static string? NormalizeMetadata(ConnectorMetadata? metadata)
         => metadata is null ? null : JsonSerializer.Serialize(metadata);
+
+    private static DateTime ResolveIncomingUpdatedAt(DateTime value)
+    {
+        if (value == default)
+            return DateTime.UtcNow;
+
+        return value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(value, DateTimeKind.Utc),
+            _ => value.ToUniversalTime()
+        };
+    }
 
     private static string DeriveTenantIdFromSession(string sessionId)
     {

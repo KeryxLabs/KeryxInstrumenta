@@ -10,6 +10,56 @@ namespace SttpMcp.Tests.Services;
 public sealed class SyncCoordinatorServiceTests
 {
     [Fact]
+    public async Task Pull_Should_Not_Resurface_RemoteRows_As_LocalChanges()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var store = new InMemoryNodeStore();
+        var cursorUpdatedAt = DateTime.Parse(
+            "2026-03-05T06:41:00Z",
+            null,
+            System.Globalization.DateTimeStyles.RoundtripKind);
+
+        var source = new StubChangeSource(new ChangeQueryResult
+        {
+            Nodes =
+            [
+                BuildNode("sync-session", "remote", "sync-a", "2026-03-05T06:41:00Z")
+            ],
+            NextCursor = new SyncCursor
+            {
+                UpdatedAt = cursorUpdatedAt,
+                SyncKey = "sync-a"
+            },
+            HasMore = false
+        });
+
+        var coordinator = new SyncCoordinatorService(
+            store,
+            source,
+            NullLogger<SyncCoordinatorService>.Instance);
+
+        var result = await coordinator.PullAsync(new SyncPullRequest
+        {
+            SessionId = "sync-session",
+            ConnectorId = "cloud-primary",
+            PageSize = 50,
+            MaxBatches = 1
+        }, ct);
+
+        result.Checkpoint.ShouldNotBeNull();
+        result.Checkpoint!.Cursor.ShouldNotBeNull();
+
+        var changes = await store.QueryChangesSinceAsync(
+            "sync-session",
+            result.Checkpoint.Cursor,
+            50,
+            ct);
+
+        changes.Nodes.Count.ShouldBe(0);
+        changes.HasMore.ShouldBeFalse();
+    }
+
+    [Fact]
     public async Task Pull_Should_Page_Changes_And_Advance_Checkpoint_Without_Owning_Policy()
     {
         var ct = TestContext.Current.CancellationToken;

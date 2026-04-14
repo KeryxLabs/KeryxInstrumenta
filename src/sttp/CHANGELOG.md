@@ -12,6 +12,23 @@ Project-specific changes are now tracked in per-service changelogs.
 - `sttp-mcp/CHANGELOG.md`
 - `sttp-ui/CHANGELOG.md`
 
+## [1.2.5] - 2026-04-14
+
+### Fixed
+
+- **`sttp-core` / `sttp-core-rs` - sync loop race during repeated cloud/local pulls**
+  - Upsert paths now preserve incoming node `updated_at` instead of always rewriting it to current time.
+  - Prevents freshly pulled remote nodes from being immediately reclassified as new local outbound changes.
+  - Addresses repeated upload/download churn when sync cycles run back-to-back.
+
+### Changed
+
+- **Release/build alignment**
+  - STTP .NET projects and service artifacts bumped to `1.2.4`.
+  - `sttp-gateway-rs` crate bumped to `1.2.4`.
+  - `sttp-core-rs` crate bumped to `0.1.5`.
+  - Related build scripts, image defaults, compose tags, and root build wrapper defaults updated to the same release set.
+
 ## [1.2.3] - 2026-04-14
 
 ### Fixed

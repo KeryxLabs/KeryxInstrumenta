@@ -1,6 +1,5 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
-use chrono::Utc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -75,9 +74,9 @@ impl NodeStore for InMemoryNodeStore {
             candidate.sync_key.trim().to_string()
         };
 
-        let now = Utc::now();
+        let updated_at = candidate.updated_at;
         candidate.sync_key = sync_key.clone();
-        candidate.updated_at = now;
+        candidate.updated_at = updated_at;
 
         let mut nodes = self.nodes.write().await;
         if let Some((node_id, existing)) = nodes.iter_mut().find(|(_, existing)| {
@@ -100,12 +99,12 @@ impl NodeStore for InMemoryNodeStore {
                 || existing_metadata != candidate_metadata
             {
                 *existing = candidate.clone();
-                existing.updated_at = now;
+                existing.updated_at = updated_at;
                 return Ok(NodeUpsertResult {
                     node_id: node_id.clone(),
                     sync_key,
                     status: NodeUpsertStatus::Updated,
-                    updated_at: now,
+                    updated_at,
                 });
             }
 
@@ -124,7 +123,7 @@ impl NodeStore for InMemoryNodeStore {
             node_id,
             sync_key,
             status: NodeUpsertStatus::Created,
-            updated_at: now,
+            updated_at,
         })
     }
 

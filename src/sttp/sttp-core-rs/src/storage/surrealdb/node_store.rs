@@ -274,7 +274,7 @@ impl NodeStore for SurrealDbNodeStore {
             candidate.sync_key.trim().to_string()
         };
 
-        let updated_at = Utc::now();
+        let updated_at = candidate.updated_at;
         candidate.sync_key = sync_key.clone();
         candidate.updated_at = updated_at;
 
