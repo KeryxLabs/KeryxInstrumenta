@@ -4,16 +4,17 @@ use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use axum::extract::{Query, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
-use clap::{Parser, ValueEnum};
+use clap::{ArgAction, Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::net::TcpListener;
 use tonic::transport::Server;
 use tonic::{Request, Response, Status};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
@@ -41,6 +42,7 @@ pub mod proto {
 
 const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("sttp_descriptor");
 const TENANT_HEADER: &str = "x-tenant-id";
+const TENANT_HEADERS: [&str; 3] = ["x-resonantia-tenant", "x-tenant-id", "x-tenant"];
 const DEFAULT_TENANT: &str = "default";
 const TENANT_SCOPE_PREFIX: &str = "tenant:";
 const TENANT_SCOPE_SEPARATOR: &str = "::session:";
@@ -63,6 +65,21 @@ struct GatewayArgs {
 
     #[arg(long, env = "STTP_GATEWAY_REMOTE", default_value_t = false)]
     remote: bool,
+
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_CORS_ENABLED",
+        default_value_t = true,
+        action = ArgAction::Set
+    )]
+    cors_enabled: bool,
+
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_CORS_ALLOWED_ORIGINS",
+        default_value = "*"
+    )]
+    cors_allowed_origins: String,
 
     #[arg(long, env = "STTP_SURREAL_EMBEDDED_ENDPOINT")]
     surreal_embedded_endpoint: Option<String>,
@@ -91,6 +108,7 @@ enum GatewayBackend {
 
 #[derive(Clone)]
 struct AppState {
+    node_store: Arc<dyn NodeStore>,
     calibration: Arc<CalibrationService>,
     context_query: Arc<ContextQueryService>,
     mood_catalog: Arc<MoodCatalogService>,
@@ -187,6 +205,15 @@ struct GraphQuery {
     tenant_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameSessionHttpRequest {
+    source_session_id: String,
+    target_session_id: String,
+    tenant_id: Option<String>,
+    allow_merge: Option<bool>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AvecStateDto {
@@ -212,6 +239,8 @@ struct SttpNodeDto {
     rho: f32,
     kappa: f32,
     psi: f32,
+    sync_key: String,
+    synthetic_id: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -256,6 +285,18 @@ struct StoreResultDto {
     psi: f32,
     valid: bool,
     validation_error: Option<String>,
+    duplicate_skipped: bool,
+    upsert_status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameSessionResultDto {
+    source_session_id: String,
+    target_session_id: String,
+    moved_nodes: usize,
+    moved_calibrations: usize,
+    scopes_applied: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -358,6 +399,11 @@ struct GraphResponse {
 
 type ApiResult<T> = Result<Json<T>, (StatusCode, Json<ErrorResponse>)>;
 
+enum CorsAllowedOrigins {
+    Any,
+    Explicit(Vec<HeaderValue>),
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -374,17 +420,42 @@ async fn main() -> Result<()> {
 
     let state = Arc::new(build_state(&args).await?);
 
-    let http_router = Router::new()
+    let base_router = Router::new()
         .route("/health", get(health_handler))
         .route("/api/v1/calibrate", post(calibrate_handler))
         .route("/api/v1/store", post(store_context_handler))
+        .route("/api/store", post(store_context_handler))
+        .route("/store", post(store_context_handler))
+        .route("/api/v1/session/rename", post(rename_session_handler))
+        .route("/api/session/rename", post(rename_session_handler))
+        .route("/session/rename", post(rename_session_handler))
         .route("/api/v1/context", post(get_context_handler))
         .route("/api/v1/nodes", get(list_nodes_handler))
+        .route("/api/nodes", get(list_nodes_handler))
+        .route("/nodes", get(list_nodes_handler))
         .route("/api/v1/graph", get(graph_handler))
+        .route("/api/graph", get(graph_handler))
+        .route("/graph", get(graph_handler))
         .route("/api/v1/moods", get(get_moods_handler))
         .route("/api/v1/rekey", post(batch_rekey_handler))
         .route("/api/v1/rollups/monthly", post(create_monthly_rollup_handler))
         .with_state(state.clone());
+
+    let http_router = if args.cors_enabled {
+        let allowed_origins = parse_cors_allowed_origins(&args.cors_allowed_origins)?;
+        let cors_base = CorsLayer::new()
+            .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::OPTIONS])
+            .allow_headers(Any);
+
+        let cors = match allowed_origins {
+            CorsAllowedOrigins::Any => cors_base.allow_origin(Any),
+            CorsAllowedOrigins::Explicit(origins) => cors_base.allow_origin(origins),
+        };
+
+        base_router.layer(cors)
+    } else {
+        base_router
+    };
 
     let grpc_service = GrpcGatewayService::new(state);
 
@@ -398,6 +469,8 @@ async fn main() -> Result<()> {
     info!(
         http_port = args.http_port,
         grpc_port = args.grpc_port,
+        cors_enabled = args.cors_enabled,
+        cors_allowed_origins = %args.cors_allowed_origins,
         "Starting sttp-gateway-rs"
     );
 
@@ -457,6 +530,7 @@ async fn build_in_memory_state() -> Result<AppState> {
 
 fn build_services(store_trait: Arc<dyn NodeStore>, validator: Arc<dyn NodeValidator>) -> AppState {
     AppState {
+        node_store: store_trait.clone(),
         calibration: Arc::new(CalibrationService::new(store_trait.clone())),
         context_query: Arc::new(ContextQueryService::new(store_trait.clone())),
         mood_catalog: Arc::new(MoodCatalogService::new()),
@@ -591,6 +665,99 @@ async fn store_context_handler(
         psi: result.psi,
         valid: result.valid,
         validation_error: result.validation_error,
+        duplicate_skipped: false,
+        upsert_status: if result.valid {
+            "created".to_string()
+        } else {
+            "skipped".to_string()
+        },
+    }))
+}
+
+async fn rename_session_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<RenameSessionHttpRequest>,
+) -> ApiResult<RenameSessionResultDto> {
+    let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+    let source_session_id = request.source_session_id.trim();
+    let target_session_id = request.target_session_id.trim();
+
+    if source_session_id.is_empty() || target_session_id.is_empty() {
+        return Err(bad_request("sourceSessionId and targetSessionId are required"));
+    }
+
+    if source_session_id == target_session_id {
+        return Ok(Json(RenameSessionResultDto {
+            source_session_id: source_session_id.to_string(),
+            target_session_id: target_session_id.to_string(),
+            moved_nodes: 0,
+            moved_calibrations: 0,
+            scopes_applied: 0,
+        }));
+    }
+
+    let scoped_source_session_id = scope_session_id(&tenant, source_session_id);
+    let scoped_target_session_id = scope_session_id(&tenant, target_session_id);
+
+    let source_nodes = state
+        .node_store
+        .query_nodes_async(core_models::NodeQuery {
+            limit: 10_000,
+            session_id: Some(scoped_source_session_id.clone()),
+            from_utc: None,
+            to_utc: None,
+        })
+        .await
+        .map_err(internal_error)?;
+
+    if source_nodes.is_empty() {
+        return Err(bad_request(format!(
+            "source session not found: {source_session_id}"
+        )));
+    }
+
+    let mut anchor_node_ids = Vec::with_capacity(source_nodes.len());
+    for node in source_nodes {
+        let upsert = state
+            .node_store
+            .upsert_node_async(node)
+            .await
+            .map_err(internal_error)?;
+        anchor_node_ids.push(upsert.node_id);
+    }
+    anchor_node_ids.sort();
+    anchor_node_ids.dedup();
+
+    let rekey_result = state
+        .rekey_scope
+        .rekey_async(
+            anchor_node_ids,
+            &tenant,
+            &scoped_target_session_id,
+            false,
+            request.allow_merge.unwrap_or(false),
+        )
+        .await
+        .map_err(internal_error)?;
+
+    if let Some(conflict) = rekey_result.scopes.iter().find(|scope| scope.conflict) {
+        return Err(bad_request(
+            conflict
+                .message
+                .clone()
+                .unwrap_or_else(|| "target session already exists".to_string()),
+        ));
+    }
+
+    let scopes_applied = rekey_result.scopes.iter().filter(|scope| scope.applied).count();
+
+    Ok(Json(RenameSessionResultDto {
+        source_session_id: source_session_id.to_string(),
+        target_session_id: target_session_id.to_string(),
+        moved_nodes: rekey_result.temporal_nodes_updated,
+        moved_calibrations: rekey_result.calibrations_updated,
+        scopes_applied,
     }))
 }
 
@@ -947,6 +1114,34 @@ fn internal_error(error: impl std::fmt::Display) -> (StatusCode, Json<ErrorRespo
     )
 }
 
+fn parse_cors_allowed_origins(value: &str) -> Result<CorsAllowedOrigins> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Err(anyhow!(
+            "CORS allowed origins cannot be empty when CORS is enabled"
+        ));
+    }
+
+    if trimmed == "*" {
+        return Ok(CorsAllowedOrigins::Any);
+    }
+
+    let mut origins = Vec::new();
+    for origin in trimmed.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+        let header = HeaderValue::from_str(origin)
+            .map_err(|_| anyhow!("Invalid CORS origin value: {origin}"))?;
+        origins.push(header);
+    }
+
+    if origins.is_empty() {
+        return Err(anyhow!(
+            "CORS allowed origins must include at least one origin or '*'"
+        ));
+    }
+
+    Ok(CorsAllowedOrigins::Explicit(origins))
+}
+
 fn normalize_tenant_value(value: &str) -> Option<String> {
     let trimmed = value.trim();
     if trimmed.is_empty() {
@@ -967,12 +1162,7 @@ fn normalize_tenant_value(value: &str) -> Option<String> {
 fn resolve_http_tenant(explicit_tenant: Option<&str>, headers: &HeaderMap) -> String {
     explicit_tenant
         .and_then(normalize_tenant_value)
-        .or_else(|| {
-            headers
-                .get(TENANT_HEADER)
-                .and_then(|value| value.to_str().ok())
-                .and_then(normalize_tenant_value)
-        })
+        .or_else(|| resolve_tenant_header(headers))
         .unwrap_or_else(|| DEFAULT_TENANT.to_string())
 }
 
@@ -982,6 +1172,15 @@ fn resolve_grpc_tenant(metadata: &tonic::metadata::MetadataMap) -> String {
         .and_then(|value| value.to_str().ok())
         .and_then(normalize_tenant_value)
         .unwrap_or_else(|| DEFAULT_TENANT.to_string())
+}
+
+fn resolve_tenant_header(headers: &HeaderMap) -> Option<String> {
+    TENANT_HEADERS.iter().find_map(|name| {
+        headers
+            .get(*name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(normalize_tenant_value)
+    })
 }
 
 fn parse_scoped_session_id(session_id: &str) -> Option<(&str, &str)> {
@@ -1061,6 +1260,8 @@ fn to_node_dto(value: &core_models::SttpNode) -> SttpNodeDto {
         rho: value.rho,
         kappa: value.kappa,
         psi: value.psi,
+        sync_key: value.sync_key.clone(),
+        synthetic_id: graph_node_id(value),
     }
 }
 

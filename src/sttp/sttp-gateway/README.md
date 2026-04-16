@@ -65,10 +65,90 @@ Optional local config file:
 - `GET /health`
 - `POST /api/v1/calibrate`
 - `POST /api/v1/store`
+- `POST /api/store` (legacy alias)
+- `POST /store` (legacy alias)
+- `POST /api/v1/session/rename`
+- `POST /api/session/rename` (legacy alias)
+- `POST /session/rename` (legacy alias)
 - `POST /api/v1/context`
 - `GET /api/v1/nodes?limit=50&sessionId=...`
+- `GET /api/nodes?limit=50&sessionId=...` (legacy alias)
+- `GET /nodes?limit=50&sessionId=...` (legacy alias)
+- `GET /api/v1/graph?limit=1000&sessionId=...`
+- `GET /api/graph?limit=1000&sessionId=...` (legacy alias)
+- `GET /graph?limit=1000&sessionId=...` (legacy alias)
 - `GET /api/v1/moods?targetMood=focused&blend=1`
+- `POST /api/v1/rekey`
 - `POST /api/v1/rollups/monthly`
+
+## BYO Node Store Compatibility
+
+`sttp-gateway` supports no-auth Bring Your Own usage for Resonantia-compatible Node Store flows.
+
+### Auth-Off Behavior
+
+- No `Authorization` header is required.
+- Tenant can be passed as `tenantId` request/query field or headers:
+  - `x-resonantia-tenant`
+  - `x-tenant-id`
+  - `x-tenant`
+
+### CORS
+
+Gateway CORS is enabled for direct browser BYO calls.
+
+- Origins: any
+- Methods: any (including `GET`, `POST`, `PATCH`, `OPTIONS`)
+- Headers: any (including `Content-Type`, `Authorization`, tenant headers)
+
+Runtime toggle:
+
+- CLI: `--cors-enabled true|false`
+- Env: `STTP_GATEWAY_CORS_ENABLED=true|false`
+- Config file: `Gateway:Cors:Enabled`
+
+Default: enabled (`true`).
+
+Runtime origin allowlist:
+
+- CLI: `--cors-allowed-origins "*"` or `--cors-allowed-origins "http://localhost:5173,https://app.resonantia.ai"`
+- Env: `STTP_GATEWAY_CORS_ALLOWED_ORIGINS=*` or comma-separated origins
+- Config file: `Gateway:Cors:AllowedOrigins`
+
+Good practice for production is to set explicit origins instead of `*`.
+
+### Response Compatibility Notes
+
+- `GET /api/v1/nodes` responses include `syncKey` and `syntheticId`.
+- `POST /api/v1/store` responses include:
+  - `duplicateSkipped`
+  - `upsertStatus` (`created` when valid, otherwise `skipped`)
+
+### Session Rename Contract
+
+- Endpoint: `POST /api/v1/session/rename`
+- Aliases: `POST /api/session/rename`, `POST /session/rename`
+- Request JSON:
+
+```json
+{
+  "sourceSessionId": "old-session",
+  "targetSessionId": "new-session",
+  "allowMerge": false
+}
+```
+
+- Response JSON:
+
+```json
+{
+  "sourceSessionId": "old-session",
+  "targetSessionId": "new-session",
+  "movedNodes": 18,
+  "movedCalibrations": 1,
+  "scopesApplied": 1
+}
+```
 
 ## Storage And Compatibility
 

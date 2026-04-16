@@ -14,6 +14,12 @@ public sealed record StoreContextHttpRequest(
     string SessionId,
     string? TenantId);
 
+public sealed record RenameSessionHttpRequest(
+    string SourceSessionId,
+    string TargetSessionId,
+    bool AllowMerge = false,
+    string? TenantId = null);
+
 public sealed record GetContextHttpRequest(
     string SessionId,
     string? TenantId,

@@ -69,6 +69,8 @@ All flags have environment variable equivalents.
 | `--http-port` | `STTP_GATEWAY_HTTP_PORT` | `8080` | HTTP listener |
 | `--grpc-port` | `STTP_GATEWAY_GRPC_PORT` | `8081` | gRPC listener (h2c) |
 | `--backend` | `STTP_GATEWAY_BACKEND` | `in-memory` | `in-memory` or `surreal` |
+| `--cors-enabled` | `STTP_GATEWAY_CORS_ENABLED` | `true` | Enable/disable HTTP CORS middleware |
+| `--cors-allowed-origins` | `STTP_GATEWAY_CORS_ALLOWED_ORIGINS` | `*` | `*` or comma-separated absolute origins |
 | `--root-dir-name` | `STTP_GATEWAY_ROOT_DIR_NAME` | `.sttp-gateway` | Local runtime data root name |
 | `--remote` | `STTP_GATEWAY_REMOTE` | `false` | Surreal remote mode toggle |
 | `--surreal-embedded-endpoint` | `STTP_SURREAL_EMBEDDED_ENDPOINT` | unset | Embedded endpoint override |
@@ -85,9 +87,9 @@ All flags have environment variable equivalents.
 - Default tenant is `default`.
 - HTTP requests resolve tenant from:
   1. request field (`tenantId`) when present and valid,
-  2. `x-tenant-id` header,
+  2. one of the supported tenant headers (`x-resonantia-tenant`, `x-tenant-id`, `x-tenant`),
   3. fallback to `default`.
-- gRPC requests resolve tenant from metadata key `x-tenant-id`, fallback `default`.
+- gRPC requests resolve tenant from metadata keys in this order: `x-resonantia-tenant`, `x-tenant-id`, `x-tenant`, then fallback `default`.
 
 ### Session Scoping
 
@@ -125,12 +127,64 @@ curl -s 'http://127.0.0.1:8080/api/v1/nodes?limit=50&sessionId=gateway-rust-port
 - `GET /health`
 - `POST /api/v1/calibrate`
 - `POST /api/v1/store`
+- `POST /api/store` (legacy alias)
+- `POST /store` (legacy alias)
+- `POST /api/v1/session/rename`
+- `POST /api/session/rename` (legacy alias)
+- `POST /session/rename` (legacy alias)
 - `POST /api/v1/context`
 - `GET /api/v1/nodes?limit=50&sessionId=...&tenantId=...`
+- `GET /api/nodes?limit=50&sessionId=...&tenantId=...` (legacy alias)
+- `GET /nodes?limit=50&sessionId=...&tenantId=...` (legacy alias)
 - `GET /api/v1/graph?limit=1000&sessionId=...&tenantId=...`
+- `GET /api/graph?limit=1000&sessionId=...&tenantId=...` (legacy alias)
+- `GET /graph?limit=1000&sessionId=...&tenantId=...` (legacy alias)
 - `GET /api/v1/moods?targetMood=focused&blend=1`
 - `POST /api/v1/rekey`
 - `POST /api/v1/rollups/monthly`
+
+### BYO Browser CORS
+
+For no-auth BYO usage from browser clients, CORS is enabled with permissive defaults:
+
+- origins: any
+- methods include `GET`, `POST`, `PATCH`, `OPTIONS`
+- headers: any (including `Content-Type`, `Authorization`, tenant headers)
+
+Recommended production setup: set explicit origins with `STTP_GATEWAY_CORS_ALLOWED_ORIGINS`, for example `https://app.resonantia.ai,http://localhost:5173`.
+
+### Node Store Response Compatibility
+
+- `GET /api/v1/nodes` responses include `syncKey` and `syntheticId`.
+- `POST /api/v1/store` responses include:
+  - `duplicateSkipped`
+  - `upsertStatus` (`created` when valid, otherwise `skipped`)
+
+### Session Rename Contract
+
+- Endpoint: `POST /api/v1/session/rename`
+- Aliases: `POST /api/session/rename`, `POST /session/rename`
+- Request JSON:
+
+```json
+{
+  "sourceSessionId": "old-session",
+  "targetSessionId": "new-session",
+  "allowMerge": false
+}
+```
+
+- Response JSON:
+
+```json
+{
+  "sourceSessionId": "old-session",
+  "targetSessionId": "new-session",
+  "movedNodes": 18,
+  "movedCalibrations": 1,
+  "scopesApplied": 1
+}
+```
 
 ### Example: Calibrate
 
