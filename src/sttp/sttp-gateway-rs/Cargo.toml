@@ -17,6 +17,7 @@ surrealdb = { version = "3", default-features = false, features = ["protocol-htt
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
 tonic = { version = "0.12", features = ["transport"] }
 tonic-reflection = "0.12"
+tower-http = { version = "0.6", features = ["cors"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 sttp-core-rs = { path = "../sttp-core-rs" }

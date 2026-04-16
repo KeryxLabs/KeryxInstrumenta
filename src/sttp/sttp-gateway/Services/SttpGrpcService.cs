@@ -16,6 +16,7 @@ public sealed class SttpGrpcService(
     : SttpGatewayService.SttpGatewayServiceBase
 {
     private const string TenantHeader = "x-tenant-id";
+    private static readonly string[] TenantHeaders = ["x-resonantia-tenant", "x-tenant-id", "x-tenant"];
     private const string DefaultTenant = "default";
     private const string TenantScopePrefix = "tenant:";
     private const string TenantScopeSeparator = "::session:";
@@ -304,7 +305,16 @@ public sealed class SttpGrpcService(
     }
 
     private static string ResolveGrpcTenant(Metadata metadata)
-        => NormalizeTenantValue(metadata.GetValue(TenantHeader)) ?? DefaultTenant;
+    {
+        foreach (var header in TenantHeaders)
+        {
+            var resolved = NormalizeTenantValue(metadata.GetValue(header));
+            if (resolved is not null)
+                return resolved;
+        }
+
+        return DefaultTenant;
+    }
 
     private static string? NormalizeTenantValue(string? value)
     {
