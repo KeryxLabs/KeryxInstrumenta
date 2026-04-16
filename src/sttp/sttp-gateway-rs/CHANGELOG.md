@@ -16,6 +16,11 @@ For historical entries before this split, see ../CHANGELOG.md.
 - Updated Node Store HTTP response compatibility:
 	- list nodes now includes `syncKey` and `syntheticId`
 	- store response now includes `duplicateSkipped` and `upsertStatus`
+- Added BYO session rename endpoint support:
+	- `POST /api/v1/session/rename`
+	- aliases: `POST /api/session/rename`, `POST /session/rename`
+	- request fields: `sourceSessionId`, `targetSessionId`, `allowMerge`
+	- response fields: `sourceSessionId`, `targetSessionId`, `movedNodes`, `movedCalibrations`, `scopesApplied`
 
 ## [1.2.3] - 2026-04-14
 

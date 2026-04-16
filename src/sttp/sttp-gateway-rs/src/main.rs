@@ -108,6 +108,7 @@ enum GatewayBackend {
 
 #[derive(Clone)]
 struct AppState {
+    node_store: Arc<dyn NodeStore>,
     calibration: Arc<CalibrationService>,
     context_query: Arc<ContextQueryService>,
     mood_catalog: Arc<MoodCatalogService>,
@@ -204,6 +205,15 @@ struct GraphQuery {
     tenant_id: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameSessionHttpRequest {
+    source_session_id: String,
+    target_session_id: String,
+    tenant_id: Option<String>,
+    allow_merge: Option<bool>,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct AvecStateDto {
@@ -277,6 +287,16 @@ struct StoreResultDto {
     validation_error: Option<String>,
     duplicate_skipped: bool,
     upsert_status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct RenameSessionResultDto {
+    source_session_id: String,
+    target_session_id: String,
+    moved_nodes: usize,
+    moved_calibrations: usize,
+    scopes_applied: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -406,6 +426,9 @@ async fn main() -> Result<()> {
         .route("/api/v1/store", post(store_context_handler))
         .route("/api/store", post(store_context_handler))
         .route("/store", post(store_context_handler))
+        .route("/api/v1/session/rename", post(rename_session_handler))
+        .route("/api/session/rename", post(rename_session_handler))
+        .route("/session/rename", post(rename_session_handler))
         .route("/api/v1/context", post(get_context_handler))
         .route("/api/v1/nodes", get(list_nodes_handler))
         .route("/api/nodes", get(list_nodes_handler))
@@ -507,6 +530,7 @@ async fn build_in_memory_state() -> Result<AppState> {
 
 fn build_services(store_trait: Arc<dyn NodeStore>, validator: Arc<dyn NodeValidator>) -> AppState {
     AppState {
+        node_store: store_trait.clone(),
         calibration: Arc::new(CalibrationService::new(store_trait.clone())),
         context_query: Arc::new(ContextQueryService::new(store_trait.clone())),
         mood_catalog: Arc::new(MoodCatalogService::new()),
@@ -647,6 +671,93 @@ async fn store_context_handler(
         } else {
             "skipped".to_string()
         },
+    }))
+}
+
+async fn rename_session_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<RenameSessionHttpRequest>,
+) -> ApiResult<RenameSessionResultDto> {
+    let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+    let source_session_id = request.source_session_id.trim();
+    let target_session_id = request.target_session_id.trim();
+
+    if source_session_id.is_empty() || target_session_id.is_empty() {
+        return Err(bad_request("sourceSessionId and targetSessionId are required"));
+    }
+
+    if source_session_id == target_session_id {
+        return Ok(Json(RenameSessionResultDto {
+            source_session_id: source_session_id.to_string(),
+            target_session_id: target_session_id.to_string(),
+            moved_nodes: 0,
+            moved_calibrations: 0,
+            scopes_applied: 0,
+        }));
+    }
+
+    let scoped_source_session_id = scope_session_id(&tenant, source_session_id);
+    let scoped_target_session_id = scope_session_id(&tenant, target_session_id);
+
+    let source_nodes = state
+        .node_store
+        .query_nodes_async(core_models::NodeQuery {
+            limit: 10_000,
+            session_id: Some(scoped_source_session_id.clone()),
+            from_utc: None,
+            to_utc: None,
+        })
+        .await
+        .map_err(internal_error)?;
+
+    if source_nodes.is_empty() {
+        return Err(bad_request(format!(
+            "source session not found: {source_session_id}"
+        )));
+    }
+
+    let mut anchor_node_ids = Vec::with_capacity(source_nodes.len());
+    for node in source_nodes {
+        let upsert = state
+            .node_store
+            .upsert_node_async(node)
+            .await
+            .map_err(internal_error)?;
+        anchor_node_ids.push(upsert.node_id);
+    }
+    anchor_node_ids.sort();
+    anchor_node_ids.dedup();
+
+    let rekey_result = state
+        .rekey_scope
+        .rekey_async(
+            anchor_node_ids,
+            &tenant,
+            &scoped_target_session_id,
+            false,
+            request.allow_merge.unwrap_or(false),
+        )
+        .await
+        .map_err(internal_error)?;
+
+    if let Some(conflict) = rekey_result.scopes.iter().find(|scope| scope.conflict) {
+        return Err(bad_request(
+            conflict
+                .message
+                .clone()
+                .unwrap_or_else(|| "target session already exists".to_string()),
+        ));
+    }
+
+    let scopes_applied = rekey_result.scopes.iter().filter(|scope| scope.applied).count();
+
+    Ok(Json(RenameSessionResultDto {
+        source_session_id: source_session_id.to_string(),
+        target_session_id: target_session_id.to_string(),
+        moved_nodes: rekey_result.temporal_nodes_updated,
+        moved_calibrations: rekey_result.calibrations_updated,
+        scopes_applied,
     }))
 }
 

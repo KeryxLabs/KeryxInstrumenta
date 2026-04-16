@@ -67,6 +67,9 @@ Optional local config file:
 - `POST /api/v1/store`
 - `POST /api/store` (legacy alias)
 - `POST /store` (legacy alias)
+- `POST /api/v1/session/rename`
+- `POST /api/session/rename` (legacy alias)
+- `POST /session/rename` (legacy alias)
 - `POST /api/v1/context`
 - `GET /api/v1/nodes?limit=50&sessionId=...`
 - `GET /api/nodes?limit=50&sessionId=...` (legacy alias)
@@ -120,6 +123,32 @@ Good practice for production is to set explicit origins instead of `*`.
 - `POST /api/v1/store` responses include:
   - `duplicateSkipped`
   - `upsertStatus` (`created` when valid, otherwise `skipped`)
+
+### Session Rename Contract
+
+- Endpoint: `POST /api/v1/session/rename`
+- Aliases: `POST /api/session/rename`, `POST /session/rename`
+- Request JSON:
+
+```json
+{
+  "sourceSessionId": "old-session",
+  "targetSessionId": "new-session",
+  "allowMerge": false
+}
+```
+
+- Response JSON:
+
+```json
+{
+  "sourceSessionId": "old-session",
+  "targetSessionId": "new-session",
+  "movedNodes": 18,
+  "movedCalibrations": 1,
+  "scopesApplied": 1
+}
+```
 
 ## Storage And Compatibility
 

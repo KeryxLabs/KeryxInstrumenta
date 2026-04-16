@@ -129,6 +129,9 @@ curl -s 'http://127.0.0.1:8080/api/v1/nodes?limit=50&sessionId=gateway-rust-port
 - `POST /api/v1/store`
 - `POST /api/store` (legacy alias)
 - `POST /store` (legacy alias)
+- `POST /api/v1/session/rename`
+- `POST /api/session/rename` (legacy alias)
+- `POST /session/rename` (legacy alias)
 - `POST /api/v1/context`
 - `GET /api/v1/nodes?limit=50&sessionId=...&tenantId=...`
 - `GET /api/nodes?limit=50&sessionId=...&tenantId=...` (legacy alias)
@@ -156,6 +159,32 @@ Recommended production setup: set explicit origins with `STTP_GATEWAY_CORS_ALLOW
 - `POST /api/v1/store` responses include:
   - `duplicateSkipped`
   - `upsertStatus` (`created` when valid, otherwise `skipped`)
+
+### Session Rename Contract
+
+- Endpoint: `POST /api/v1/session/rename`
+- Aliases: `POST /api/session/rename`, `POST /session/rename`
+- Request JSON:
+
+```json
+{
+  "sourceSessionId": "old-session",
+  "targetSessionId": "new-session",
+  "allowMerge": false
+}
+```
+
+- Response JSON:
+
+```json
+{
+  "sourceSessionId": "old-session",
+  "targetSessionId": "new-session",
+  "movedNodes": 18,
+  "movedCalibrations": 1,
+  "scopesApplied": 1
+}
+```
 
 ### Example: Calibrate
 

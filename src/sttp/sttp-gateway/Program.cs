@@ -133,6 +133,9 @@ app.MapPost("/api/v1/calibrate", async (HttpRequest httpRequest, CalibrateSessio
 app.MapPost("/api/v1/store", StoreContextEndpoint);
 app.MapPost("/api/store", StoreContextEndpoint);
 app.MapPost("/store", StoreContextEndpoint);
+app.MapPost("/api/v1/session/rename", RenameSessionEndpoint);
+app.MapPost("/api/session/rename", RenameSessionEndpoint);
+app.MapPost("/session/rename", RenameSessionEndpoint);
 
 app.MapPost("/api/v1/context", async (HttpRequest httpRequest, GetContextHttpRequest request, ContextQueryService service, CancellationToken ct) =>
 {
@@ -250,6 +253,74 @@ static async Task<IResult> StoreContextEndpoint(HttpRequest httpRequest, StoreCo
         validationError = result.ValidationError,
         duplicateSkipped = false,
         upsertStatus = result.Valid ? "created" : "skipped"
+    });
+}
+
+static async Task<IResult> RenameSessionEndpoint(HttpRequest httpRequest, RenameSessionHttpRequest request, INodeStore store, RekeyScopeService service, CancellationToken ct)
+{
+    var tenant = ResolveHttpTenant(request.TenantId, httpRequest.Headers);
+    var sourceSessionId = request.SourceSessionId?.Trim() ?? string.Empty;
+    var targetSessionId = request.TargetSessionId?.Trim() ?? string.Empty;
+
+    if (string.IsNullOrWhiteSpace(sourceSessionId) || string.IsNullOrWhiteSpace(targetSessionId))
+        return Results.BadRequest(new { error = "sourceSessionId and targetSessionId are required" });
+
+    if (string.Equals(sourceSessionId, targetSessionId, StringComparison.Ordinal))
+    {
+        return Results.Ok(new
+        {
+            sourceSessionId,
+            targetSessionId,
+            movedNodes = 0,
+            movedCalibrations = 0,
+            scopesApplied = 0
+        });
+    }
+
+    var scopedSourceSessionId = ScopeSessionId(tenant, sourceSessionId);
+    var scopedTargetSessionId = ScopeSessionId(tenant, targetSessionId);
+
+    var sourceNodes = await store.QueryNodesAsync(
+        new NodeQuery
+        {
+            Limit = 10_000,
+            SessionId = scopedSourceSessionId
+        },
+        ct);
+
+    if (sourceNodes.Count == 0)
+        return Results.BadRequest(new { error = $"source session not found: {sourceSessionId}" });
+
+    var anchorNodeIds = new List<string>(sourceNodes.Count);
+    foreach (var node in sourceNodes)
+    {
+        var upsert = await store.UpsertNodeAsync(node, ct);
+        anchorNodeIds.Add(upsert.NodeId);
+    }
+    anchorNodeIds = anchorNodeIds
+        .Distinct(StringComparer.Ordinal)
+        .OrderBy(id => id, StringComparer.Ordinal)
+        .ToList();
+
+    var result = await service.RekeyAsync(
+        anchorNodeIds,
+        tenant,
+        scopedTargetSessionId,
+        dryRun: false,
+        allowMerge: request.AllowMerge,
+        ct);
+
+    var conflict = result.Scopes.FirstOrDefault(scope => scope.Conflict);
+    if (conflict is not null)
+        return Results.BadRequest(new { error = conflict.Message ?? "target session already exists" });
+
+    return Results.Ok(new
+    {
+        sourceSessionId,
+        targetSessionId,
+        movedNodes = result.TemporalNodesUpdated,
+        movedCalibrations = result.CalibrationsUpdated,
+        scopesApplied = result.Scopes.Count(scope => scope.Applied)
     });
 }
 
