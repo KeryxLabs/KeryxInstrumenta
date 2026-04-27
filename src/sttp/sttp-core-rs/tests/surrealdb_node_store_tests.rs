@@ -59,6 +59,11 @@ fn build_test_node(session_id: &str) -> SttpNode {
             .expect("timestamp should parse")
             .with_timezone(&Utc),
         source_metadata: None,
+        context_summary: None,
+        embedding: None,
+        embedding_model: None,
+        embedding_dimensions: None,
+        embedded_at: None,
         user_avec: AvecState {
             stability: 0.85,
             friction: 0.25,

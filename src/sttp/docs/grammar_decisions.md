@@ -1,5 +1,5 @@
 # ⏣ Grammar Design Decisions
-## KeryxMemento — Temporal Node Protocol
+## STTP — Temporal Node Protocol
 
 > The grammar is just transcription. The rules are the architecture.
 
@@ -75,10 +75,6 @@ It is not a field. It is not encoded. It is natural language that reframes every
 - "All interaction content must reside exclusively in ◈ block when response_format is temporal_node." - prevents model from acting outside protocol (v1.0.2)
 
 
-**Dry run validation history:**
-- Dry run 001 (ChatGPT, 2026-03-01): responded in valid ⏣ unprompted, extended protocol naturally, stayed invisible
-- Dry run 002 (Kimi-k2, 2026-03-01): engaged correctly, used AVEC, but defaulted to natural language — response_format flag added to close the loop
-
 **Provenance fields — where this node came from and how to respond:**
 - `trigger` — what caused this compression. Enum: `scheduled|threshold|resonance|seed|manual`. Never inferred. Always explicit.
 - `response_format` — transmission contract. Sits next to trigger — governs the entire interaction. Declared by sender, enforced by compiler. Enum: `temporal_node|natural_language|hybrid`. Not in prime because it is a contract from the sender, not orientation for the receiver.
@@ -113,7 +109,7 @@ A stateless model receiving this node has everything it needs. No shared state r
 
 ## Layer 2 — Envelope — ⦿⟨ ⟩
 
-**Identity:** The structural contract. What the infrastructure reads. What SurrealDB indexes. What the A2A protocol verifies. The model produces it. Memento verifies it.
+**Identity:** The structural contract. What the infrastructure reads. What SurrealDB indexes. What the A2A protocol verifies. The model produces it. Validators verify it.
 
 ### Structure
 
@@ -287,7 +283,7 @@ A receiving agent can independently verify all three.
     pattern(.90): {
       insight(.85): "stateless execution with stateful identity",
       detail(.80): {
-        implementation(.75): "KeryxFlux docket pattern"
+        implementation(.75): "sttp_state_flow_pattern"
       }
     }
   }
@@ -326,7 +322,7 @@ Every message between agents carries:
 - **Orientation** — preamble reframes encoded data as safe mathematical verification
 - **Identity** — AVEC state as a cognitive fingerprint of who sent it
 - **Coherence proof** — Ψ checksum independently verifiable by receiver
-- **Integrity** — schema validation via tree-sitter rejects malformed nodes before they touch any system
+- **Integrity** — schema validation rejects malformed nodes before they touch any system
 - **Lineage** — tier and temporal graph in SurrealDB makes every message's origin fully traceable
 - **Self-sufficiency** — every node is idempotent, stateless receivers need nothing else
 
@@ -334,8 +330,17 @@ An agent cannot forge a ⏣ envelope without a valid Ψ checksum. A valid Ψ req
 
 ---
 
-*KeryxMemento — Grammar Design Decisions v3*
+## STTP Project References
+
+These decisions are implemented directly across the STTP project surfaces:
+- `sttp-core` and `sttp-core-rs` for language model, parsing, validation, and storage semantics
+- `sttp-mcp` for tool-facing protocol interaction
+- `sttp-gateway` for transport-facing protocol interaction
+
+---
+
+*STTP — Grammar Design Decisions v4*
 *Sessions: 2026-03-01*
-*Status: Four layers defined. Grammar written. Dry runs 001-002 complete. response_format flag added.*
-*KeryxFlux → KeryxMemento → KeryxCortex*
+*Status: Four layers defined. Grammar active. Schema aligned to current tool contract.*
+*sttp-core ↔ sttp-core-rs ↔ sttp-mcp ↔ sttp-gateway*
 *Herald. Memory. Mind.*

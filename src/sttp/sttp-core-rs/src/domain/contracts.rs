@@ -31,6 +31,25 @@ pub trait NodeStore: Send + Sync {
         limit: usize,
     ) -> Result<Vec<SttpNode>>;
 
+    /// Retrieve nodes using blended AVEC resonance and semantic similarity.
+    ///
+    /// This is additive and backward-compatible with resonance-only callers.
+    /// Implementations should gracefully fall back to AVEC-only ranking when
+    /// embeddings are unavailable.
+    async fn get_by_hybrid_async(
+        &self,
+        session_id: &str,
+        current_avec: AvecState,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let _ = (query_embedding, alpha, beta);
+        self.get_by_resonance_async(session_id, current_avec, limit)
+            .await
+    }
+
     /// List recent nodes with an optional session filter.
     async fn list_nodes_async(
         &self,
@@ -82,6 +101,12 @@ pub trait NodeStore: Send + Sync {
         dry_run: bool,
         allow_merge: bool,
     ) -> Result<BatchRekeyResult>;
+}
+
+#[async_trait]
+pub trait EmbeddingProvider: Send + Sync {
+    fn model_name(&self) -> &str;
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>>;
 }
 
 /// One-time initializer contract for a storage backend.

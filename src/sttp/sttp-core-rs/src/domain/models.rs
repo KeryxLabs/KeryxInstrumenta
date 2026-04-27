@@ -152,6 +152,11 @@ pub struct SttpNode {
     pub sync_key: String,
     pub updated_at: DateTime<Utc>,
     pub source_metadata: Option<ConnectorMetadata>,
+    pub context_summary: Option<String>,
+    pub embedding: Option<Vec<f32>>,
+    pub embedding_model: Option<String>,
+    pub embedding_dimensions: Option<usize>,
+    pub embedded_at: Option<DateTime<Utc>>,
     pub user_avec: AvecState,
     pub model_avec: AvecState,
     pub compression_avec: Option<AvecState>,
@@ -398,6 +403,10 @@ pub struct ParseResult {
     pub success: bool,
     pub node: Option<SttpNode>,
     pub error: Option<String>,
+    pub profile: ParseProfile,
+    pub strict_valid: bool,
+    pub diagnostics: Vec<ParseDiagnostic>,
+    pub canonical_ast: Option<CanonicalAst>,
 }
 
 impl ParseResult {
@@ -406,6 +415,28 @@ impl ParseResult {
             success: true,
             node: Some(node),
             error: None,
+            profile: ParseProfile::Tolerant,
+            strict_valid: true,
+            diagnostics: Vec::new(),
+            canonical_ast: None,
+        }
+    }
+
+    pub fn ok_with_metadata(
+        node: SttpNode,
+        profile: ParseProfile,
+        strict_valid: bool,
+        diagnostics: Vec<ParseDiagnostic>,
+        canonical_ast: Option<CanonicalAst>,
+    ) -> Self {
+        Self {
+            success: true,
+            node: Some(node),
+            error: None,
+            profile,
+            strict_valid,
+            diagnostics,
+            canonical_ast,
         }
     }
 
@@ -414,8 +445,76 @@ impl ParseResult {
             success: false,
             node: None,
             error: Some(error.into()),
+            profile: ParseProfile::Tolerant,
+            strict_valid: false,
+            diagnostics: Vec::new(),
+            canonical_ast: None,
         }
     }
+
+    pub fn fail_with_metadata(
+        error: impl Into<String>,
+        profile: ParseProfile,
+        diagnostics: Vec<ParseDiagnostic>,
+        canonical_ast: Option<CanonicalAst>,
+    ) -> Self {
+        Self {
+            success: false,
+            node: None,
+            error: Some(error.into()),
+            profile,
+            strict_valid: false,
+            diagnostics,
+            canonical_ast,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseProfile {
+    Strict,
+    Tolerant,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseDiagnosticSeverity {
+    Fatal,
+    Error,
+    Warning,
+    Info,
+}
+
+#[derive(Debug, Clone)]
+pub struct ParseDiagnostic {
+    pub code: String,
+    pub message: String,
+    pub severity: ParseDiagnosticSeverity,
+    pub strict_impact: bool,
+    pub span: Option<ParseSpan>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParseSpan {
+    pub start: usize,
+    pub end: usize,
+    pub line: usize,
+    pub column: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct CanonicalAstLayer {
+    pub source: String,
+    pub span: ParseSpan,
+}
+
+#[derive(Debug, Clone)]
+pub struct CanonicalAst {
+    pub provenance: Option<CanonicalAstLayer>,
+    pub envelope: Option<CanonicalAstLayer>,
+    pub content: Option<CanonicalAstLayer>,
+    pub metrics: Option<CanonicalAstLayer>,
+    pub strict_spine: bool,
+    pub profile: ParseProfile,
 }
 
 #[derive(Debug, Clone)]

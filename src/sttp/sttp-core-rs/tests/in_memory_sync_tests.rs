@@ -21,6 +21,11 @@ fn build_test_node(session_id: &str) -> SttpNode {
             .expect("timestamp should parse")
             .with_timezone(&Utc),
         source_metadata: None,
+        context_summary: None,
+        embedding: None,
+        embedding_model: None,
+        embedding_dimensions: None,
+        embedded_at: None,
         user_avec: AvecState {
             stability: 0.85,
             friction: 0.25,
@@ -186,4 +191,62 @@ async fn checkpoints_replace_existing_connector_state() {
         checkpoint.metadata.as_ref().and_then(|metadata| metadata.revision.as_deref()),
         Some("2")
     );
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn hybrid_query_prefers_semantic_match_with_fallback_for_missing_vectors() {
+    let store = InMemoryNodeStore::new();
+
+    let mut left = build_test_node("sync-session");
+    left.sync_key = "sync-left".to_string();
+    left.embedding = Some(vec![1.0, 0.0, 0.0]);
+    left.embedding_dimensions = Some(3);
+    left.embedding_model = Some("test-model".to_string());
+    left.context_summary = Some("left".to_string());
+
+    let mut right = build_test_node("sync-session");
+    right.sync_key = "sync-right".to_string();
+    right.embedding = Some(vec![0.0, 1.0, 0.0]);
+    right.embedding_dimensions = Some(3);
+    right.embedding_model = Some("test-model".to_string());
+    right.context_summary = Some("right".to_string());
+
+    let mut fallback = build_test_node("sync-session");
+    fallback.sync_key = "sync-fallback".to_string();
+    fallback.embedding = None;
+    fallback.context_summary = Some("fallback".to_string());
+
+    store
+        .upsert_node_async(left)
+        .await
+        .expect("left upsert should succeed");
+    store
+        .upsert_node_async(right)
+        .await
+        .expect("right upsert should succeed");
+    store
+        .upsert_node_async(fallback)
+        .await
+        .expect("fallback upsert should succeed");
+
+    let result = store
+        .get_by_hybrid_async(
+            "sync-session",
+            AvecState {
+                stability: 0.85,
+                friction: 0.25,
+                logic: 0.80,
+                autonomy: 0.70,
+            },
+            Some(&[0.0, 1.0, 0.0]),
+            0.5,
+            0.5,
+            3,
+        )
+        .await
+        .expect("hybrid query should succeed");
+
+    assert_eq!(result.len(), 3);
+    assert_eq!(result[0].sync_key, "sync-right");
+    assert!(result.iter().any(|node| node.sync_key == "sync-fallback"));
 }

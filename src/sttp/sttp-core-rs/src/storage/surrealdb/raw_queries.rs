@@ -10,6 +10,11 @@ pub const INIT_SCHEMA_QUERY: &str = r#"
             DEFINE FIELD IF NOT EXISTS sync_key          ON temporal_node TYPE string;
             DEFINE FIELD IF NOT EXISTS updated_at        ON temporal_node TYPE datetime;
             DEFINE FIELD IF NOT EXISTS source_metadata   ON temporal_node TYPE option<object>;
+            DEFINE FIELD IF NOT EXISTS context_summary   ON temporal_node TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS embedding         ON temporal_node TYPE option<array<float>>;
+            DEFINE FIELD IF NOT EXISTS embedding_model   ON temporal_node TYPE option<string>;
+            DEFINE FIELD IF NOT EXISTS embedding_dimensions ON temporal_node TYPE option<int>;
+            DEFINE FIELD IF NOT EXISTS embedded_at       ON temporal_node TYPE option<datetime>;
             DEFINE FIELD IF NOT EXISTS psi               ON temporal_node TYPE float;
             DEFINE FIELD IF NOT EXISTS rho               ON temporal_node TYPE float;
             DEFINE FIELD IF NOT EXISTS kappa             ON temporal_node TYPE float;
@@ -73,6 +78,11 @@ pub fn query_nodes_query(where_clause: &str, capped_limit: usize) -> String {
                 sync_key AS SyncKey,
                 updated_at AS UpdatedAt,
                 source_metadata AS SourceMetadata,
+                context_summary AS ContextSummary,
+                embedding AS Embedding,
+                embedding_model AS EmbeddingModel,
+                embedding_dimensions AS EmbeddingDimensions,
+                embedded_at AS EmbeddedAt,
                 psi AS Psi,
                 rho AS Rho,
                 kappa AS Kappa,
@@ -104,6 +114,7 @@ pub fn create_temporal_node_query(
     record_id: &str,
     include_parent_assignment: bool,
     include_source_metadata_assignment: bool,
+    include_embedding_assignment: bool,
 ) -> String {
     let parent_assignment = if include_parent_assignment {
         "\n                parent_node_id = $parent_node_id,"
@@ -117,6 +128,12 @@ pub fn create_temporal_node_query(
         ""
     };
 
+    let context_summary_assignment = if include_embedding_assignment {
+        "\n                context_summary = $context_summary,\n                embedding = $embedding,\n                embedding_model = $embedding_model,\n                embedding_dimensions = $embedding_dimensions,\n                embedded_at = $embedded_at,"
+    } else {
+        "\n                context_summary = NONE,\n                embedding = NONE,\n                embedding_model = NONE,\n                embedding_dimensions = NONE,\n                embedded_at = NONE,"
+    };
+
     format!(
         r#"
             CREATE temporal_node:`{record_id}` SET
@@ -128,6 +145,7 @@ pub fn create_temporal_node_query(
                 compression_depth = $compression_depth,{parent_assignment}
                 sync_key = $sync_key,
                 updated_at = <datetime>$updated_at,{source_metadata_assignment}
+                {context_summary_assignment}
                 psi = $psi,
                 rho = $rho,
                 kappa = $kappa,
@@ -165,6 +183,11 @@ pub fn get_by_resonance_query(current_psi: f32, limit: usize) -> String {
                 sync_key AS SyncKey,
                 updated_at AS UpdatedAt,
                 source_metadata AS SourceMetadata,
+                context_summary AS ContextSummary,
+                embedding AS Embedding,
+                embedding_model AS EmbeddingModel,
+                embedding_dimensions AS EmbeddingDimensions,
+                embedded_at AS EmbeddedAt,
                 psi AS Psi,
                 rho AS Rho,
                 kappa AS Kappa,
@@ -280,6 +303,11 @@ pub fn query_changes_since_query(limit: usize) -> String {
                 sync_key AS SyncKey,
                 updated_at AS UpdatedAt,
                 source_metadata AS SourceMetadata,
+                context_summary AS ContextSummary,
+                embedding AS Embedding,
+                embedding_model AS EmbeddingModel,
+                embedding_dimensions AS EmbeddingDimensions,
+                embedded_at AS EmbeddedAt,
                 psi AS Psi,
                 rho AS Rho,
                 kappa AS Kappa,

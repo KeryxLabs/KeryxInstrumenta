@@ -335,6 +335,11 @@ impl NodeStore for SurrealDbNodeStore {
 
         let include_parent_assignment = candidate.parent_node_id.is_some();
         let include_source_metadata_assignment = candidate.source_metadata.is_some();
+        let include_embedding_assignment = candidate.context_summary.is_some()
+            || candidate.embedding.is_some()
+            || candidate.embedding_model.is_some()
+            || candidate.embedding_dimensions.is_some()
+            || candidate.embedded_at.is_some();
         let mut parameters = QueryParams::new();
         let tenant_id = derive_tenant_id_from_session(&candidate.session_id);
 
@@ -358,6 +363,40 @@ impl NodeStore for SurrealDbNodeStore {
                 serde_json::to_value(metadata).unwrap_or(Value::Null),
             );
         }
+        parameters.insert(
+            "context_summary".to_string(),
+            candidate
+                .context_summary
+                .clone()
+                .map_or(Value::Null, |value| json!(value)),
+        );
+        parameters.insert(
+            "embedding".to_string(),
+            candidate
+                .embedding
+                .clone()
+                .map_or(Value::Null, |value| json!(value)),
+        );
+        parameters.insert(
+            "embedding_model".to_string(),
+            candidate
+                .embedding_model
+                .clone()
+                .map_or(Value::Null, |value| json!(value)),
+        );
+        parameters.insert(
+            "embedding_dimensions".to_string(),
+            candidate
+                .embedding_dimensions
+                .map_or(Value::Null, |value| json!(value)),
+        );
+        parameters.insert(
+            "embedded_at".to_string(),
+            candidate
+                .embedded_at
+                .map(|value| value.to_rfc3339())
+                .map_or(Value::Null, |value| json!(value)),
+        );
         parameters.insert("psi".to_string(), json!(candidate.psi));
         parameters.insert("rho".to_string(), json!(candidate.rho));
         parameters.insert("kappa".to_string(), json!(candidate.kappa));
@@ -413,6 +452,7 @@ impl NodeStore for SurrealDbNodeStore {
             &record_id,
             include_parent_assignment,
             include_source_metadata_assignment,
+            include_embedding_assignment,
         );
         self.client.raw_query(&query_text, parameters).await?;
 
@@ -442,6 +482,31 @@ impl NodeStore for SurrealDbNodeStore {
         let records: Vec<SurrealNodeRecord> = decode_rows(rows)?;
 
         Ok(records.into_iter().map(map_to_node).collect())
+    }
+
+    async fn get_by_hybrid_async(
+        &self,
+        session_id: &str,
+        current_avec: AvecState,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let candidate_limit = limit.max(1).saturating_mul(5);
+        let mut candidates = self
+            .get_by_resonance_async(session_id, current_avec, candidate_limit)
+            .await?;
+
+        rank_nodes_hybrid(
+            &mut candidates,
+            current_avec,
+            query_embedding,
+            alpha,
+            beta,
+        );
+        candidates.truncate(limit.max(1));
+        Ok(candidates)
     }
 
     async fn list_nodes_async(&self, limit: usize, session_id: Option<&str>) -> Result<Vec<SttpNode>> {
@@ -813,6 +878,11 @@ fn map_to_node(record: SurrealNodeRecord) -> SttpNode {
         sync_key,
         updated_at,
         source_metadata: record.source_metadata,
+        context_summary: record.context_summary,
+        embedding: record.embedding,
+        embedding_model: record.embedding_model,
+        embedding_dimensions: record.embedding_dimensions,
+        embedded_at: record.embedded_at.as_deref().map(parse_timestamp),
         psi: record.psi as f32,
         rho: record.rho as f32,
         kappa: record.kappa as f32,
@@ -841,6 +911,70 @@ fn map_to_node(record: SurrealNodeRecord) -> SttpNode {
     }
 
     node
+}
+
+fn rank_nodes_hybrid(
+    nodes: &mut [SttpNode],
+    current_avec: AvecState,
+    query_embedding: Option<&[f32]>,
+    alpha: f32,
+    beta: f32,
+) {
+    let alpha = alpha.clamp(0.0, 1.0);
+    let beta = beta.clamp(0.0, 1.0);
+    let target_psi = current_avec.psi();
+
+    nodes.sort_by(|left, right| {
+        let left_score = hybrid_score(left, target_psi, query_embedding, alpha, beta);
+        let right_score = hybrid_score(right, target_psi, query_embedding, alpha, beta);
+
+        right_score
+            .total_cmp(&left_score)
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+    });
+}
+
+fn hybrid_score(
+    node: &SttpNode,
+    target_psi: f32,
+    query_embedding: Option<&[f32]>,
+    alpha: f32,
+    beta: f32,
+) -> f32 {
+    let resonance = 1.0 - ((node.psi - target_psi).abs() / 4.0);
+    let resonance = resonance.clamp(0.0, 1.0);
+
+    let semantic = match (query_embedding, node.embedding.as_deref()) {
+        (Some(query), Some(node_vec)) => cosine_similarity(query, node_vec).map(|v| (v + 1.0) / 2.0),
+        _ => None,
+    };
+
+    match semantic {
+        Some(value) => (alpha * resonance + beta * value).clamp(0.0, 1.0),
+        None => resonance,
+    }
+}
+
+fn cosine_similarity(left: &[f32], right: &[f32]) -> Option<f32> {
+    if left.is_empty() || right.is_empty() || left.len() != right.len() {
+        return None;
+    }
+
+    let mut dot = 0.0f32;
+    let mut left_norm = 0.0f32;
+    let mut right_norm = 0.0f32;
+
+    for (l, r) in left.iter().zip(right.iter()) {
+        dot += l * r;
+        left_norm += l * l;
+        right_norm += r * r;
+    }
+
+    if left_norm <= f32::EPSILON || right_norm <= f32::EPSILON {
+        return None;
+    }
+
+    Some(dot / (left_norm.sqrt() * right_norm.sqrt()))
 }
 
 fn map_to_checkpoint(record: &SurrealCheckpointRecord) -> SyncCheckpoint {

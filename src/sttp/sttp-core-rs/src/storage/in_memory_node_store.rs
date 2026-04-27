@@ -90,6 +90,11 @@ impl NodeStore for InMemoryNodeStore {
                 || existing.timestamp != candidate.timestamp
                 || existing.compression_depth != candidate.compression_depth
                 || existing.parent_node_id != candidate.parent_node_id
+                || existing.context_summary != candidate.context_summary
+                || existing.embedding != candidate.embedding
+                || existing.embedding_model != candidate.embedding_model
+                || existing.embedding_dimensions != candidate.embedding_dimensions
+                || existing.embedded_at != candidate.embedded_at
                 || existing.user_avec != candidate.user_avec
                 || existing.model_avec != candidate.model_avec
                 || existing.compression_avec != candidate.compression_avec
@@ -149,6 +154,29 @@ impl NodeStore for InMemoryNodeStore {
         });
         result.truncate(limit);
 
+        Ok(result)
+    }
+
+    async fn get_by_hybrid_async(
+        &self,
+        session_id: &str,
+        current_avec: AvecState,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let nodes = self.nodes.read().await;
+
+        let mut result = nodes
+            .iter()
+            .map(|(_, node)| node)
+            .filter(|n| n.session_id == session_id)
+            .cloned()
+            .collect::<Vec<_>>();
+
+        rank_nodes_hybrid(&mut result, current_avec, query_embedding, alpha, beta);
+        result.truncate(limit.max(1));
         Ok(result)
     }
 
@@ -462,4 +490,68 @@ fn normalize_temporal_node_id(value: &str) -> Option<String> {
 
 fn normalize_metadata(metadata: Option<&ConnectorMetadata>) -> Option<String> {
     metadata.and_then(|value| serde_json::to_string(value).ok())
+}
+
+fn rank_nodes_hybrid(
+    nodes: &mut [SttpNode],
+    current_avec: AvecState,
+    query_embedding: Option<&[f32]>,
+    alpha: f32,
+    beta: f32,
+) {
+    let alpha = alpha.clamp(0.0, 1.0);
+    let beta = beta.clamp(0.0, 1.0);
+    let target_psi = current_avec.psi();
+
+    nodes.sort_by(|left, right| {
+        let left_score = hybrid_score(left, target_psi, query_embedding, alpha, beta);
+        let right_score = hybrid_score(right, target_psi, query_embedding, alpha, beta);
+
+        right_score
+            .total_cmp(&left_score)
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+    });
+}
+
+fn hybrid_score(
+    node: &SttpNode,
+    target_psi: f32,
+    query_embedding: Option<&[f32]>,
+    alpha: f32,
+    beta: f32,
+) -> f32 {
+    let resonance = 1.0 - ((node.psi - target_psi).abs() / 4.0);
+    let resonance = resonance.clamp(0.0, 1.0);
+
+    let semantic = match (query_embedding, node.embedding.as_deref()) {
+        (Some(query), Some(node_vec)) => cosine_similarity(query, node_vec).map(|v| (v + 1.0) / 2.0),
+        _ => None,
+    };
+
+    match semantic {
+        Some(value) => (alpha * resonance + beta * value).clamp(0.0, 1.0),
+        None => resonance,
+    }
+}
+
+fn cosine_similarity(left: &[f32], right: &[f32]) -> Option<f32> {
+    if left.is_empty() || right.is_empty() || left.len() != right.len() {
+        return None;
+    }
+
+    let mut dot = 0.0f32;
+    let mut left_norm = 0.0f32;
+    let mut right_norm = 0.0f32;
+
+    for (l, r) in left.iter().zip(right.iter()) {
+        dot += l * r;
+        left_norm += l * l;
+        right_norm += r * r;
+    }
+
+    if left_norm <= f32::EPSILON || right_norm <= f32::EPSILON {
+        return None;
+    }
+
+    Some(dot / (left_norm.sqrt() * right_norm.sqrt()))
 }
