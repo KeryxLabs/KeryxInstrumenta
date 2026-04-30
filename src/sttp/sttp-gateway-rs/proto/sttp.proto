@@ -93,6 +93,10 @@ message GetContextRequest {
   float logic = 4;
   float autonomy = 5;
   int32 limit = 6;
+  optional string query_text = 7;
+  repeated float query_embedding = 8;
+  optional float alpha = 9;
+  optional float beta = 10;
 }
 
 message GetContextReply {

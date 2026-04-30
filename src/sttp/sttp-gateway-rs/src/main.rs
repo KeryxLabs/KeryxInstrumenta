@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
+use async_trait::async_trait;
 use axum::extract::{Query, State};
 use axum::http::{HeaderMap, HeaderValue, Method, StatusCode};
 use axum::routing::{get, post};
@@ -18,6 +19,21 @@ use tower_http::cors::{Any, CorsLayer};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
+#[cfg(feature = "candle-local")]
+use candle_core::{DType, Device, Tensor};
+#[cfg(feature = "candle-local")]
+use anyhow::Context;
+#[cfg(feature = "candle-local")]
+use candle_nn::VarBuilder;
+#[cfg(feature = "candle-local")]
+use candle_transformers::models::bert::{BertModel, Config};
+#[cfg(feature = "candle-local")]
+use hf_hub::{Repo, RepoType, api::sync::Api};
+#[cfg(feature = "candle-local")]
+use std::sync::Mutex;
+#[cfg(feature = "candle-local")]
+use tokenizers::{PaddingParams, Tokenizer};
+
 mod surreal_client;
 
 use sttp_core_rs::application::services::{
@@ -25,7 +41,9 @@ use sttp_core_rs::application::services::{
     RekeyScopeService, StoreContextService,
 };
 use sttp_core_rs::application::validation::TreeSitterValidator;
-use sttp_core_rs::domain::contracts::{NodeStore, NodeStoreInitializer, NodeValidator};
+use sttp_core_rs::domain::contracts::{
+    EmbeddingProvider, NodeStore, NodeStoreInitializer, NodeValidator,
+};
 use sttp_core_rs::domain::models::{
     self as core_models, ConfidenceBandSummary, MonthlyRollupRequest, NumericRange, PsiRange,
 };
@@ -47,6 +65,8 @@ const DEFAULT_TENANT: &str = "default";
 const TENANT_SCOPE_PREFIX: &str = "tenant:";
 const TENANT_SCOPE_SEPARATOR: &str = "::session:";
 const TENANT_SCAN_LIMIT: usize = 200;
+const DEFAULT_HYBRID_ALPHA: f32 = 0.65;
+const DEFAULT_HYBRID_BETA: f32 = 0.35;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about)]
@@ -98,6 +118,55 @@ struct GatewayArgs {
 
     #[arg(long, env = "STTP_SURREAL_PASSWORD", default_value = "root")]
     surreal_password: String,
+
+    #[arg(long, env = "STTP_GATEWAY_EMBEDDINGS_ENABLED", default_value_t = false)]
+    embeddings_enabled: bool,
+
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_EMBEDDINGS_PROVIDER",
+        value_enum,
+        default_value = "ollama"
+    )]
+    embeddings_provider: EmbeddingsProviderKind,
+
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_EMBEDDINGS_ENDPOINT",
+        default_value = "http://127.0.0.1:11434/api/embeddings"
+    )]
+    embeddings_endpoint: String,
+
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_EMBEDDINGS_MODEL",
+        default_value = "sttp-encoder"
+    )]
+    embeddings_model: String,
+
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_EMBEDDINGS_REPO",
+        default_value = "sentence-transformers/all-MiniLM-L6-v2"
+    )]
+    embeddings_repo: String,
+
+    #[arg(long, env = "STTP_GATEWAY_AVEC_SCORING_ENABLED", default_value_t = false)]
+    avec_scoring_enabled: bool,
+
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_AVEC_SCORING_ENDPOINT",
+        default_value = "http://127.0.0.1:11434/api/chat"
+    )]
+    avec_scoring_endpoint: String,
+
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_AVEC_SCORING_MODEL",
+        default_value = "qwen2.5:0.5b"
+    )]
+    avec_scoring_model: String,
 }
 
 #[derive(Debug, Clone, ValueEnum)]
@@ -106,9 +175,18 @@ enum GatewayBackend {
     Surreal,
 }
 
+#[derive(Debug, Clone, ValueEnum)]
+enum EmbeddingsProviderKind {
+    Ollama,
+    #[cfg(feature = "candle-local")]
+    Candle,
+}
+
 #[derive(Clone)]
 struct AppState {
     node_store: Arc<dyn NodeStore>,
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    avec_scorer: Option<Arc<dyn AvecScorer>>,
     calibration: Arc<CalibrationService>,
     context_query: Arc<ContextQueryService>,
     mood_catalog: Arc<MoodCatalogService>,
@@ -145,6 +223,13 @@ struct StoreContextHttpRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct ScoreAvecHttpRequest {
+    text: String,
+    tenant_id: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct GetContextHttpRequest {
     session_id: String,
     tenant_id: Option<String>,
@@ -153,6 +238,207 @@ struct GetContextHttpRequest {
     logic: f32,
     autonomy: f32,
     limit: Option<usize>,
+    query_text: Option<String>,
+    query_embedding: Option<Vec<f32>>,
+    alpha: Option<f32>,
+    beta: Option<f32>,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaEmbeddingRequest<'a> {
+    model: &'a str,
+    prompt: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaEmbeddingResponse {
+    embedding: Option<Vec<f32>>,
+}
+
+#[derive(Clone)]
+struct OllamaEmbeddingProvider {
+    client: reqwest::Client,
+    endpoint: String,
+    model: String,
+}
+
+impl OllamaEmbeddingProvider {
+    fn new(endpoint: String, model: String) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            endpoint,
+            model,
+        }
+    }
+}
+
+#[async_trait]
+impl EmbeddingProvider for OllamaEmbeddingProvider {
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>> {
+        let response = self
+            .client
+            .post(&self.endpoint)
+            .json(&OllamaEmbeddingRequest {
+                model: &self.model,
+                prompt: text,
+            })
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let body: OllamaEmbeddingResponse = response.json().await?;
+        match body.embedding {
+            Some(embedding) if !embedding.is_empty() => Ok(embedding),
+            _ => Err(anyhow!("embedding response missing vector")),
+        }
+    }
+}
+
+#[cfg(feature = "candle-local")]
+pub struct SttpCandleProvider {
+    model_name: String,
+    runtime: Arc<Mutex<CandleRuntime>>,
+}
+
+#[cfg(feature = "candle-local")]
+impl SttpCandleProvider {
+    pub fn new(model_name: String, repo_id: String) -> Result<Self> {
+        let runtime = CandleRuntime::new(&repo_id)?;
+
+        Ok(Self {
+            model_name: format!("candle-{}", model_name.trim().to_lowercase()),
+            runtime: Arc::new(Mutex::new(runtime)),
+        })
+    }
+}
+
+#[cfg(feature = "candle-local")]
+#[async_trait]
+impl EmbeddingProvider for SttpCandleProvider {
+    fn model_name(&self) -> &str {
+        &self.model_name
+    }
+
+    async fn embed_async(&self, text: &str) -> Result<Vec<f32>> {
+        let runtime = Arc::clone(&self.runtime);
+        let input = text.to_string();
+
+        tokio::task::spawn_blocking(move || {
+            let runtime = runtime
+                .lock()
+                .map_err(|_| anyhow!("Candle runtime lock poisoned"))?;
+            runtime.embed(&input)
+        })
+        .await
+        .context("embedding worker join failure")?
+    }
+}
+
+#[cfg(feature = "candle-local")]
+struct CandleRuntime {
+    model: BertModel,
+    tokenizer: Tokenizer,
+    device: Device,
+}
+
+#[cfg(feature = "candle-local")]
+impl CandleRuntime {
+    fn new(repo_id: &str) -> Result<Self> {
+        let device = Device::Cpu;
+
+        let api = Api::new().context("failed to create HuggingFace API client")?;
+        let repo = api.repo(Repo::new(repo_id.to_string(), RepoType::Model));
+
+        let config_path = repo
+            .get("config.json")
+            .with_context(|| format!("failed to fetch config.json from {repo_id}"))?;
+        let tokenizer_path = repo
+            .get("tokenizer.json")
+            .with_context(|| format!("failed to fetch tokenizer.json from {repo_id}"))?;
+        let weights_path = repo
+            .get("model.safetensors")
+            .with_context(|| format!("failed to fetch model.safetensors from {repo_id}"))?;
+
+        let config: Config = serde_json::from_str(
+            &std::fs::read_to_string(&config_path)
+                .with_context(|| format!("failed to read {}", config_path.display()))?,
+        )
+        .with_context(|| format!("failed to parse {}", config_path.display()))?;
+
+        let mut tokenizer = Tokenizer::from_file(tokenizer_path)
+            .map_err(|err| anyhow!("tokenizer error: {err}"))?;
+        tokenizer.with_padding(Some(PaddingParams {
+            strategy: tokenizers::PaddingStrategy::BatchLongest,
+            ..Default::default()
+        }));
+
+        let vb = unsafe {
+            VarBuilder::from_mmaped_safetensors(&[weights_path], DType::F32, &device)
+                .context("failed to map safetensors weights")?
+        };
+        let model = BertModel::load(vb, &config).context("failed to load BERT model")?;
+
+        Ok(Self {
+            model,
+            tokenizer,
+            device,
+        })
+    }
+
+    fn embed(&self, text: &str) -> Result<Vec<f32>> {
+        let embeddings = self.embed_batch(&[text])?;
+        embeddings
+            .into_iter()
+            .next()
+            .ok_or_else(|| anyhow!("empty embedding output"))
+    }
+
+    fn embed_batch(&self, texts: &[&str]) -> Result<Vec<Vec<f32>>> {
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let encodings = self
+            .tokenizer
+            .encode_batch(texts.to_vec(), true)
+            .map_err(|err| anyhow!("tokenization failed: {err}"))?;
+
+        let seq_len = encodings[0].get_ids().len();
+        let batch_size = texts.len();
+
+        let input_ids: Vec<u32> = encodings.iter().flat_map(|e| e.get_ids().to_vec()).collect();
+        let attention_mask: Vec<u32> = encodings
+            .iter()
+            .flat_map(|e| e.get_attention_mask().to_vec())
+            .collect();
+        let token_type_ids: Vec<u32> = vec![0u32; batch_size * seq_len];
+
+        let input_ids = Tensor::from_vec(input_ids, (batch_size, seq_len), &self.device)?;
+        let attention_mask =
+            Tensor::from_vec(attention_mask, (batch_size, seq_len), &self.device)?;
+        let token_type_ids =
+            Tensor::from_vec(token_type_ids, (batch_size, seq_len), &self.device)?;
+
+        let output = self
+            .model
+            .forward(&input_ids, &token_type_ids, Some(&attention_mask))
+            .context("Candle forward pass failed")?;
+
+        let mask_f32 = attention_mask.to_dtype(DType::F32)?.unsqueeze(2)?;
+        let masked = output.broadcast_mul(&mask_f32)?;
+        let summed = masked.sum(1)?;
+        let counts = mask_f32.sum(1)?;
+        let pooled = summed.broadcast_div(&counts)?;
+
+        let norm = pooled.sqr()?.sum_keepdim(1)?.sqrt()?;
+        let normalized = pooled.broadcast_div(&norm)?;
+
+        Ok(normalized.to_vec2::<f32>()?)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -287,6 +573,114 @@ struct StoreResultDto {
     validation_error: Option<String>,
     duplicate_skipped: bool,
     upsert_status: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ScoreAvecResultDto {
+    provider: String,
+    model: String,
+    avec: AvecStateDto,
+}
+
+#[derive(Debug, Deserialize)]
+struct ParsedAvecScore {
+    stability: f32,
+    friction: f32,
+    logic: f32,
+    autonomy: f32,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaChatRequest<'a> {
+    model: &'a str,
+    messages: Vec<OllamaChatMessage<'a>>,
+    stream: bool,
+    format: Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct OllamaChatMessage<'a> {
+    role: &'a str,
+    content: &'a str,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaChatResponse {
+    message: Option<OllamaChatMessageOwned>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaChatMessageOwned {
+    content: String,
+}
+
+#[async_trait]
+trait AvecScorer: Send + Sync {
+    fn provider_name(&self) -> &str;
+    fn model_name(&self) -> &str;
+    async fn score_async(&self, text: &str) -> Result<core_models::AvecState>;
+}
+
+#[derive(Clone)]
+struct OllamaAvecScorer {
+    client: reqwest::Client,
+    endpoint: String,
+    model: String,
+}
+
+impl OllamaAvecScorer {
+    fn new(endpoint: String, model: String) -> Self {
+        Self {
+            client: reqwest::Client::new(),
+            endpoint,
+            model,
+        }
+    }
+}
+
+#[async_trait]
+impl AvecScorer for OllamaAvecScorer {
+    fn provider_name(&self) -> &str {
+        "ollama"
+    }
+
+    fn model_name(&self) -> &str {
+        &self.model
+    }
+
+    async fn score_async(&self, text: &str) -> Result<core_models::AvecState> {
+        let prompt = "Return ONLY valid compact JSON with numeric fields in [0,1]: stability, friction, logic, autonomy.";
+        let response = self
+            .client
+            .post(&self.endpoint)
+            .json(&OllamaChatRequest {
+                model: &self.model,
+                messages: vec![
+                    OllamaChatMessage {
+                        role: "system",
+                        content: prompt,
+                    },
+                    OllamaChatMessage {
+                        role: "user",
+                        content: text,
+                    },
+                ],
+                stream: false,
+                format: json!("json"),
+            })
+            .send()
+            .await?
+            .error_for_status()?;
+
+        let body: OllamaChatResponse = response.json().await?;
+        let content = body
+            .message
+            .map(|message| message.content)
+            .ok_or_else(|| anyhow!("ollama scoring response missing message content"))?;
+
+        parse_avec_state_from_text(&content)
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -426,6 +820,9 @@ async fn main() -> Result<()> {
         .route("/api/v1/store", post(store_context_handler))
         .route("/api/store", post(store_context_handler))
         .route("/store", post(store_context_handler))
+        .route("/api/v1/avec/score", post(score_avec_handler))
+        .route("/api/avec/score", post(score_avec_handler))
+        .route("/avec/score", post(score_avec_handler))
         .route("/api/v1/session/rename", post(rename_session_handler))
         .route("/api/session/rename", post(rename_session_handler))
         .route("/session/rename", post(rename_session_handler))
@@ -500,7 +897,7 @@ async fn build_state_with_backend(
     options: Option<&GatewayArgs>,
 ) -> Result<AppState> {
     match backend {
-        GatewayBackend::InMemory => build_in_memory_state().await,
+        GatewayBackend::InMemory => build_in_memory_state_with_args(options).await,
         GatewayBackend::Surreal => {
             let options = options.ok_or_else(|| {
                 anyhow!(
@@ -517,6 +914,10 @@ async fn build_state(args: &GatewayArgs) -> Result<AppState> {
 }
 
 async fn build_in_memory_state() -> Result<AppState> {
+    build_in_memory_state_with_args(None).await
+}
+
+async fn build_in_memory_state_with_args(args: Option<&GatewayArgs>) -> Result<AppState> {
     let store = Arc::new(InMemoryNodeStore::new());
 
     let initializer: Arc<dyn NodeStoreInitializer> = store.clone();
@@ -524,20 +925,43 @@ async fn build_in_memory_state() -> Result<AppState> {
 
     let store_trait: Arc<dyn NodeStore> = store;
     let validator: Arc<dyn NodeValidator> = Arc::new(TreeSitterValidator);
+    let embedding_provider = build_embedding_provider(args)?;
+    let avec_scorer = build_avec_scorer(args);
 
-    Ok(build_services(store_trait, validator))
+    Ok(build_services(
+        store_trait,
+        validator,
+        embedding_provider,
+        avec_scorer,
+    ))
 }
 
-fn build_services(store_trait: Arc<dyn NodeStore>, validator: Arc<dyn NodeValidator>) -> AppState {
-    AppState {
-        node_store: store_trait.clone(),
-        calibration: Arc::new(CalibrationService::new(store_trait.clone())),
-        context_query: Arc::new(ContextQueryService::new(store_trait.clone())),
-        mood_catalog: Arc::new(MoodCatalogService::new()),
-        store_context: Arc::new(StoreContextService::new(
+fn build_services(
+    store_trait: Arc<dyn NodeStore>,
+    validator: Arc<dyn NodeValidator>,
+    embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
+    avec_scorer: Option<Arc<dyn AvecScorer>>,
+) -> AppState {
+    let store_context = match embedding_provider.as_ref() {
+        Some(provider) => Arc::new(StoreContextService::with_embedding_provider(
+            store_trait.clone(),
+            validator.clone(),
+            provider.clone(),
+        )),
+        None => Arc::new(StoreContextService::new(
             store_trait.clone(),
             validator.clone(),
         )),
+    };
+
+    AppState {
+        node_store: store_trait.clone(),
+        embedding_provider,
+        avec_scorer,
+        calibration: Arc::new(CalibrationService::new(store_trait.clone())),
+        context_query: Arc::new(ContextQueryService::new(store_trait.clone())),
+        mood_catalog: Arc::new(MoodCatalogService::new()),
+        store_context,
         monthly_rollup: Arc::new(MonthlyRollupService::new(store_trait.clone(), validator)),
         rekey_scope: Arc::new(RekeyScopeService::new(store_trait)),
     }
@@ -597,7 +1021,51 @@ async fn build_surreal_state(args: &GatewayArgs) -> Result<AppState> {
 
     let store_trait: Arc<dyn NodeStore> = store;
     let validator: Arc<dyn NodeValidator> = Arc::new(TreeSitterValidator);
-    Ok(build_services(store_trait, validator))
+    let embedding_provider = build_embedding_provider(Some(args))?;
+    let avec_scorer = build_avec_scorer(Some(args));
+
+    Ok(build_services(
+        store_trait,
+        validator,
+        embedding_provider,
+        avec_scorer,
+    ))
+}
+
+fn build_avec_scorer(args: Option<&GatewayArgs>) -> Option<Arc<dyn AvecScorer>> {
+    let args = args?;
+    if !args.avec_scoring_enabled {
+        return None;
+    }
+
+    Some(Arc::new(OllamaAvecScorer::new(
+        args.avec_scoring_endpoint.clone(),
+        args.avec_scoring_model.clone(),
+    )))
+}
+
+fn build_embedding_provider(args: Option<&GatewayArgs>) -> Result<Option<Arc<dyn EmbeddingProvider>>> {
+    let Some(args) = args else {
+        return Ok(None);
+    };
+
+    if !args.embeddings_enabled {
+        return Ok(None);
+    }
+
+    let provider: Arc<dyn EmbeddingProvider> = match args.embeddings_provider {
+        EmbeddingsProviderKind::Ollama => Arc::new(OllamaEmbeddingProvider::new(
+            args.embeddings_endpoint.clone(),
+            args.embeddings_model.clone(),
+        )),
+        #[cfg(feature = "candle-local")]
+        EmbeddingsProviderKind::Candle => Arc::new(SttpCandleProvider::new(
+            args.embeddings_model.clone(),
+            args.embeddings_repo.clone(),
+        )?),
+    };
+
+    Ok(Some(provider))
 }
 
 async fn shutdown_signal() {
@@ -671,6 +1139,34 @@ async fn store_context_handler(
         } else {
             "skipped".to_string()
         },
+    }))
+}
+
+async fn score_avec_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<ScoreAvecHttpRequest>,
+) -> ApiResult<ScoreAvecResultDto> {
+    let _tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+
+    if request.text.trim().is_empty() {
+        return Err(bad_request("text cannot be empty"));
+    }
+
+    let scorer = state
+        .avec_scorer
+        .as_ref()
+        .ok_or_else(|| bad_request("AVEC scoring is disabled; enable STTP_GATEWAY_AVEC_SCORING_ENABLED"))?;
+
+    let avec = scorer
+        .score_async(request.text.trim())
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(ScoreAvecResultDto {
+        provider: scorer.provider_name().to_string(),
+        model: scorer.model_name().to_string(),
+        avec: to_avec_dto(avec),
     }))
 }
 
@@ -770,17 +1266,47 @@ async fn get_context_handler(
     let scoped_session_id = scope_session_id(&tenant, &request.session_id);
 
     let limit = request.limit.unwrap_or(5);
-    let result = state
-        .context_query
-        .get_context_async(
-            &scoped_session_id,
-            request.stability,
-            request.friction,
-            request.logic,
-            request.autonomy,
-            limit,
-        )
-        .await;
+    let query_embedding = resolve_query_embedding(
+        state.embedding_provider.as_ref(),
+        request.query_text.as_deref(),
+        request.query_embedding.as_deref(),
+    )
+    .await;
+
+    let result = if query_embedding.is_some() {
+        state
+            .context_query
+            .get_context_hybrid_async(
+                &scoped_session_id,
+                request.stability,
+                request.friction,
+                request.logic,
+                request.autonomy,
+                query_embedding.as_deref(),
+                request
+                    .alpha
+                    .unwrap_or(DEFAULT_HYBRID_ALPHA)
+                    .clamp(0.0, 1.0),
+                request
+                    .beta
+                    .unwrap_or(DEFAULT_HYBRID_BETA)
+                    .clamp(0.0, 1.0),
+                limit,
+            )
+            .await
+    } else {
+        state
+            .context_query
+            .get_context_async(
+                &scoped_session_id,
+                request.stability,
+                request.friction,
+                request.logic,
+                request.autonomy,
+                limit,
+            )
+            .await
+    };
 
     Ok(Json(RetrieveResultDto {
         nodes: result.nodes.iter().map(to_node_dto).collect(),
@@ -1439,22 +1965,57 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         let request = request.into_inner();
         let scoped_session_id = scope_session_id(&tenant, &request.session_id);
 
-        let result = self
-            .state
-            .context_query
-            .get_context_async(
-                &scoped_session_id,
-                request.stability,
-                request.friction,
-                request.logic,
-                request.autonomy,
-                if request.limit <= 0 {
-                    5
-                } else {
-                    request.limit as usize
-                },
-            )
-            .await;
+        let query_embedding = resolve_query_embedding(
+            self.state.embedding_provider.as_ref(),
+            request.query_text.as_deref(),
+            if request.query_embedding.is_empty() {
+                None
+            } else {
+                Some(request.query_embedding.as_slice())
+            },
+        )
+        .await;
+
+        let limit = if request.limit <= 0 {
+            5
+        } else {
+            request.limit as usize
+        };
+
+        let result = if query_embedding.is_some() {
+            self.state
+                .context_query
+                .get_context_hybrid_async(
+                    &scoped_session_id,
+                    request.stability,
+                    request.friction,
+                    request.logic,
+                    request.autonomy,
+                    query_embedding.as_deref(),
+                    request
+                        .alpha
+                        .unwrap_or(DEFAULT_HYBRID_ALPHA)
+                        .clamp(0.0, 1.0),
+                    request
+                        .beta
+                        .unwrap_or(DEFAULT_HYBRID_BETA)
+                        .clamp(0.0, 1.0),
+                    limit,
+                )
+                .await
+        } else {
+            self.state
+                .context_query
+                .get_context_async(
+                    &scoped_session_id,
+                    request.stability,
+                    request.friction,
+                    request.logic,
+                    request.autonomy,
+                    limit,
+                )
+                .await
+        };
 
         let nodes = result
             .nodes
@@ -1754,6 +2315,55 @@ fn clamp_usize_to_i32(value: usize) -> i32 {
     }
 }
 
+async fn resolve_query_embedding(
+    embedding_provider: Option<&Arc<dyn EmbeddingProvider>>,
+    query_text: Option<&str>,
+    provided_embedding: Option<&[f32]>,
+) -> Option<Vec<f32>> {
+    if let Some(embedding) = provided_embedding.filter(|embedding| !embedding.is_empty()) {
+        return Some(embedding.to_vec());
+    }
+
+    let text = match query_text.and_then(|text| {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed)
+        }
+    }) {
+        Some(text) => text,
+        None => return None,
+    };
+
+    let provider = embedding_provider?;
+    provider.embed_async(text).await.ok()
+}
+
+fn parse_avec_state_from_text(content: &str) -> Result<core_models::AvecState> {
+    let parsed: ParsedAvecScore = match serde_json::from_str(content) {
+        Ok(value) => value,
+        Err(_) => {
+            let start = content
+                .find('{')
+                .ok_or_else(|| anyhow!("AVEC scorer did not return JSON"))?;
+            let end = content
+                .rfind('}')
+                .ok_or_else(|| anyhow!("AVEC scorer returned malformed JSON"))?;
+            let candidate = &content[start..=end];
+            serde_json::from_str(candidate)
+                .map_err(|err| anyhow!("failed to parse AVEC JSON payload: {err}"))?
+        }
+    };
+
+    Ok(core_models::AvecState {
+        stability: parsed.stability.clamp(0.0, 1.0),
+        friction: parsed.friction.clamp(0.0, 1.0),
+        logic: parsed.logic.clamp(0.0, 1.0),
+        autonomy: parsed.autonomy.clamp(0.0, 1.0),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1777,13 +2387,67 @@ mod tests {
             backend: GatewayBackend::Surreal,
             root_dir_name: ".sttp-gateway".to_string(),
             remote: true,
+            cors_enabled: true,
+            cors_allowed_origins: "*".to_string(),
             surreal_embedded_endpoint: None,
             surreal_remote_endpoint: Some("ws://127.0.0.1:8000/rpc".to_string()),
             surreal_namespace: "keryx".to_string(),
             surreal_database: "sttp-mcp".to_string(),
             surreal_user: "root".to_string(),
             surreal_password: "root".to_string(),
+            embeddings_enabled: false,
+            embeddings_provider: EmbeddingsProviderKind::Ollama,
+            embeddings_endpoint: "http://127.0.0.1:11434/api/embeddings".to_string(),
+            embeddings_model: "sttp-encoder".to_string(),
+            embeddings_repo: "sentence-transformers/all-MiniLM-L6-v2".to_string(),
+            avec_scoring_enabled: false,
+            avec_scoring_endpoint: "http://127.0.0.1:11434/api/chat".to_string(),
+            avec_scoring_model: "qwen2.5:0.5b".to_string(),
         }
+    }
+
+    #[test]
+    fn parse_avec_state_accepts_plain_json() {
+        let value = parse_avec_state_from_text(
+            r#"{"stability":0.8,"friction":0.2,"logic":0.9,"autonomy":0.7}"#,
+        )
+        .expect("plain JSON should parse");
+
+        assert!((value.stability - 0.8).abs() < f32::EPSILON);
+        assert!((value.friction - 0.2).abs() < f32::EPSILON);
+        assert!((value.logic - 0.9).abs() < f32::EPSILON);
+        assert!((value.autonomy - 0.7).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn parse_avec_state_extracts_embedded_json() {
+        let value = parse_avec_state_from_text(
+            "Here is the answer: {\"stability\":1.1,\"friction\":-0.1,\"logic\":0.5,\"autonomy\":0.6}",
+        )
+        .expect("embedded JSON should parse");
+
+        assert!((value.stability - 1.0).abs() < f32::EPSILON);
+        assert!((value.friction - 0.0).abs() < f32::EPSILON);
+        assert!((value.logic - 0.5).abs() < f32::EPSILON);
+        assert!((value.autonomy - 0.6).abs() < f32::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn score_avec_returns_bad_request_when_disabled() {
+        let state = Arc::new(build_in_memory_state().await.expect("state should build"));
+
+        let err = score_avec_handler(
+            State(state),
+            HeaderMap::new(),
+            Json(ScoreAvecHttpRequest {
+                text: "hello world".to_string(),
+                tenant_id: None,
+            }),
+        )
+        .await
+        .expect_err("scoring should fail when disabled");
+
+        assert_eq!(err.0, StatusCode::BAD_REQUEST);
     }
 
     #[test]
@@ -1877,6 +2541,10 @@ mod tests {
                 logic: 0.80,
                 autonomy: 0.70,
                 limit: Some(5),
+                query_text: Some("gateway parser check".to_string()),
+                query_embedding: None,
+                alpha: None,
+                beta: None,
             }),
         )
         .await
@@ -1951,5 +2619,24 @@ mod tests {
             .nodes
             .iter()
             .any(|node| node.session_id == session_id));
+
+        let context_reply = service
+            .get_context(Request::new(proto::GetContextRequest {
+                session_id: session_id.to_string(),
+                stability: 0.8,
+                friction: 0.2,
+                logic: 0.8,
+                autonomy: 0.7,
+                limit: 5,
+                query_text: None,
+                query_embedding: vec![0.1, 0.2, 0.3],
+                alpha: Some(0.7),
+                beta: Some(0.3),
+            }))
+            .await
+            .expect("gRPC get_context should succeed")
+            .into_inner();
+
+        assert!(context_reply.retrieved >= 1);
     }
 }
