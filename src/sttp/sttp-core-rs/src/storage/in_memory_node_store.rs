@@ -1,5 +1,6 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -19,6 +20,20 @@ struct CalibrationRecord {
     avec: AvecState,
 }
 
+fn normalize_tiers(tiers: Option<&[String]>) -> Option<Vec<String>> {
+    let normalized = tiers
+        .unwrap_or(&[])
+        .iter()
+        .map(|tier| tier.trim().to_ascii_lowercase())
+        .filter(|tier| !tier.is_empty())
+        .collect::<Vec<_>>();
+
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
 #[derive(Debug, Default)]
 pub struct InMemoryNodeStore {
     nodes: RwLock<Vec<(String, SttpNode)>>,
@@ -57,6 +72,13 @@ impl NodeStore for InMemoryNodeStore {
             })
             .filter(|n| query.from_utc.map(|from| n.timestamp >= from).unwrap_or(true))
             .filter(|n| query.to_utc.map(|to| n.timestamp <= to).unwrap_or(true))
+            .filter(|n| {
+                query
+                    .tiers
+                    .as_ref()
+                    .map(|tiers| tiers.iter().any(|tier| n.tier.eq_ignore_ascii_case(tier)))
+                    .unwrap_or(true)
+            })
             .cloned()
             .collect::<Vec<_>>();
 
@@ -136,23 +158,57 @@ impl NodeStore for InMemoryNodeStore {
         &self,
         session_id: &str,
         current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
         limit: usize,
     ) -> Result<Vec<SttpNode>> {
-        let nodes = self.nodes.read().await;
-
-        let mut result = nodes
-            .iter()
-            .map(|(_, node)| node)
-            .filter(|n| n.session_id == session_id)
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut result = self
+            .query_nodes_async(NodeQuery {
+                limit: usize::MAX,
+                session_id: Some(session_id.to_string()),
+                from_utc,
+                to_utc,
+                tiers: normalize_tiers(tiers),
+            })
+            .await?;
 
         result.sort_by(|a, b| {
-            let ad = (a.psi - current_avec.psi()).abs();
-            let bd = (b.psi - current_avec.psi()).abs();
+            let ad = avec_distance(&a.model_avec, &current_avec);
+            let bd = avec_distance(&b.model_avec, &current_avec);
             ad.total_cmp(&bd)
+                .then_with(|| b.updated_at.cmp(&a.updated_at))
         });
-        result.truncate(limit);
+        result.truncate(limit.max(1));
+
+        Ok(result)
+    }
+
+    async fn get_by_resonance_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let mut result = self
+            .query_nodes_async(NodeQuery {
+                limit: usize::MAX,
+                session_id: None,
+                from_utc,
+                to_utc,
+                tiers: normalize_tiers(tiers),
+            })
+            .await?;
+
+        result.sort_by(|a, b| {
+            let ad = avec_distance(&a.model_avec, &current_avec);
+            let bd = avec_distance(&b.model_avec, &current_avec);
+            ad.total_cmp(&bd)
+                .then_with(|| b.updated_at.cmp(&a.updated_at))
+        });
+        result.truncate(limit.max(1));
 
         Ok(result)
     }
@@ -161,19 +217,49 @@ impl NodeStore for InMemoryNodeStore {
         &self,
         session_id: &str,
         current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
         query_embedding: Option<&[f32]>,
         alpha: f32,
         beta: f32,
         limit: usize,
     ) -> Result<Vec<SttpNode>> {
-        let nodes = self.nodes.read().await;
+        let mut result = self
+            .query_nodes_async(NodeQuery {
+                limit: usize::MAX,
+                session_id: Some(session_id.to_string()),
+                from_utc,
+                to_utc,
+                tiers: normalize_tiers(tiers),
+            })
+            .await?;
 
-        let mut result = nodes
-            .iter()
-            .map(|(_, node)| node)
-            .filter(|n| n.session_id == session_id)
-            .cloned()
-            .collect::<Vec<_>>();
+        rank_nodes_hybrid(&mut result, current_avec, query_embedding, alpha, beta);
+        result.truncate(limit.max(1));
+        Ok(result)
+    }
+
+    async fn get_by_hybrid_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let mut result = self
+            .query_nodes_async(NodeQuery {
+                limit: usize::MAX,
+                session_id: None,
+                from_utc,
+                to_utc,
+                tiers: normalize_tiers(tiers),
+            })
+            .await?;
 
         rank_nodes_hybrid(&mut result, current_avec, query_embedding, alpha, beta);
         result.truncate(limit.max(1));
@@ -186,6 +272,7 @@ impl NodeStore for InMemoryNodeStore {
             session_id: session_id.map(|s| s.to_string()),
             from_utc: None,
             to_utc: None,
+            tiers: None,
         })
         .await
     }
@@ -501,11 +588,10 @@ fn rank_nodes_hybrid(
 ) {
     let alpha = alpha.clamp(0.0, 1.0);
     let beta = beta.clamp(0.0, 1.0);
-    let target_psi = current_avec.psi();
 
     nodes.sort_by(|left, right| {
-        let left_score = hybrid_score(left, target_psi, query_embedding, alpha, beta);
-        let right_score = hybrid_score(right, target_psi, query_embedding, alpha, beta);
+        let left_score = hybrid_score(left, current_avec, query_embedding, alpha, beta);
+        let right_score = hybrid_score(right, current_avec, query_embedding, alpha, beta);
 
         right_score
             .total_cmp(&left_score)
@@ -515,12 +601,12 @@ fn rank_nodes_hybrid(
 
 fn hybrid_score(
     node: &SttpNode,
-    target_psi: f32,
+    target_avec: AvecState,
     query_embedding: Option<&[f32]>,
     alpha: f32,
     beta: f32,
 ) -> f32 {
-    let resonance = 1.0 - ((node.psi - target_psi).abs() / 4.0);
+    let resonance = 1.0 - avec_distance(&node.model_avec, &target_avec);
     let resonance = resonance.clamp(0.0, 1.0);
 
     let semantic = match (query_embedding, node.embedding.as_deref()) {
@@ -532,6 +618,14 @@ fn hybrid_score(
         Some(value) => (alpha * resonance + beta * value).clamp(0.0, 1.0),
         None => resonance,
     }
+}
+
+fn avec_distance(left: &AvecState, right: &AvecState) -> f32 {
+    ((left.stability - right.stability).abs()
+        + (left.friction - right.friction).abs()
+        + (left.logic - right.logic).abs()
+        + (left.autonomy - right.autonomy).abs())
+        / 4.0
 }
 
 fn cosine_similarity(left: &[f32], right: &[f32]) -> Option<f32> {

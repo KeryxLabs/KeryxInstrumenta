@@ -247,6 +247,7 @@ async fn query_nodes_maps_result_rows_to_domain_nodes() {
             session_id: Some("s1".to_string()),
             from_utc: None,
             to_utc: None,
+            tiers: None,
         })
         .await
         .expect("query should succeed");

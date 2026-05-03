@@ -40,6 +40,7 @@ impl MonthlyRollupService {
                 from_utc: Some(request.start_utc),
                 to_utc: Some(request.end_utc),
                 limit: request.limit,
+                tiers: None,
             })
             .await
         {

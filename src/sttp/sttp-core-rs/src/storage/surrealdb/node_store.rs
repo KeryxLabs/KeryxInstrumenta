@@ -238,14 +238,14 @@ impl NodeStore for SurrealDbNodeStore {
             parameters.insert("session_id".to_string(), json!(session_id));
         }
 
-        if let Some(from_utc) = query.from_utc {
-            clauses.push("timestamp >= <datetime>$from_utc".to_string());
-            parameters.insert("from_utc".to_string(), json!(from_utc.to_rfc3339()));
-        }
-
-        if let Some(to_utc) = query.to_utc {
-            clauses.push("timestamp <= <datetime>$to_utc".to_string());
-            parameters.insert("to_utc".to_string(), json!(to_utc.to_rfc3339()));
+        let additional_predicate = build_retrieval_predicate(
+            query.from_utc,
+            query.to_utc,
+            query.tiers.as_deref(),
+            &mut parameters,
+        );
+        if !additional_predicate.is_empty() {
+            clauses.push(additional_predicate);
         }
 
         let where_clause = if clauses.is_empty() {
@@ -335,11 +335,16 @@ impl NodeStore for SurrealDbNodeStore {
 
         let include_parent_assignment = candidate.parent_node_id.is_some();
         let include_source_metadata_assignment = candidate.source_metadata.is_some();
-        let include_embedding_assignment = candidate.context_summary.is_some()
-            || candidate.embedding.is_some()
-            || candidate.embedding_model.is_some()
-            || candidate.embedding_dimensions.is_some()
+        let include_context_summary_assignment = candidate.context_summary.is_some();
+        let include_embedding_vector_assignment = candidate.embedding.is_some();
+        let include_embedding_model_assignment = candidate.embedding_model.is_some();
+        let include_embedding_dimensions_assignment = candidate.embedding_dimensions.is_some();
+        let include_embedding_assignment = include_context_summary_assignment
+            || include_embedding_vector_assignment
+            || include_embedding_model_assignment
+            || include_embedding_dimensions_assignment
             || candidate.embedded_at.is_some();
+        let include_embedded_at_assignment = candidate.embedded_at.is_some();
         let mut parameters = QueryParams::new();
         let tenant_id = derive_tenant_id_from_session(&candidate.session_id);
 
@@ -453,6 +458,11 @@ impl NodeStore for SurrealDbNodeStore {
             include_parent_assignment,
             include_source_metadata_assignment,
             include_embedding_assignment,
+            include_context_summary_assignment,
+            include_embedding_vector_assignment,
+            include_embedding_model_assignment,
+            include_embedding_dimensions_assignment,
+            include_embedded_at_assignment,
         );
         self.client.raw_query(&query_text, parameters).await?;
 
@@ -468,10 +478,22 @@ impl NodeStore for SurrealDbNodeStore {
         &self,
         session_id: &str,
         current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
         limit: usize,
     ) -> Result<Vec<SttpNode>> {
-        let query_text = raw_queries::get_by_resonance_query(current_avec.psi(), limit.max(1));
         let mut parameters = QueryParams::new();
+        let additional_predicate =
+            build_retrieval_predicate(from_utc, to_utc, tiers, &mut parameters);
+        let query_text = raw_queries::get_by_resonance_query(
+            current_avec.stability,
+            current_avec.friction,
+            current_avec.logic,
+            current_avec.autonomy,
+            &additional_predicate,
+            limit.max(1),
+        );
         parameters.insert(
             "tenant_id".to_string(),
             json!(derive_tenant_id_from_session(session_id)),
@@ -484,10 +506,38 @@ impl NodeStore for SurrealDbNodeStore {
         Ok(records.into_iter().map(map_to_node).collect())
     }
 
+    async fn get_by_resonance_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let mut parameters = QueryParams::new();
+        let additional_predicate =
+            build_retrieval_predicate(from_utc, to_utc, tiers, &mut parameters);
+        let query_text = raw_queries::get_by_resonance_global_query(
+            current_avec.stability,
+            current_avec.friction,
+            current_avec.logic,
+            current_avec.autonomy,
+            &additional_predicate,
+            limit.max(1),
+        );
+        let rows = self.client.raw_query(&query_text, parameters).await?;
+        let records: Vec<SurrealNodeRecord> = decode_rows(rows)?;
+
+        Ok(records.into_iter().map(map_to_node).collect())
+    }
+
     async fn get_by_hybrid_async(
         &self,
         session_id: &str,
         current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
         query_embedding: Option<&[f32]>,
         alpha: f32,
         beta: f32,
@@ -495,7 +545,41 @@ impl NodeStore for SurrealDbNodeStore {
     ) -> Result<Vec<SttpNode>> {
         let candidate_limit = limit.max(1).saturating_mul(5);
         let mut candidates = self
-            .get_by_resonance_async(session_id, current_avec, candidate_limit)
+            .get_by_resonance_async(
+                session_id,
+                current_avec,
+                from_utc,
+                to_utc,
+                tiers,
+                candidate_limit,
+            )
+            .await?;
+
+        rank_nodes_hybrid(
+            &mut candidates,
+            current_avec,
+            query_embedding,
+            alpha,
+            beta,
+        );
+        candidates.truncate(limit.max(1));
+        Ok(candidates)
+    }
+
+    async fn get_by_hybrid_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let candidate_limit = limit.max(1).saturating_mul(5);
+        let mut candidates = self
+            .get_by_resonance_global_async(current_avec, from_utc, to_utc, tiers, candidate_limit)
             .await?;
 
         rank_nodes_hybrid(
@@ -515,6 +599,7 @@ impl NodeStore for SurrealDbNodeStore {
             session_id: session_id.map(|s| s.to_string()),
             from_utc: None,
             to_utc: None,
+            tiers: None,
         })
         .await
     }
@@ -922,11 +1007,10 @@ fn rank_nodes_hybrid(
 ) {
     let alpha = alpha.clamp(0.0, 1.0);
     let beta = beta.clamp(0.0, 1.0);
-    let target_psi = current_avec.psi();
 
     nodes.sort_by(|left, right| {
-        let left_score = hybrid_score(left, target_psi, query_embedding, alpha, beta);
-        let right_score = hybrid_score(right, target_psi, query_embedding, alpha, beta);
+        let left_score = hybrid_score(left, current_avec, query_embedding, alpha, beta);
+        let right_score = hybrid_score(right, current_avec, query_embedding, alpha, beta);
 
         right_score
             .total_cmp(&left_score)
@@ -936,12 +1020,12 @@ fn rank_nodes_hybrid(
 
 fn hybrid_score(
     node: &SttpNode,
-    target_psi: f32,
+    target_avec: AvecState,
     query_embedding: Option<&[f32]>,
     alpha: f32,
     beta: f32,
 ) -> f32 {
-    let resonance = 1.0 - ((node.psi - target_psi).abs() / 4.0);
+    let resonance = 1.0 - avec_distance(&node.model_avec, &target_avec);
     let resonance = resonance.clamp(0.0, 1.0);
 
     let semantic = match (query_embedding, node.embedding.as_deref()) {
@@ -953,6 +1037,14 @@ fn hybrid_score(
         Some(value) => (alpha * resonance + beta * value).clamp(0.0, 1.0),
         None => resonance,
     }
+}
+
+fn avec_distance(left: &AvecState, right: &AvecState) -> f32 {
+    ((left.stability - right.stability).abs()
+        + (left.friction - right.friction).abs()
+        + (left.logic - right.logic).abs()
+        + (left.autonomy - right.autonomy).abs())
+        / 4.0
 }
 
 fn cosine_similarity(left: &[f32], right: &[f32]) -> Option<f32> {
@@ -1053,6 +1145,48 @@ fn value_to_record_component(value: &Value) -> Option<String> {
         Value::Bool(v) => Some(v.to_string()),
         _ => None,
     }
+}
+
+fn build_retrieval_predicate(
+    from_utc: Option<DateTime<Utc>>,
+    to_utc: Option<DateTime<Utc>>,
+    tiers: Option<&[String]>,
+    parameters: &mut QueryParams,
+) -> String {
+    let mut clauses = Vec::new();
+
+    if let Some(from_utc) = from_utc {
+        clauses.push("timestamp >= <datetime>$from_utc".to_string());
+        parameters.insert("from_utc".to_string(), json!(from_utc.to_rfc3339()));
+    }
+
+    if let Some(to_utc) = to_utc {
+        clauses.push("timestamp <= <datetime>$to_utc".to_string());
+        parameters.insert("to_utc".to_string(), json!(to_utc.to_rfc3339()));
+    }
+
+    let normalized_tiers = tiers
+        .unwrap_or(&[])
+        .iter()
+        .map(|tier| tier.trim().to_ascii_lowercase())
+        .filter(|tier| !tier.is_empty())
+        .collect::<Vec<_>>();
+
+    if !normalized_tiers.is_empty() {
+        let tier_clauses = normalized_tiers
+            .iter()
+            .enumerate()
+            .map(|(idx, tier)| {
+                let key = format!("tier_{idx}");
+                parameters.insert(key.clone(), json!(tier));
+                format!("string::lowercase(tier) = ${key}")
+            })
+            .collect::<Vec<_>>();
+
+        clauses.push(format!("({})", tier_clauses.join(" OR ")));
+    }
+
+    clauses.join(" AND ")
 }
 
 fn derive_tenant_id_from_session(session_id: &str) -> String {

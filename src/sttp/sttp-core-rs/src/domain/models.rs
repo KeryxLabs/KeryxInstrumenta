@@ -297,6 +297,7 @@ pub struct NodeQuery {
     pub session_id: Option<String>,
     pub from_utc: Option<DateTime<Utc>>,
     pub to_utc: Option<DateTime<Utc>>,
+    pub tiers: Option<Vec<String>>,
 }
 
 impl Default for NodeQuery {
@@ -306,6 +307,7 @@ impl Default for NodeQuery {
             session_id: None,
             from_utc: None,
             to_utc: None,
+            tiers: None,
         }
     }
 }

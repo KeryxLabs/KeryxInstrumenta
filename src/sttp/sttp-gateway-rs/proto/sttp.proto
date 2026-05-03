@@ -9,6 +9,7 @@ service SttpGatewayService {
   rpc CalibrateSession (CalibrateSessionRequest) returns (CalibrateSessionReply);
   rpc StoreContext (StoreContextRequest) returns (StoreContextReply);
   rpc GetContext (GetContextRequest) returns (GetContextReply);
+  rpc GetEmbeddingContext (GetEmbeddingContextRequest) returns (GetContextReply);
   rpc ListNodes (ListNodesRequest) returns (ListNodesReply);
   rpc GetMoods (GetMoodsRequest) returns (GetMoodsReply);
   rpc BatchRekey (BatchRekeyRequest) returns (BatchRekeyReply);
@@ -97,12 +98,35 @@ message GetContextRequest {
   repeated float query_embedding = 8;
   optional float alpha = 9;
   optional float beta = 10;
+  optional google.protobuf.Timestamp from_utc = 11;
+  optional google.protobuf.Timestamp to_utc = 12;
+  repeated string tiers = 13;
 }
 
 message GetContextReply {
   repeated SttpNode nodes = 1;
   int32 retrieved = 2;
   PsiRange psi_range = 3;
+}
+
+message GetEmbeddingContextRequest {
+  string session_id = 1;
+  float stability = 2;
+  float friction = 3;
+  float logic = 4;
+  float autonomy = 5;
+  int32 limit = 6;
+  optional string rag_query_text = 7;
+  repeated float rag_embedding = 8;
+  optional string avec_query_text = 9;
+  repeated float avec_embedding = 10;
+  optional float rag_weight = 11;
+  optional float avec_weight = 12;
+  optional float alpha = 13;
+  optional float beta = 14;
+  optional google.protobuf.Timestamp from_utc = 15;
+  optional google.protobuf.Timestamp to_utc = 16;
+  repeated string tiers = 17;
 }
 
 message ListNodesRequest {

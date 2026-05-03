@@ -7,6 +7,29 @@ For historical entries before this split, see ../CHANGELOG.md.
 
 ### Changed
 
+- Refactored gateway structure to reduce `main.rs` responsibilities and improve single-focus iteration:
+	- extracted startup/state composition and CORS parsing to `src/orchestration.rs`
+	- extracted gateway configuration models to `src/gateway_args.rs`
+	- extracted app state wiring to `src/app_state.rs`
+	- extracted HTTP request/response DTOs to `src/http_models.rs`
+	- extracted embedding + AVEC provider logic to `src/providers.rs`
+	- extracted tenant scoping/normalization helpers to `src/tenant.rs`
+- Introduced a thin entrypoint design:
+	- `src/main.rs` now acts as composition root and delegates runtime execution
+	- runtime transport implementation moved to `src/gateway.rs` via `gateway::run()`
+- Preserved behavior while modularizing:
+	- HTTP/gRPC route surface and compatibility aliases remain unchanged
+	- default and `candle-local` test paths remained green through the refactor
+- Added embedding-focused retrieval endpoint for hybrid RAG + AVEC vector queries:
+	- `POST /api/v1/context/embeddings`
+	- aliases: `POST /api/context/embeddings`, `POST /context/embeddings`
+	- accepts separate RAG and AVEC embeddings (or query text), fuses with configurable weights, then executes hybrid context retrieval
+	- validates dimension mismatches and returns `400` for invalid embedding combinations
+- Added gRPC parity for embedding-focused retrieval:
+	- `GetEmbeddingContext(GetEmbeddingContextRequest) -> GetContextReply`
+	- supports separate RAG and AVEC embeddings/text with weighted fusion before hybrid retrieval
+	- returns `INVALID_ARGUMENT` for invalid embedding combinations (for example, mismatched dimensions)
+
 - Added Resonantia BYO Node Store compatibility aliases for HTTP endpoints:
 	- `POST /api/store`, `POST /store` -> `POST /api/v1/store`
 	- `GET /api/nodes`, `GET /nodes` -> `GET /api/v1/nodes`

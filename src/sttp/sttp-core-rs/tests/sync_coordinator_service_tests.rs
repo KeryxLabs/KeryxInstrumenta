@@ -182,6 +182,7 @@ async fn coordinator_pages_changes_and_advances_checkpoint_without_owning_policy
             session_id: Some("sync-session".to_string()),
             from_utc: None,
             to_utc: None,
+            tiers: None,
         })
         .await
         .expect("query should succeed");

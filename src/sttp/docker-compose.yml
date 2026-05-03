@@ -1,16 +1,20 @@
 services:
   gateway:
-    image: ghcr.io/keryxlabs/sttp-gateway:1.2.4
-    command:
-      - --remote
-      - --remote-endpoint
-      - "ws://10.12.0.11:9096/rpc"
-      - --username
-      - root
-      - --password
-      - root
-      - --database
-      - sttp_mcp
+    image: ghcr.io/keryxlabs/sttp-gateway-rs:${STTP_GATEWAY_IMAGE_TAG:-2.0.0-beta.0}
+    environment:
+      STTP_GATEWAY_BACKEND: "${STTP_GATEWAY_BACKEND:-surreal}"
+      STTP_GATEWAY_REMOTE: "${STTP_GATEWAY_REMOTE:-true}"
+      STTP_GATEWAY_HTTP_PORT: "${STTP_GATEWAY_HTTP_PORT:-8080}"
+      STTP_GATEWAY_GRPC_PORT: "${STTP_GATEWAY_GRPC_PORT:-8081}"
+      STTP_GATEWAY_CORS_ENABLED: "${STTP_GATEWAY_CORS_ENABLED:-true}"
+      STTP_GATEWAY_CORS_ALLOWED_ORIGINS: "${STTP_GATEWAY_CORS_ALLOWED_ORIGINS:-*}"
+      STTP_SURREAL_REMOTE_ENDPOINT: "${STTP_SURREAL_REMOTE_ENDPOINT:-ws://10.12.0.11:1908/rpc}"
+      STTP_SURREAL_NAMESPACE: "${STTP_SURREAL_NAMESPACE:-keryx}"
+      STTP_SURREAL_DATABASE: "${STTP_SURREAL_DATABASE:-sttp_mcp_test}"
+      STTP_SURREAL_USER: "${STTP_SURREAL_USER:-root}"
+      STTP_SURREAL_PASSWORD: "${STTP_SURREAL_PASSWORD:-root}"
+      STTP_GATEWAY_EMBEDDINGS_ENABLED: "${STTP_GATEWAY_EMBEDDINGS_ENABLED:-false}"
+      STTP_GATEWAY_AVEC_SCORING_ENABLED: "${STTP_GATEWAY_AVEC_SCORING_ENABLED:-false}"
     ports:
       - "8080:8080"   # HTTP API
       - "8081:8081"   # gRPC

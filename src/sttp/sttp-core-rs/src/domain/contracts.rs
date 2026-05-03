@@ -1,5 +1,6 @@
 use anyhow::Result;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 
 use crate::domain::models::{
     AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
@@ -28,6 +29,19 @@ pub trait NodeStore: Send + Sync {
         &self,
         session_id: &str,
         current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>>;
+
+    /// Retrieve nodes ordered by resonance across all sessions.
+    async fn get_by_resonance_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
         limit: usize,
     ) -> Result<Vec<SttpNode>>;
 
@@ -40,13 +54,40 @@ pub trait NodeStore: Send + Sync {
         &self,
         session_id: &str,
         current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
         query_embedding: Option<&[f32]>,
         alpha: f32,
         beta: f32,
         limit: usize,
     ) -> Result<Vec<SttpNode>> {
         let _ = (query_embedding, alpha, beta);
-        self.get_by_resonance_async(session_id, current_avec, limit)
+        self.get_by_resonance_async(
+            session_id,
+            current_avec,
+            from_utc,
+            to_utc,
+            tiers,
+            limit,
+        )
+            .await
+    }
+
+    /// Retrieve nodes using blended AVEC resonance and semantic similarity across all sessions.
+    async fn get_by_hybrid_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let _ = (query_embedding, alpha, beta);
+        self.get_by_resonance_global_async(current_avec, from_utc, to_utc, tiers, limit)
             .await
     }
 

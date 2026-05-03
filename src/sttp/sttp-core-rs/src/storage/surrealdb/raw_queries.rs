@@ -56,6 +56,8 @@ pub const INIT_SCHEMA_QUERY: &str = r#"
 
             DEFINE INDEX IF NOT EXISTS idx_node_session ON temporal_node FIELDS session_id;
             DEFINE INDEX IF NOT EXISTS idx_node_tenant_session ON temporal_node FIELDS tenant_id, session_id;
+            DEFINE INDEX IF NOT EXISTS idx_node_tier ON temporal_node FIELDS tier;
+            DEFINE INDEX IF NOT EXISTS idx_node_timestamp ON temporal_node FIELDS timestamp;
             DEFINE INDEX IF NOT EXISTS idx_node_change_cursor ON temporal_node FIELDS tenant_id, session_id, updated_at, sync_key;
             DEFINE INDEX IF NOT EXISTS idx_node_sync_identity ON temporal_node FIELDS tenant_id, session_id, sync_key UNIQUE;
             DEFINE INDEX IF NOT EXISTS idx_cal_session ON calibration FIELDS session_id;
@@ -115,6 +117,11 @@ pub fn create_temporal_node_query(
     include_parent_assignment: bool,
     include_source_metadata_assignment: bool,
     include_embedding_assignment: bool,
+    include_context_summary_assignment: bool,
+    include_embedding_vector_assignment: bool,
+    include_embedding_model_assignment: bool,
+    include_embedding_dimensions_assignment: bool,
+    include_embedded_at_assignment: bool,
 ) -> String {
     let parent_assignment = if include_parent_assignment {
         "\n                parent_node_id = $parent_node_id,"
@@ -129,9 +136,37 @@ pub fn create_temporal_node_query(
     };
 
     let context_summary_assignment = if include_embedding_assignment {
-        "\n                context_summary = $context_summary,\n                embedding = $embedding,\n                embedding_model = $embedding_model,\n                embedding_dimensions = $embedding_dimensions,\n                embedded_at = $embedded_at,"
+        let context_summary_value = if include_context_summary_assignment {
+            "$context_summary"
+        } else {
+            "NONE"
+        };
+        let embedding_value = if include_embedding_vector_assignment {
+            "$embedding"
+        } else {
+            "NONE"
+        };
+        let embedding_model_value = if include_embedding_model_assignment {
+            "$embedding_model"
+        } else {
+            "NONE"
+        };
+        let embedding_dimensions_value = if include_embedding_dimensions_assignment {
+            "$embedding_dimensions"
+        } else {
+            "NONE"
+        };
+        let embedded_at_assignment = if include_embedded_at_assignment {
+            "<datetime>$embedded_at"
+        } else {
+            "NONE"
+        };
+
+        format!(
+            "\n                context_summary = {context_summary_value},\n                embedding = {embedding_value},\n                embedding_model = {embedding_model_value},\n                embedding_dimensions = {embedding_dimensions_value},\n                embedded_at = {embedded_at_assignment},"
+        )
     } else {
-        "\n                context_summary = NONE,\n                embedding = NONE,\n                embedding_model = NONE,\n                embedding_dimensions = NONE,\n                embedded_at = NONE,"
+        "\n                context_summary = NONE,\n                embedding = NONE,\n                embedding_model = NONE,\n                embedding_dimensions = NONE,\n                embedded_at = NONE,".to_string()
     };
 
     format!(
@@ -168,8 +203,24 @@ pub fn create_temporal_node_query(
     )
 }
 
-pub fn get_by_resonance_query(current_psi: f32, limit: usize) -> String {
-    let psi = format!("{current_psi:.4}");
+pub fn get_by_resonance_query(
+    current_stability: f32,
+    current_friction: f32,
+    current_logic: f32,
+    current_autonomy: f32,
+    additional_predicate: &str,
+    limit: usize,
+) -> String {
+    let stability = format!("{current_stability:.4}");
+    let friction = format!("{current_friction:.4}");
+    let logic = format!("{current_logic:.4}");
+    let autonomy = format!("{current_autonomy:.4}");
+    let where_suffix = if additional_predicate.trim().is_empty() {
+        String::new()
+    } else {
+        format!(" AND {}", additional_predicate.trim())
+    };
+
     format!(
         r#"
             SELECT
@@ -206,10 +257,84 @@ pub fn get_by_resonance_query(current_psi: f32, limit: usize) -> String {
                 comp_logic AS CompLogic,
                 comp_autonomy AS CompAutonomy,
                 comp_psi AS CompPsi,
-                math::abs(psi - {psi}) AS ResonanceDelta
+                (
+                    math::abs(model_stability - {stability})
+                    + math::abs(model_friction - {friction})
+                    + math::abs(model_logic - {logic})
+                    + math::abs(model_autonomy - {autonomy})
+                ) / 4.0 AS ResonanceDelta
             FROM temporal_node
                         WHERE session_id = $session_id
                             AND (tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')
+                            {where_suffix}
+            ORDER BY ResonanceDelta ASC
+            LIMIT {limit};
+            "#
+    )
+}
+
+pub fn get_by_resonance_global_query(
+    current_stability: f32,
+    current_friction: f32,
+    current_logic: f32,
+    current_autonomy: f32,
+    additional_predicate: &str,
+    limit: usize,
+) -> String {
+    let stability = format!("{current_stability:.4}");
+    let friction = format!("{current_friction:.4}");
+    let logic = format!("{current_logic:.4}");
+    let autonomy = format!("{current_autonomy:.4}");
+    let where_clause = if additional_predicate.trim().is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", additional_predicate.trim())
+    };
+
+    format!(
+        r#"
+            SELECT
+                tenant_id AS TenantId,
+                session_id AS SessionId,
+                raw AS Raw,
+                tier AS Tier,
+                timestamp AS Timestamp,
+                compression_depth AS CompressionDepth,
+                parent_node_id AS ParentNodeId,
+                sync_key AS SyncKey,
+                updated_at AS UpdatedAt,
+                source_metadata AS SourceMetadata,
+                context_summary AS ContextSummary,
+                embedding AS Embedding,
+                embedding_model AS EmbeddingModel,
+                embedding_dimensions AS EmbeddingDimensions,
+                embedded_at AS EmbeddedAt,
+                psi AS Psi,
+                rho AS Rho,
+                kappa AS Kappa,
+                user_stability AS UserStability,
+                user_friction AS UserFriction,
+                user_logic AS UserLogic,
+                user_autonomy AS UserAutonomy,
+                user_psi AS UserPsi,
+                model_stability AS ModelStability,
+                model_friction AS ModelFriction,
+                model_logic AS ModelLogic,
+                model_autonomy AS ModelAutonomy,
+                model_psi AS ModelPsi,
+                comp_stability AS CompStability,
+                comp_friction AS CompFriction,
+                comp_logic AS CompLogic,
+                comp_autonomy AS CompAutonomy,
+                comp_psi AS CompPsi,
+                (
+                    math::abs(model_stability - {stability})
+                    + math::abs(model_friction - {friction})
+                    + math::abs(model_logic - {logic})
+                    + math::abs(model_autonomy - {autonomy})
+                ) / 4.0 AS ResonanceDelta
+            FROM temporal_node
+            {where_clause}
             ORDER BY ResonanceDelta ASC
             LIMIT {limit};
             "#
@@ -438,4 +563,31 @@ pub fn update_record_tenant_query(record_id: &str) -> String {
             SET tenant_id = $tenant_id;
             "#
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::create_temporal_node_query;
+
+    #[test]
+    fn create_temporal_node_query_uses_none_for_missing_embedded_at() {
+        let query = create_temporal_node_query(
+            "abc123", false, false, true, true, false, false, false, false,
+        );
+
+        assert!(query.contains("embedded_at = NONE"));
+        assert!(!query.contains("embedded_at = <datetime>$embedded_at"));
+        assert!(query.contains("embedding = NONE"));
+        assert!(query.contains("embedding_model = NONE"));
+        assert!(query.contains("embedding_dimensions = NONE"));
+    }
+
+    #[test]
+    fn create_temporal_node_query_uses_datetime_cast_when_embedded_at_present() {
+        let query = create_temporal_node_query(
+            "abc123", false, false, true, true, true, true, true, true,
+        );
+
+        assert!(query.contains("embedded_at = <datetime>$embedded_at"));
+    }
 }

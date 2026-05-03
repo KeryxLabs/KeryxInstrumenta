@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 
 use crate::domain::contracts::NodeStore;
 use crate::domain::models::{AvecState, ListNodesResult, PsiRange, RetrieveResult, SttpNode};
@@ -23,6 +24,104 @@ impl ContextQueryService {
         autonomy: f32,
         limit: usize,
     ) -> RetrieveResult {
+        self.get_context_scoped_filtered_async(
+            Some(session_id),
+            stability,
+            friction,
+            logic,
+            autonomy,
+            None,
+            None,
+            None,
+            limit,
+        )
+        .await
+    }
+
+    /// Retrieve context across all sessions (global memory mode).
+    pub async fn get_context_global_async(
+        &self,
+        stability: f32,
+        friction: f32,
+        logic: f32,
+        autonomy: f32,
+        limit: usize,
+    ) -> RetrieveResult {
+        self.get_context_scoped_filtered_async(
+            None,
+            stability,
+            friction,
+            logic,
+            autonomy,
+            None,
+            None,
+            None,
+            limit,
+        )
+            .await
+    }
+
+    pub async fn get_context_global_filtered_async(
+        &self,
+        stability: f32,
+        friction: f32,
+        logic: f32,
+        autonomy: f32,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        limit: usize,
+    ) -> RetrieveResult {
+        self.get_context_scoped_filtered_async(
+            None,
+            stability,
+            friction,
+            logic,
+            autonomy,
+            from_utc,
+            to_utc,
+            tiers,
+            limit,
+        )
+        .await
+    }
+
+    /// Retrieve context with an optional session scope.
+    pub async fn get_context_scoped_async(
+        &self,
+        session_id: Option<&str>,
+        stability: f32,
+        friction: f32,
+        logic: f32,
+        autonomy: f32,
+        limit: usize,
+    ) -> RetrieveResult {
+        self.get_context_scoped_filtered_async(
+            session_id,
+            stability,
+            friction,
+            logic,
+            autonomy,
+            None,
+            None,
+            None,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn get_context_scoped_filtered_async(
+        &self,
+        session_id: Option<&str>,
+        stability: f32,
+        friction: f32,
+        logic: f32,
+        autonomy: f32,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        limit: usize,
+    ) -> RetrieveResult {
         let current = AvecState {
             stability,
             friction,
@@ -30,13 +129,23 @@ impl ContextQueryService {
             autonomy,
         };
 
-        let nodes = match self
-            .store
-            .get_by_resonance_async(session_id, current, limit)
-            .await
-        {
-            Ok(nodes) => nodes,
-            Err(_) => return empty_retrieve_result(),
+        let nodes = match session_id {
+            Some(session_id) => match self
+                .store
+                .get_by_resonance_async(session_id, current, from_utc, to_utc, tiers, limit)
+                .await
+            {
+                Ok(nodes) => nodes,
+                Err(_) => return empty_retrieve_result(),
+            },
+            None => match self
+                .store
+                .get_by_resonance_global_async(current, from_utc, to_utc, tiers, limit)
+                .await
+            {
+                Ok(nodes) => nodes,
+                Err(_) => return empty_retrieve_result(),
+            },
         };
 
         to_retrieve_result(nodes)
@@ -54,6 +163,128 @@ impl ContextQueryService {
         beta: f32,
         limit: usize,
     ) -> RetrieveResult {
+        self.get_context_hybrid_scoped_filtered_async(
+            Some(session_id),
+            stability,
+            friction,
+            logic,
+            autonomy,
+            None,
+            None,
+            None,
+            query_embedding,
+            alpha,
+            beta,
+            limit,
+        )
+        .await
+    }
+
+    /// Retrieve hybrid context across all sessions (global memory mode).
+    pub async fn get_context_hybrid_global_async(
+        &self,
+        stability: f32,
+        friction: f32,
+        logic: f32,
+        autonomy: f32,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> RetrieveResult {
+        self.get_context_hybrid_scoped_filtered_async(
+            None,
+            stability,
+            friction,
+            logic,
+            autonomy,
+            None,
+            None,
+            None,
+            query_embedding,
+            alpha,
+            beta,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn get_context_hybrid_global_filtered_async(
+        &self,
+        stability: f32,
+        friction: f32,
+        logic: f32,
+        autonomy: f32,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> RetrieveResult {
+        self.get_context_hybrid_scoped_filtered_async(
+            None,
+            stability,
+            friction,
+            logic,
+            autonomy,
+            from_utc,
+            to_utc,
+            tiers,
+            query_embedding,
+            alpha,
+            beta,
+            limit,
+        )
+        .await
+    }
+
+    /// Retrieve hybrid context with an optional session scope.
+    pub async fn get_context_hybrid_scoped_async(
+        &self,
+        session_id: Option<&str>,
+        stability: f32,
+        friction: f32,
+        logic: f32,
+        autonomy: f32,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> RetrieveResult {
+        self.get_context_hybrid_scoped_filtered_async(
+            session_id,
+            stability,
+            friction,
+            logic,
+            autonomy,
+            None,
+            None,
+            None,
+            query_embedding,
+            alpha,
+            beta,
+            limit,
+        )
+        .await
+    }
+
+    pub async fn get_context_hybrid_scoped_filtered_async(
+        &self,
+        session_id: Option<&str>,
+        stability: f32,
+        friction: f32,
+        logic: f32,
+        autonomy: f32,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> RetrieveResult {
         let current = AvecState {
             stability,
             friction,
@@ -61,20 +292,42 @@ impl ContextQueryService {
             autonomy,
         };
 
-        let nodes = match self
-            .store
-            .get_by_hybrid_async(
-                session_id,
-                current,
-                query_embedding,
-                alpha,
-                beta,
-                limit,
-            )
-            .await
-        {
-            Ok(nodes) => nodes,
-            Err(_) => return empty_retrieve_result(),
+        let nodes = match session_id {
+            Some(session_id) => match self
+                .store
+                .get_by_hybrid_async(
+                    session_id,
+                    current,
+                    from_utc,
+                    to_utc,
+                    tiers,
+                    query_embedding,
+                    alpha,
+                    beta,
+                    limit,
+                )
+                .await
+            {
+                Ok(nodes) => nodes,
+                Err(_) => return empty_retrieve_result(),
+            },
+            None => match self
+                .store
+                .get_by_hybrid_global_async(
+                    current,
+                    from_utc,
+                    to_utc,
+                    tiers,
+                    query_embedding,
+                    alpha,
+                    beta,
+                    limit,
+                )
+                .await
+            {
+                Ok(nodes) => nodes,
+                Err(_) => return empty_retrieve_result(),
+            },
         };
 
         to_retrieve_result(nodes)

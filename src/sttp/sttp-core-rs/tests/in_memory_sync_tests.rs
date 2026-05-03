@@ -67,6 +67,7 @@ async fn duplicate_upsert_does_not_create_extra_rows() {
             session_id: Some("sync-session".to_string()),
             from_utc: None,
             to_utc: None,
+            tiers: None,
         })
         .await
         .expect("query should succeed");
@@ -238,6 +239,9 @@ async fn hybrid_query_prefers_semantic_match_with_fallback_for_missing_vectors()
                 logic: 0.80,
                 autonomy: 0.70,
             },
+            None,
+            None,
+            None,
             Some(&[0.0, 1.0, 0.0]),
             0.5,
             0.5,
