@@ -1,4 +1,5 @@
-pub(crate) const FILE_DESCRIPTOR_SET: &[u8] = tonic::include_file_descriptor_set!("sttp_descriptor");
+pub(crate) const FILE_DESCRIPTOR_SET: &[u8] =
+    tonic::include_file_descriptor_set!("sttp_descriptor");
 pub(crate) const TENANT_HEADER: &str = "x-tenant-id";
 pub(crate) const TENANT_HEADERS: [&str; 3] = ["x-resonantia-tenant", "x-tenant-id", "x-tenant"];
 pub(crate) const DEFAULT_TENANT: &str = "default";

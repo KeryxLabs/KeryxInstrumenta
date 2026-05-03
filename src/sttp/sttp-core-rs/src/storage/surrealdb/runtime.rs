@@ -109,7 +109,11 @@ impl SurrealDbRuntimeOptions {
     }
 }
 
-fn normalize_embedded_endpoint(endpoint: &str, root_dir: &Path, use_remote: bool) -> Result<String> {
+fn normalize_embedded_endpoint(
+    endpoint: &str,
+    root_dir: &Path,
+    use_remote: bool,
+) -> Result<String> {
     if use_remote {
         return Ok(endpoint.to_string());
     }

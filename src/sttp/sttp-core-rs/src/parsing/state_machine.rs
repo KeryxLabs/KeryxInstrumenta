@@ -1,6 +1,6 @@
 use super::ast::{AstLayer, SttpAst};
-use super::lexer::{tokenize, Token, TokenKind};
-use super::lexicon::{LayerKind, LAYER_ORDER, LAYER_STOP_MARKER};
+use super::lexer::{Token, TokenKind, tokenize};
+use super::lexicon::{LAYER_ORDER, LAYER_STOP_MARKER, LayerKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ParserState {
@@ -213,10 +213,12 @@ mod tests {
         assert!(parsed.content.is_none());
         assert!(parsed.metrics.is_some());
         assert!(parsed.diagnostics.len() >= 2);
-        assert!(parsed
-            .diagnostics
-            .iter()
-            .any(|d| d == "missing_layer_content"));
+        assert!(
+            parsed
+                .diagnostics
+                .iter()
+                .any(|d| d == "missing_layer_content")
+        );
     }
 
     #[test]

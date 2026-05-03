@@ -9,8 +9,7 @@ use tokio::sync::Mutex;
 
 use sttp_core_rs::domain::contracts::{NodeStore, NodeStoreInitializer};
 use sttp_core_rs::domain::models::{
-    AvecState, ConnectorMetadata, NodeQuery, NodeUpsertStatus, SttpNode, SyncCheckpoint,
-    SyncCursor,
+    AvecState, ConnectorMetadata, NodeQuery, NodeUpsertStatus, SttpNode, SyncCheckpoint, SyncCursor,
 };
 use sttp_core_rs::storage::surrealdb::{QueryParams, SurrealDbClient, SurrealDbNodeStore};
 
@@ -132,20 +131,28 @@ async fn initialize_backfills_tenant_ids_for_legacy_rows() {
         .expect("schema initialization should succeed");
 
     let queries = client.queries().await;
-    assert!(queries
-        .iter()
-        .any(|query| query.contains("UPDATE temporal_node:`legacy_node`")));
-    assert!(queries
-        .iter()
-        .any(|query| query.contains("UPDATE calibration:legacy_cal")));
+    assert!(
+        queries
+            .iter()
+            .any(|query| query.contains("UPDATE temporal_node:`legacy_node`"))
+    );
+    assert!(
+        queries
+            .iter()
+            .any(|query| query.contains("UPDATE calibration:legacy_cal"))
+    );
 
     let params = client.parameters().await;
-    assert!(params
-        .iter()
-        .any(|param| param.get("tenant_id") == Some(&json!("acme"))));
-    assert!(params
-        .iter()
-        .any(|param| param.get("tenant_id") == Some(&json!("default"))));
+    assert!(
+        params
+            .iter()
+            .any(|param| param.get("tenant_id") == Some(&json!("acme")))
+    );
+    assert!(
+        params
+            .iter()
+            .any(|param| param.get("tenant_id") == Some(&json!("default")))
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -174,9 +181,11 @@ async fn initialize_backfills_missing_temporal_sync_fields() {
         .expect("schema initialization should succeed");
 
     let queries = client.queries().await;
-    assert!(queries
-        .iter()
-        .any(|query| query.contains("UPDATE temporal_node:`legacy_sync`")));
+    assert!(
+        queries
+            .iter()
+            .any(|query| query.contains("UPDATE temporal_node:`legacy_sync`"))
+    );
 
     let params = client.parameters().await;
     let temporal_params = params
@@ -282,10 +291,7 @@ async fn store_uses_model_avec_when_compression_avec_is_zero() {
 
     let node = build_test_node("session");
 
-    let node_id = store
-        .store_async(node)
-        .await
-        .expect("store should succeed");
+    let node_id = store.store_async(node).await.expect("store should succeed");
     assert!(!node_id.trim().is_empty());
 
     let params = client.parameters().await;
@@ -427,7 +433,7 @@ async fn query_changes_since_returns_incremental_cursor() {
                 "CompAutonomy": 0.70,
                 "CompPsi": 2.60,
                 "ResonanceDelta": 0.0
-            })
+            }),
         ])
         .await;
 
@@ -439,7 +445,13 @@ async fn query_changes_since_returns_incremental_cursor() {
     assert_eq!(result.nodes.len(), 1);
     assert!(result.has_more);
     assert_eq!(result.nodes[0].sync_key, "sync-a");
-    assert_eq!(result.next_cursor.as_ref().map(|cursor| cursor.sync_key.as_str()), Some("sync-a"));
+    assert_eq!(
+        result
+            .next_cursor
+            .as_ref()
+            .map(|cursor| cursor.sync_key.as_str()),
+        Some("sync-a")
+    );
 
     let params = client.parameters().await;
     assert_eq!(params[0].get("include_cursor"), Some(&json!(false)));
@@ -475,7 +487,13 @@ async fn checkpoints_can_be_read_and_written() {
         .expect("checkpoint query should succeed")
         .expect("checkpoint should exist");
     assert_eq!(checkpoint.connector_id, "cloud-primary");
-    assert_eq!(checkpoint.cursor.as_ref().map(|cursor| cursor.sync_key.as_str()), Some("sync-b"));
+    assert_eq!(
+        checkpoint
+            .cursor
+            .as_ref()
+            .map(|cursor| cursor.sync_key.as_str()),
+        Some("sync-b")
+    );
 
     store
         .put_checkpoint_async(SyncCheckpoint {
@@ -546,12 +564,16 @@ async fn batch_rekey_scopes_dry_run_reports_scope_counts() {
     assert!(!result.scopes[0].applied);
 
     let queries = client.queries().await;
-    assert!(queries
-        .iter()
-        .any(|query| query.contains("WHERE id = type::record('temporal_node', $node_id)")));
-    assert!(!queries
-        .iter()
-        .any(|query| query.contains("BEGIN TRANSACTION")));
+    assert!(
+        queries
+            .iter()
+            .any(|query| query.contains("WHERE id = type::record('temporal_node', $node_id)"))
+    );
+    assert!(
+        !queries
+            .iter()
+            .any(|query| query.contains("BEGIN TRANSACTION"))
+    );
 }
 
 #[tokio::test(flavor = "current_thread")]
@@ -589,14 +611,15 @@ async fn batch_rekey_scopes_apply_updates_both_tables() {
     assert!(!result.scopes[0].conflict);
 
     let queries = client.queries().await;
-    assert!(queries
-        .iter()
-        .any(|query| query.contains("BEGIN TRANSACTION")));
+    assert!(
+        queries
+            .iter()
+            .any(|query| query.contains("BEGIN TRANSACTION"))
+    );
 
     let params = client.parameters().await;
     assert!(params.iter().any(|param| {
         param.get("target_tenant_id") == Some(&json!("acme"))
-            && param.get("target_session_id")
-                == Some(&json!("tenant:acme::session:target-session"))
+            && param.get("target_session_id") == Some(&json!("tenant:acme::session:target-session"))
     }));
 }

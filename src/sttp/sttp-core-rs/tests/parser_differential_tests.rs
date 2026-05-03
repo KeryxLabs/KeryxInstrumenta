@@ -51,7 +51,11 @@ fn canonical_node_should_agree_between_profiles() {
 
     assert!(strict.success, "strict parse failed: {:?}", strict.error);
     assert!(strict.strict_valid);
-    assert!(tolerant.success, "tolerant parse failed: {:?}", tolerant.error);
+    assert!(
+        tolerant.success,
+        "tolerant parse failed: {:?}",
+        tolerant.error
+    );
     assert!(tolerant.strict_valid);
     assert_eq!(strict.profile, ParseProfile::Strict);
     assert_eq!(tolerant.profile, ParseProfile::Tolerant);
@@ -60,12 +64,17 @@ fn canonical_node_should_agree_between_profiles() {
     let tolerant_node = tolerant.node.expect("tolerant node should exist");
 
     assert_eq!(strict_node.tier, tolerant_node.tier);
-    assert_eq!(strict_node.compression_depth, tolerant_node.compression_depth);
+    assert_eq!(
+        strict_node.compression_depth,
+        tolerant_node.compression_depth
+    );
     assert!((strict_node.user_avec.psi() - tolerant_node.user_avec.psi()).abs() < 0.0001);
     assert!((strict_node.model_avec.psi() - tolerant_node.model_avec.psi()).abs() < 0.0001);
     assert!((strict_node.psi - tolerant_node.psi).abs() < 0.0001);
 
-    let strict_ast = strict.canonical_ast.expect("strict canonical ast should exist");
+    let strict_ast = strict
+        .canonical_ast
+        .expect("strict canonical ast should exist");
     let content_layer = strict_ast.content.expect("content layer should exist");
     assert!(content_layer.span.start < content_layer.span.end);
     assert!(content_layer.source.contains("test(.99)"));
@@ -85,10 +94,12 @@ fn missing_content_should_diverge_at_expected_boundary() {
     assert!(!strict.strict_valid);
     assert!(tolerant.success);
     assert!(!tolerant.strict_valid);
-    assert!(tolerant
-        .diagnostics
-        .iter()
-        .any(|d| d.code == "missing_layer_content"));
+    assert!(
+        tolerant
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "missing_layer_content")
+    );
 }
 
 #[test]
@@ -105,10 +116,12 @@ fn wrong_order_should_diverge_at_expected_boundary() {
     assert!(!strict.strict_valid);
     assert!(tolerant.success);
     assert!(!tolerant.strict_valid);
-    assert!(tolerant
-        .diagnostics
-        .iter()
-        .any(|d| d.code == "non_strict_spine_recovered_tolerantly"));
+    assert!(
+        tolerant
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "non_strict_spine_recovered_tolerantly")
+    );
 }
 
 #[test]
@@ -120,25 +133,33 @@ fn content_schema_signature_should_diverge_at_expected_boundary() {
 
     assert!(!strict.success);
     assert!(!strict.strict_valid);
-    assert!(strict
-        .diagnostics
-        .iter()
-        .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY"));
-    assert!(strict
-        .diagnostics
-        .iter()
-        .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY" && d.span.is_some()));
+    assert!(
+        strict
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY")
+    );
+    assert!(
+        strict
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY" && d.span.is_some())
+    );
 
     assert!(tolerant.success);
     assert!(!tolerant.strict_valid);
-    assert!(tolerant
-        .diagnostics
-        .iter()
-        .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY"));
-    assert!(tolerant
-        .diagnostics
-        .iter()
-        .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY" && d.span.is_some()));
+    assert!(
+        tolerant
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY")
+    );
+    assert!(
+        tolerant
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY" && d.span.is_some())
+    );
 }
 
 #[test]
@@ -150,12 +171,18 @@ fn content_schema_should_accept_unquoted_value_when_signature_is_valid() {
 
     assert!(strict.success, "strict parse failed: {:?}", strict.error);
     assert!(strict.strict_valid);
-    assert!(tolerant.success, "tolerant parse failed: {:?}", tolerant.error);
+    assert!(
+        tolerant.success,
+        "tolerant parse failed: {:?}",
+        tolerant.error
+    );
     assert!(tolerant.strict_valid);
-    assert!(!strict
-        .diagnostics
-        .iter()
-        .any(|d| d.code.starts_with("STTP_CONTENT_SCHEMA_")));
+    assert!(
+        !strict
+            .diagnostics
+            .iter()
+            .any(|d| d.code.starts_with("STTP_CONTENT_SCHEMA_"))
+    );
 }
 
 #[test]
@@ -167,15 +194,19 @@ fn nested_content_schema_violation_should_be_reported() {
 
     assert!(!strict.success);
     assert!(!strict.strict_valid);
-    assert!(strict
-        .diagnostics
-        .iter()
-        .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY"));
+    assert!(
+        strict
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY")
+    );
 
     assert!(tolerant.success);
     assert!(!tolerant.strict_valid);
-    assert!(tolerant
-        .diagnostics
-        .iter()
-        .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY"));
+    assert!(
+        tolerant
+            .diagnostics
+            .iter()
+            .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY")
+    );
 }

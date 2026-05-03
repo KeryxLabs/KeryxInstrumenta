@@ -147,11 +147,8 @@ async fn coordinator_pages_changes_and_advances_checkpoint_without_owning_policy
         }),
         has_more: false,
     }]));
-    let coordinator = SyncCoordinatorService::with_policy(
-        store.clone(),
-        source,
-        Arc::new(RejectSkipPolicy),
-    );
+    let coordinator =
+        SyncCoordinatorService::with_policy(store.clone(), source, Arc::new(RejectSkipPolicy));
 
     let result = coordinator
         .pull_async(SyncPullRequest {

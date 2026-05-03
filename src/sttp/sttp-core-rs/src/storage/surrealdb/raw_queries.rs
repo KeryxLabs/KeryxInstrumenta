@@ -390,7 +390,12 @@ pub fn update_temporal_node_legacy_sync_query(record_id: &str) -> String {
 pub const FIND_EXISTING_NODE_BY_SYNC_KEY_QUERY: &str = r#"
             SELECT
                 id AS Id,
-                source_metadata AS SourceMetadata
+                source_metadata AS SourceMetadata,
+                context_summary AS ContextSummary,
+                embedding AS Embedding,
+                embedding_model AS EmbeddingModel,
+                embedding_dimensions AS EmbeddingDimensions,
+                embedded_at AS EmbeddedAt
             FROM temporal_node
             WHERE session_id = $session_id
                 AND sync_key = $sync_key
@@ -398,7 +403,41 @@ pub const FIND_EXISTING_NODE_BY_SYNC_KEY_QUERY: &str = r#"
             LIMIT 1;
             "#;
 
-pub fn update_temporal_node_sync_metadata_query(record_id: &str, clear_source_metadata: bool) -> String {
+pub const FIND_EXISTING_NODE_BY_SYNC_KEY_EXACT_QUERY: &str = r#"
+            SELECT
+                id AS Id,
+                source_metadata AS SourceMetadata,
+                context_summary AS ContextSummary,
+                embedding AS Embedding,
+                embedding_model AS EmbeddingModel,
+                embedding_dimensions AS EmbeddingDimensions,
+                embedded_at AS EmbeddedAt
+            FROM temporal_node
+            WHERE session_id = $session_id
+                AND sync_key = $sync_key
+                AND tenant_id = $tenant_id
+            LIMIT 1;
+            "#;
+
+pub const FIND_EXISTING_NODE_BY_SYNC_KEY_ANY_TENANT_QUERY: &str = r#"
+            SELECT
+                id AS Id,
+                source_metadata AS SourceMetadata,
+                context_summary AS ContextSummary,
+                embedding AS Embedding,
+                embedding_model AS EmbeddingModel,
+                embedding_dimensions AS EmbeddingDimensions,
+                embedded_at AS EmbeddedAt
+            FROM temporal_node
+            WHERE session_id = $session_id
+                AND sync_key = $sync_key
+            LIMIT 1;
+            "#;
+
+pub fn update_temporal_node_sync_metadata_query(
+    record_id: &str,
+    clear_source_metadata: bool,
+) -> String {
     let source_metadata_assignment = if clear_source_metadata {
         "source_metadata = NONE,"
     } else {
@@ -410,6 +449,98 @@ pub fn update_temporal_node_sync_metadata_query(record_id: &str, clear_source_me
             UPDATE temporal_node:`{record_id}` SET
                 {source_metadata_assignment}
                 updated_at = <datetime>$updated_at;
+            "#
+    )
+}
+
+pub fn update_temporal_node_query(
+    record_id: &str,
+    include_parent_assignment: bool,
+    include_source_metadata_assignment: bool,
+    include_embedding_assignment: bool,
+    include_context_summary_assignment: bool,
+    include_embedding_vector_assignment: bool,
+    include_embedding_model_assignment: bool,
+    include_embedding_dimensions_assignment: bool,
+    include_embedded_at_assignment: bool,
+) -> String {
+    let parent_assignment = if include_parent_assignment {
+        "\n                parent_node_id = $parent_node_id,"
+    } else {
+        "\n                parent_node_id = NONE,"
+    };
+
+    let source_metadata_assignment = if include_source_metadata_assignment {
+        "\n                source_metadata = $source_metadata,"
+    } else {
+        "\n                source_metadata = NONE,"
+    };
+
+    let context_summary_assignment = if include_embedding_assignment {
+        let context_summary_value = if include_context_summary_assignment {
+            "$context_summary"
+        } else {
+            "NONE"
+        };
+        let embedding_value = if include_embedding_vector_assignment {
+            "$embedding"
+        } else {
+            "NONE"
+        };
+        let embedding_model_value = if include_embedding_model_assignment {
+            "$embedding_model"
+        } else {
+            "NONE"
+        };
+        let embedding_dimensions_value = if include_embedding_dimensions_assignment {
+            "$embedding_dimensions"
+        } else {
+            "NONE"
+        };
+        let embedded_at_assignment = if include_embedded_at_assignment {
+            "<datetime>$embedded_at"
+        } else {
+            "NONE"
+        };
+
+        format!(
+            "\n                context_summary = {context_summary_value},\n                embedding = {embedding_value},\n                embedding_model = {embedding_model_value},\n                embedding_dimensions = {embedding_dimensions_value},\n                embedded_at = {embedded_at_assignment},"
+        )
+    } else {
+        "\n                context_summary = NONE,\n                embedding = NONE,\n                embedding_model = NONE,\n                embedding_dimensions = NONE,\n                embedded_at = NONE,"
+            .to_string()
+    };
+
+    format!(
+        r#"
+            UPDATE temporal_node:`{record_id}` SET
+                tenant_id = $tenant_id,
+                session_id = $session_id,
+                raw = $raw,
+                tier = $tier,
+                timestamp = <datetime>$timestamp,
+                compression_depth = $compression_depth,{parent_assignment}
+                sync_key = $sync_key,
+                updated_at = <datetime>$updated_at,{source_metadata_assignment}
+                {context_summary_assignment}
+                psi = $psi,
+                rho = $rho,
+                kappa = $kappa,
+                user_stability = $user_stability,
+                user_friction = $user_friction,
+                user_logic = $user_logic,
+                user_autonomy = $user_autonomy,
+                user_psi = $user_psi,
+                model_stability = $model_stability,
+                model_friction = $model_friction,
+                model_logic = $model_logic,
+                model_autonomy = $model_autonomy,
+                model_psi = $model_psi,
+                comp_stability = $comp_stability,
+                comp_friction = $comp_friction,
+                comp_logic = $comp_logic,
+                comp_autonomy = $comp_autonomy,
+                comp_psi = $comp_psi;
             "#
     )
 }
@@ -584,9 +715,8 @@ mod tests {
 
     #[test]
     fn create_temporal_node_query_uses_datetime_cast_when_embedded_at_present() {
-        let query = create_temporal_node_query(
-            "abc123", false, false, true, true, true, true, true, true,
-        );
+        let query =
+            create_temporal_node_query("abc123", false, false, true, true, true, true, true, true);
 
         assert!(query.contains("embedded_at = <datetime>$embedded_at"));
     }

@@ -20,6 +20,10 @@ use tracing_subscriber::EnvFilter;
 use sttp_core_rs::domain::models::{
     self as core_models, ConfidenceBandSummary, MonthlyRollupRequest, NumericRange, PsiRange,
 };
+use sttp_core_rs::{
+    EmbeddingMigrationFilter, EmbeddingMigrationMode, EmbeddingMigrationPreviewRequest,
+    EmbeddingMigrationRunRequest,
+};
 
 use crate::app_state::AppState;
 use crate::constants::{
@@ -30,9 +34,7 @@ use crate::http_models::*;
 use crate::orchestration::{
     build_in_memory_state, build_state, parse_cors_allowed_origins, shutdown_signal,
 };
-use crate::providers::{
-    resolve_query_embedding,
-};
+use crate::providers::resolve_query_embedding;
 use crate::tenant::{
     display_session_id, normalize_node_for_tenant, normalize_tenant_value, resolve_grpc_tenant,
     resolve_http_tenant, scope_session_id,
@@ -70,8 +72,14 @@ pub(crate) async fn run() -> Result<()> {
         .route("/api/session/rename", post(rename_session_handler))
         .route("/session/rename", post(rename_session_handler))
         .route("/api/v1/context", post(get_context_handler))
-        .route("/api/v1/context/embeddings", post(get_embedding_context_handler))
-        .route("/api/context/embeddings", post(get_embedding_context_handler))
+        .route(
+            "/api/v1/context/embeddings",
+            post(get_embedding_context_handler),
+        )
+        .route(
+            "/api/context/embeddings",
+            post(get_embedding_context_handler),
+        )
         .route("/context/embeddings", post(get_embedding_context_handler))
         .route("/api/v1/nodes", get(list_nodes_handler))
         .route("/api/nodes", get(list_nodes_handler))
@@ -81,7 +89,18 @@ pub(crate) async fn run() -> Result<()> {
         .route("/graph", get(graph_handler))
         .route("/api/v1/moods", get(get_moods_handler))
         .route("/api/v1/rekey", post(batch_rekey_handler))
-        .route("/api/v1/rollups/monthly", post(create_monthly_rollup_handler))
+        .route(
+            "/api/v1/rollups/monthly",
+            post(create_monthly_rollup_handler),
+        )
+        .route(
+            "/api/v1/embeddings/migration/preview",
+            post(preview_embedding_migration_handler),
+        )
+        .route(
+            "/api/v1/embeddings/migration/run",
+            post(run_embedding_migration_handler),
+        )
         .with_state(state.clone());
 
     let http_router = if args.cors_enabled {
@@ -117,12 +136,13 @@ pub(crate) async fn run() -> Result<()> {
         "Starting sttp-gateway-rs"
     );
 
-    let http_server = axum::serve(http_listener, http_router).with_graceful_shutdown(shutdown_signal());
+    let http_server =
+        axum::serve(http_listener, http_router).with_graceful_shutdown(shutdown_signal());
     let grpc_server = Server::builder()
         .add_service(reflection_service)
-        .add_service(proto::sttp_gateway_service_server::SttpGatewayServiceServer::new(
-            grpc_service,
-        ))
+        .add_service(
+            proto::sttp_gateway_service_server::SttpGatewayServiceServer::new(grpc_service),
+        )
         .serve_with_shutdown(grpc_addr, shutdown_signal());
 
     let (http_result, grpc_result) = tokio::join!(http_server, grpc_server);
@@ -217,10 +237,9 @@ async fn score_avec_handler(
         return Err(bad_request("text cannot be empty"));
     }
 
-    let scorer = state
-        .avec_scorer
-        .as_ref()
-        .ok_or_else(|| bad_request("AVEC scoring is disabled; enable STTP_GATEWAY_AVEC_SCORING_ENABLED"))?;
+    let scorer = state.avec_scorer.as_ref().ok_or_else(|| {
+        bad_request("AVEC scoring is disabled; enable STTP_GATEWAY_AVEC_SCORING_ENABLED")
+    })?;
 
     let avec = scorer
         .score_async(request.text.trim())
@@ -244,7 +263,9 @@ async fn rename_session_handler(
     let target_session_id = request.target_session_id.trim();
 
     if source_session_id.is_empty() || target_session_id.is_empty() {
-        return Err(bad_request("sourceSessionId and targetSessionId are required"));
+        return Err(bad_request(
+            "sourceSessionId and targetSessionId are required",
+        ));
     }
 
     if source_session_id == target_session_id {
@@ -311,7 +332,11 @@ async fn rename_session_handler(
         ));
     }
 
-    let scopes_applied = rekey_result.scopes.iter().filter(|scope| scope.applied).count();
+    let scopes_applied = rekey_result
+        .scopes
+        .iter()
+        .filter(|scope| scope.applied)
+        .count();
 
     Ok(Json(RenameSessionResultDto {
         source_session_id: source_session_id.to_string(),
@@ -356,10 +381,7 @@ async fn get_context_handler(
                     .alpha
                     .unwrap_or(DEFAULT_HYBRID_ALPHA)
                     .clamp(0.0, 1.0),
-                request
-                    .beta
-                    .unwrap_or(DEFAULT_HYBRID_BETA)
-                    .clamp(0.0, 1.0),
+                request.beta.unwrap_or(DEFAULT_HYBRID_BETA).clamp(0.0, 1.0),
                 limit,
             )
             .await
@@ -440,7 +462,10 @@ async fn get_embedding_context_handler(
             request.to_utc,
             tiers.as_deref(),
             Some(fused_embedding.as_slice()),
-            request.alpha.unwrap_or(DEFAULT_HYBRID_ALPHA).clamp(0.0, 1.0),
+            request
+                .alpha
+                .unwrap_or(DEFAULT_HYBRID_ALPHA)
+                .clamp(0.0, 1.0),
             request.beta.unwrap_or(DEFAULT_HYBRID_BETA).clamp(0.0, 1.0),
             limit,
         )
@@ -585,10 +610,7 @@ async fn graph_handler(
             } else {
                 nodes.iter().map(|n| n.psi).sum::<f32>() / node_count as f32
             };
-            let last_modified = nodes
-                .first()
-                .map(|n| n.timestamp)
-                .unwrap_or_else(Utc::now);
+            let last_modified = nodes.first().map(|n| n.timestamp).unwrap_or_else(Utc::now);
             let size = 16 + std::cmp::min(28, node_count * 2);
 
             SessionGroup {
@@ -792,6 +814,57 @@ async fn batch_rekey_handler(
     Ok(Json(to_batch_rekey_dto(result)))
 }
 
+async fn preview_embedding_migration_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<EmbeddingMigrationPreviewHttpRequest>,
+) -> ApiResult<EmbeddingMigrationPreviewResultDto> {
+    let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+    let filter = scoped_embedding_filter(request.filter, &tenant);
+
+    let result = state
+        .embedding_migration
+        .preview_async(EmbeddingMigrationPreviewRequest {
+            filter,
+            sample_limit: request.sample_limit.unwrap_or(20),
+            max_nodes: request.max_nodes.unwrap_or(5_000),
+        })
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(to_embedding_migration_preview_dto(result)))
+}
+
+async fn run_embedding_migration_handler(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Json(request): Json<EmbeddingMigrationRunHttpRequest>,
+) -> ApiResult<EmbeddingMigrationRunResultDto> {
+    let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
+    let mode = match request
+        .mode
+        .unwrap_or(EmbeddingMigrationModeHttp::MissingOnly)
+    {
+        EmbeddingMigrationModeHttp::MissingOnly => EmbeddingMigrationMode::MissingOnly,
+        EmbeddingMigrationModeHttp::ReindexAll => EmbeddingMigrationMode::ReindexAll,
+    };
+    let dry_run = request.dry_run.unwrap_or(true);
+
+    let result = state
+        .embedding_migration
+        .run_async(EmbeddingMigrationRunRequest {
+            filter: scoped_embedding_filter(request.filter, &tenant),
+            mode,
+            dry_run,
+            batch_size: request.batch_size.unwrap_or(100),
+            max_nodes: request.max_nodes.unwrap_or(5_000),
+        })
+        .await
+        .map_err(internal_error)?;
+
+    Ok(Json(to_embedding_migration_run_dto(result, mode, dry_run)))
+}
+
 fn bad_request(message: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
     (
         StatusCode::BAD_REQUEST,
@@ -920,6 +993,82 @@ fn to_batch_rekey_dto(result: core_models::BatchRekeyResult) -> BatchRekeyResult
         calibrations_updated: result.calibrations_updated,
         updated_scopes,
         conflict_scopes,
+    }
+}
+
+fn scoped_embedding_filter(
+    request_filter: Option<EmbeddingMigrationFilterHttp>,
+    tenant: &str,
+) -> EmbeddingMigrationFilter {
+    let filter = request_filter.unwrap_or(EmbeddingMigrationFilterHttp {
+        session_id: None,
+        from_utc: None,
+        to_utc: None,
+        tiers: None,
+        has_embedding: None,
+        embedding_model: None,
+        sync_keys: None,
+    });
+
+    EmbeddingMigrationFilter {
+        session_id: filter
+            .session_id
+            .map(|session_id| scope_session_id(tenant, &session_id)),
+        from_utc: filter.from_utc,
+        to_utc: filter.to_utc,
+        tiers: filter.tiers,
+        has_embedding: filter.has_embedding,
+        embedding_model: filter.embedding_model,
+        sync_keys: filter.sync_keys,
+    }
+}
+
+fn to_embedding_migration_preview_dto(
+    result: sttp_core_rs::EmbeddingMigrationPreviewResult,
+) -> EmbeddingMigrationPreviewResultDto {
+    EmbeddingMigrationPreviewResultDto {
+        total_candidates: result.total_candidates,
+        sample: result
+            .sample
+            .into_iter()
+            .map(|sample| EmbeddingMigrationSampleDto {
+                sync_key: sample.sync_key,
+                session_id: display_session_id(&sample.session_id),
+                tier: sample.tier,
+                has_embedding: sample.has_embedding,
+                embedding_model: sample.embedding_model,
+                embedding_dimensions: sample.embedding_dimensions,
+                embedded_at: sample.embedded_at,
+                updated_at: sample.updated_at,
+                context_summary: sample.context_summary,
+            })
+            .collect::<Vec<_>>(),
+        provider_available: result.provider_available,
+        provider_model: result.provider_model,
+    }
+}
+
+fn to_embedding_migration_run_dto(
+    result: sttp_core_rs::EmbeddingMigrationRunResult,
+    mode: EmbeddingMigrationMode,
+    dry_run: bool,
+) -> EmbeddingMigrationRunResultDto {
+    EmbeddingMigrationRunResultDto {
+        scanned: result.scanned,
+        selected: result.selected,
+        updated: result.updated,
+        skipped: result.skipped,
+        failed: result.failed,
+        duplicate: result.duplicate,
+        started_at: result.started_at,
+        completed_at: result.completed_at,
+        provider_model: result.provider_model,
+        dry_run,
+        mode: match mode {
+            EmbeddingMigrationMode::MissingOnly => "missing_only".to_string(),
+            EmbeddingMigrationMode::ReindexAll => "reindex_all".to_string(),
+        },
+        failure_reasons: result.failure_reasons,
     }
 }
 
@@ -1058,10 +1207,7 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
                         .alpha
                         .unwrap_or(DEFAULT_HYBRID_ALPHA)
                         .clamp(0.0, 1.0),
-                    request
-                        .beta
-                        .unwrap_or(DEFAULT_HYBRID_BETA)
-                        .clamp(0.0, 1.0),
+                    request.beta.unwrap_or(DEFAULT_HYBRID_BETA).clamp(0.0, 1.0),
                     limit,
                 )
                 .await
@@ -1166,10 +1312,7 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
                     .alpha
                     .unwrap_or(DEFAULT_HYBRID_ALPHA)
                     .clamp(0.0, 1.0),
-                request
-                    .beta
-                    .unwrap_or(DEFAULT_HYBRID_BETA)
-                    .clamp(0.0, 1.0),
+                request.beta.unwrap_or(DEFAULT_HYBRID_BETA).clamp(0.0, 1.0),
                 limit,
             )
             .await;
@@ -1215,10 +1358,7 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         let result = self
             .state
             .context_query
-            .list_nodes_async(
-                backend_limit,
-                scoped_session_filter.as_deref(),
-            )
+            .list_nodes_async(backend_limit, scoped_session_filter.as_deref())
             .await
             .map_err(|err| Status::internal(err.to_string()))?;
 
@@ -1288,7 +1428,9 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         }
 
         if request.target_session_id.trim().is_empty() {
-            return Err(Status::invalid_argument("target_session_id cannot be empty"));
+            return Err(Status::invalid_argument(
+                "target_session_id cannot be empty",
+            ));
         }
 
         let target_tenant = request
@@ -1296,7 +1438,8 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
             .as_deref()
             .and_then(normalize_tenant_value)
             .unwrap_or(metadata_tenant);
-        let scoped_target_session = scope_session_id(&target_tenant, request.target_session_id.trim());
+        let scoped_target_session =
+            scope_session_id(&target_tenant, request.target_session_id.trim());
 
         let result = self
             .state
@@ -1340,7 +1483,11 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
             },
         };
 
-        let result = self.state.monthly_rollup.create_async(monthly_request).await;
+        let result = self
+            .state
+            .monthly_rollup
+            .create_async(monthly_request)
+            .await;
 
         let reply = proto::CreateMonthlyRollupReply {
             success: result.success,
@@ -1498,8 +1645,8 @@ fn clamp_usize_to_i32(value: usize) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::gateway_args::{EmbeddingsProviderKind, GatewayBackend};
     use crate::gateway::proto::sttp_gateway_service_server::SttpGatewayService;
+    use crate::gateway_args::{EmbeddingsProviderKind, GatewayBackend};
     use crate::providers::parse_avec_state_from_text;
     use crate::tenant::session_belongs_to_tenant;
     use sttp_core_rs::storage::{
@@ -1691,10 +1838,12 @@ mod tests {
         .expect("get_context should succeed");
 
         assert!(context_reply.retrieved >= 1);
-        assert!(context_reply
-            .nodes
-            .iter()
-            .any(|node| node.session_id == session_id));
+        assert!(
+            context_reply
+                .nodes
+                .iter()
+                .any(|node| node.session_id == session_id)
+        );
     }
 
     #[tokio::test]
@@ -1838,10 +1987,12 @@ mod tests {
             .into_inner();
 
         assert!(list_reply.retrieved >= 1);
-        assert!(list_reply
-            .nodes
-            .iter()
-            .any(|node| node.session_id == session_id));
+        assert!(
+            list_reply
+                .nodes
+                .iter()
+                .any(|node| node.session_id == session_id)
+        );
 
         let context_reply = service
             .get_context(Request::new(proto::GetContextRequest {

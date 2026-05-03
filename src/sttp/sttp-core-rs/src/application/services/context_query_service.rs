@@ -48,17 +48,9 @@ impl ContextQueryService {
         limit: usize,
     ) -> RetrieveResult {
         self.get_context_scoped_filtered_async(
-            None,
-            stability,
-            friction,
-            logic,
-            autonomy,
-            None,
-            None,
-            None,
-            limit,
+            None, stability, friction, logic, autonomy, None, None, None, limit,
         )
-            .await
+        .await
     }
 
     pub async fn get_context_global_filtered_async(
@@ -73,15 +65,7 @@ impl ContextQueryService {
         limit: usize,
     ) -> RetrieveResult {
         self.get_context_scoped_filtered_async(
-            None,
-            stability,
-            friction,
-            logic,
-            autonomy,
-            from_utc,
-            to_utc,
-            tiers,
-            limit,
+            None, stability, friction, logic, autonomy, from_utc, to_utc, tiers, limit,
         )
         .await
     }
@@ -97,15 +81,7 @@ impl ContextQueryService {
         limit: usize,
     ) -> RetrieveResult {
         self.get_context_scoped_filtered_async(
-            session_id,
-            stability,
-            friction,
-            logic,
-            autonomy,
-            None,
-            None,
-            None,
-            limit,
+            session_id, stability, friction, logic, autonomy, None, None, None, limit,
         )
         .await
     }
@@ -333,9 +309,16 @@ impl ContextQueryService {
         to_retrieve_result(nodes)
     }
 
-    pub async fn list_nodes_async(&self, limit: usize, session_id: Option<&str>) -> Result<ListNodesResult> {
+    pub async fn list_nodes_async(
+        &self,
+        limit: usize,
+        session_id: Option<&str>,
+    ) -> Result<ListNodesResult> {
         let capped_limit = limit.clamp(1, 200);
-        let nodes = self.store.list_nodes_async(capped_limit, session_id).await?;
+        let nodes = self
+            .store
+            .list_nodes_async(capped_limit, session_id)
+            .await?;
         Ok(ListNodesResult {
             retrieved: nodes.len(),
             nodes,

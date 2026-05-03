@@ -103,6 +103,45 @@ pub(crate) struct BatchRekeyHttpRequest {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct EmbeddingMigrationFilterHttp {
+    pub(crate) session_id: Option<String>,
+    pub(crate) from_utc: Option<DateTime<Utc>>,
+    pub(crate) to_utc: Option<DateTime<Utc>>,
+    pub(crate) tiers: Option<Vec<String>>,
+    pub(crate) has_embedding: Option<bool>,
+    pub(crate) embedding_model: Option<String>,
+    pub(crate) sync_keys: Option<Vec<String>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum EmbeddingMigrationModeHttp {
+    MissingOnly,
+    ReindexAll,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EmbeddingMigrationPreviewHttpRequest {
+    pub(crate) tenant_id: Option<String>,
+    pub(crate) filter: Option<EmbeddingMigrationFilterHttp>,
+    pub(crate) sample_limit: Option<usize>,
+    pub(crate) max_nodes: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EmbeddingMigrationRunHttpRequest {
+    pub(crate) tenant_id: Option<String>,
+    pub(crate) filter: Option<EmbeddingMigrationFilterHttp>,
+    pub(crate) mode: Option<EmbeddingMigrationModeHttp>,
+    pub(crate) dry_run: Option<bool>,
+    pub(crate) batch_size: Option<usize>,
+    pub(crate) max_nodes: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ListNodesQuery {
     pub(crate) limit: Option<usize>,
     pub(crate) session_id: Option<String>,
@@ -318,6 +357,46 @@ pub(crate) struct BatchRekeyResultDto {
     pub(crate) calibrations_updated: usize,
     pub(crate) updated_scopes: usize,
     pub(crate) conflict_scopes: usize,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EmbeddingMigrationSampleDto {
+    pub(crate) sync_key: String,
+    pub(crate) session_id: String,
+    pub(crate) tier: String,
+    pub(crate) has_embedding: bool,
+    pub(crate) embedding_model: Option<String>,
+    pub(crate) embedding_dimensions: Option<usize>,
+    pub(crate) embedded_at: Option<DateTime<Utc>>,
+    pub(crate) updated_at: DateTime<Utc>,
+    pub(crate) context_summary: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EmbeddingMigrationPreviewResultDto {
+    pub(crate) total_candidates: usize,
+    pub(crate) sample: Vec<EmbeddingMigrationSampleDto>,
+    pub(crate) provider_available: bool,
+    pub(crate) provider_model: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EmbeddingMigrationRunResultDto {
+    pub(crate) scanned: usize,
+    pub(crate) selected: usize,
+    pub(crate) updated: usize,
+    pub(crate) skipped: usize,
+    pub(crate) failed: usize,
+    pub(crate) duplicate: usize,
+    pub(crate) started_at: DateTime<Utc>,
+    pub(crate) completed_at: DateTime<Utc>,
+    pub(crate) provider_model: Option<String>,
+    pub(crate) dry_run: bool,
+    pub(crate) mode: String,
+    pub(crate) failure_reasons: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]

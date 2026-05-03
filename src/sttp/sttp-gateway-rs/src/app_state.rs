@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use sttp_core_rs::application::services::{
-    CalibrationService, ContextQueryService, MonthlyRollupService, MoodCatalogService,
-    RekeyScopeService, StoreContextService,
+    CalibrationService, ContextQueryService, EmbeddingMigrationService, MonthlyRollupService,
+    MoodCatalogService, RekeyScopeService, StoreContextService,
 };
 use sttp_core_rs::domain::contracts::{EmbeddingProvider, NodeStore};
 
@@ -17,6 +17,7 @@ pub(crate) struct AppState {
     pub(crate) context_query: Arc<ContextQueryService>,
     pub(crate) mood_catalog: Arc<MoodCatalogService>,
     pub(crate) store_context: Arc<StoreContextService>,
+    pub(crate) embedding_migration: Arc<EmbeddingMigrationService>,
     pub(crate) monthly_rollup: Arc<MonthlyRollupService>,
     pub(crate) rekey_scope: Arc<RekeyScopeService>,
 }

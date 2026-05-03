@@ -9,10 +9,19 @@ pub(crate) struct GatewayArgs {
     #[arg(long, env = "STTP_GATEWAY_GRPC_PORT", default_value_t = 8081)]
     pub(crate) grpc_port: u16,
 
-    #[arg(long, env = "STTP_GATEWAY_BACKEND", value_enum, default_value = "in-memory")]
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_BACKEND",
+        value_enum,
+        default_value = "in-memory"
+    )]
     pub(crate) backend: GatewayBackend,
 
-    #[arg(long, env = "STTP_GATEWAY_ROOT_DIR_NAME", default_value = ".sttp-gateway")]
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_ROOT_DIR_NAME",
+        default_value = ".sttp-gateway"
+    )]
     pub(crate) root_dir_name: String,
 
     #[arg(long, env = "STTP_GATEWAY_REMOTE", default_value_t = false)]
@@ -26,11 +35,7 @@ pub(crate) struct GatewayArgs {
     )]
     pub(crate) cors_enabled: bool,
 
-    #[arg(
-        long,
-        env = "STTP_GATEWAY_CORS_ALLOWED_ORIGINS",
-        default_value = "*"
-    )]
+    #[arg(long, env = "STTP_GATEWAY_CORS_ALLOWED_ORIGINS", default_value = "*")]
     pub(crate) cors_allowed_origins: String,
 
     #[arg(long, env = "STTP_SURREAL_EMBEDDED_ENDPOINT")]
@@ -83,7 +88,11 @@ pub(crate) struct GatewayArgs {
     )]
     pub(crate) embeddings_repo: String,
 
-    #[arg(long, env = "STTP_GATEWAY_AVEC_SCORING_ENABLED", default_value_t = false)]
+    #[arg(
+        long,
+        env = "STTP_GATEWAY_AVEC_SCORING_ENABLED",
+        default_value_t = false
+    )]
     pub(crate) avec_scoring_enabled: bool,
 
     #[arg(

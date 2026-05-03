@@ -30,12 +30,9 @@ fn runtime_normalizes_embedded_relative_path() {
         ..SurrealDbSettings::default()
     };
 
-    let runtime = SurrealDbRuntimeOptions::from_args(
-        &[],
-        &settings,
-        Some(".sttp-core-rs-test-embedded"),
-    )
-    .expect("runtime options should resolve");
+    let runtime =
+        SurrealDbRuntimeOptions::from_args(&[], &settings, Some(".sttp-core-rs-test-embedded"))
+            .expect("runtime options should resolve");
 
     assert!(!runtime.use_remote);
     assert!(runtime.endpoint.starts_with("surrealkv://"));

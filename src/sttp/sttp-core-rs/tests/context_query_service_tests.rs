@@ -79,7 +79,10 @@ fn make_node_with_model_avec(
 async fn get_context_global_returns_mixed_sessions() {
     let store = Arc::new(InMemoryNodeStore::new());
     let initializer: Arc<dyn NodeStoreInitializer> = store.clone();
-    initializer.initialize_async().await.expect("store should initialize");
+    initializer
+        .initialize_async()
+        .await
+        .expect("store should initialize");
 
     store
         .upsert_node_async(make_node("session-a", 2.60, None))
@@ -97,15 +100,28 @@ async fn get_context_global_returns_mixed_sessions() {
         .await;
 
     assert!(result.retrieved >= 2);
-    assert!(result.nodes.iter().any(|node| node.session_id == "session-a"));
-    assert!(result.nodes.iter().any(|node| node.session_id == "session-b"));
+    assert!(
+        result
+            .nodes
+            .iter()
+            .any(|node| node.session_id == "session-a")
+    );
+    assert!(
+        result
+            .nodes
+            .iter()
+            .any(|node| node.session_id == "session-b")
+    );
 }
 
 #[tokio::test]
 async fn get_context_hybrid_global_prefers_semantic_match() {
     let store = Arc::new(InMemoryNodeStore::new());
     let initializer: Arc<dyn NodeStoreInitializer> = store.clone();
-    initializer.initialize_async().await.expect("store should initialize");
+    initializer
+        .initialize_async()
+        .await
+        .expect("store should initialize");
 
     store
         .upsert_node_async(make_node("session-a", 2.60, Some(vec![1.0, 0.0, 0.0])))
@@ -139,7 +155,10 @@ async fn get_context_hybrid_global_prefers_semantic_match() {
 async fn get_context_scoped_keeps_existing_session_behavior() {
     let store = Arc::new(InMemoryNodeStore::new());
     let initializer: Arc<dyn NodeStoreInitializer> = store.clone();
-    initializer.initialize_async().await.expect("store should initialize");
+    initializer
+        .initialize_async()
+        .await
+        .expect("store should initialize");
 
     store
         .upsert_node_async(make_node("session-a", 2.60, None))
@@ -157,14 +176,22 @@ async fn get_context_scoped_keeps_existing_session_behavior() {
         .await;
 
     assert!(result.retrieved >= 1);
-    assert!(result.nodes.iter().all(|node| node.session_id == "session-a"));
+    assert!(
+        result
+            .nodes
+            .iter()
+            .all(|node| node.session_id == "session-a")
+    );
 }
 
 #[tokio::test]
 async fn get_context_global_prefers_full_avec_match_when_psi_ties() {
     let store = Arc::new(InMemoryNodeStore::new());
     let initializer: Arc<dyn NodeStoreInitializer> = store.clone();
-    initializer.initialize_async().await.expect("store should initialize");
+    initializer
+        .initialize_async()
+        .await
+        .expect("store should initialize");
 
     let target = AvecState {
         stability: 0.90,
@@ -218,7 +245,10 @@ async fn get_context_global_prefers_full_avec_match_when_psi_ties() {
 async fn get_context_scoped_filtered_applies_time_window_and_tiers() {
     let store = Arc::new(InMemoryNodeStore::new());
     let initializer: Arc<dyn NodeStoreInitializer> = store.clone();
-    initializer.initialize_async().await.expect("store should initialize");
+    initializer
+        .initialize_async()
+        .await
+        .expect("store should initialize");
 
     let now = Utc::now();
 

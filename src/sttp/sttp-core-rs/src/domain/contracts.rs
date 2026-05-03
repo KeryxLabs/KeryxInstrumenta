@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
-    NodeUpsertResult, SttpNode, SyncCheckpoint, SyncCursor, ValidationResult,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery, NodeUpsertResult,
+    SttpNode, SyncCheckpoint, SyncCursor, ValidationResult,
 };
 
 /// Storage abstraction for STTP nodes and calibration data.
@@ -63,14 +63,7 @@ pub trait NodeStore: Send + Sync {
         limit: usize,
     ) -> Result<Vec<SttpNode>> {
         let _ = (query_embedding, alpha, beta);
-        self.get_by_resonance_async(
-            session_id,
-            current_avec,
-            from_utc,
-            to_utc,
-            tiers,
-            limit,
-        )
+        self.get_by_resonance_async(session_id, current_avec, from_utc, to_utc, tiers, limit)
             .await
     }
 

@@ -214,10 +214,7 @@ impl SttpNode {
         hasher.update(encoded);
         let digest = hasher.finalize();
 
-        digest
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect()
+        digest.iter().map(|byte| format!("{byte:02x}")).collect()
     }
 }
 
@@ -579,7 +576,11 @@ pub struct MonthlyRollupRequest {
 }
 
 impl MonthlyRollupRequest {
-    pub fn new(session_id: impl Into<String>, start_utc: DateTime<Utc>, end_utc: DateTime<Utc>) -> Self {
+    pub fn new(
+        session_id: impl Into<String>,
+        start_utc: DateTime<Utc>,
+        end_utc: DateTime<Utc>,
+    ) -> Self {
         Self {
             session_id: session_id.into(),
             start_utc,

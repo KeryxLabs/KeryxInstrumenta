@@ -1,5 +1,5 @@
-use serde::Deserialize;
 use crate::domain::models::ConnectorMetadata;
+use serde::Deserialize;
 use serde_json::Value;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -99,6 +99,16 @@ pub struct SurrealExistingNodeRecord {
     pub id: Value,
     #[serde(rename = "SourceMetadata", default)]
     pub source_metadata: Option<ConnectorMetadata>,
+    #[serde(rename = "ContextSummary", default)]
+    pub context_summary: Option<String>,
+    #[serde(rename = "Embedding", default)]
+    pub embedding: Option<Vec<f32>>,
+    #[serde(rename = "EmbeddingModel", default)]
+    pub embedding_model: Option<String>,
+    #[serde(rename = "EmbeddingDimensions", default)]
+    pub embedding_dimensions: Option<usize>,
+    #[serde(rename = "EmbeddedAt", default)]
+    pub embedded_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

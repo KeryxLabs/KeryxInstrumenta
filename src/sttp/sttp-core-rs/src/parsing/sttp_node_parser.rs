@@ -6,9 +6,7 @@ use crate::domain::models::{
     AvecState, CanonicalAst, CanonicalAstLayer, ParseDiagnostic, ParseDiagnosticSeverity,
     ParseProfile, ParseResult, ParseSpan, SttpNode,
 };
-use crate::parsing::lexicon::{
-    AVEC_COMPRESSION_KEY, AVEC_MODEL_KEY, AVEC_USER_KEY,
-};
+use crate::parsing::lexicon::{AVEC_COMPRESSION_KEY, AVEC_MODEL_KEY, AVEC_USER_KEY};
 use crate::parsing::state_machine::{ParserState, SttpLayerStateMachine};
 
 static TIMESTAMP_RX: Lazy<Regex> = Lazy::new(|| {
@@ -25,10 +23,8 @@ static COMPRESSION_DEPTH_RX: Lazy<Regex> = Lazy::new(|| {
 });
 
 static PARENT_NODE_RX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(
-        r#"parent_node:\s*(?:ref:(?P<ref>[^,\s}\]]+)|"(?P<quoted>[^"]+)"|(?P<null>null))"#,
-    )
-    .expect("parent regex must compile")
+    Regex::new(r#"parent_node:\s*(?:ref:(?P<ref>[^,\s}\]]+)|"(?P<quoted>[^"]+)"|(?P<null>null))"#)
+        .expect("parent regex must compile")
 });
 
 static CONTEXT_SUMMARY_RX: Lazy<Regex> = Lazy::new(|| {
@@ -45,9 +41,8 @@ static RHO_RX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"rho:\s*(?P<v>[-+]?\d*\.?\d+)").expect("rho regex must compile"));
 static KAPPA_RX: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"kappa:\s*(?P<v>[-+]?\d*\.?\d+)").expect("kappa regex must compile"));
-static PSI_RX: Lazy<Regex> = Lazy::new(|| {
-    Regex::new(r"psi:\s*(?P<v>[-+]?\d*\.?\d+)").expect("psi regex must compile")
-});
+static PSI_RX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"psi:\s*(?P<v>[-+]?\d*\.?\d+)").expect("psi regex must compile"));
 static CONTENT_KEY_RX: Lazy<Regex> = Lazy::new(|| {
     Regex::new(r"^(?P<name>[A-Za-z_][A-Za-z0-9_]*)\(\s*(?P<c>[-+]?\d*\.?\d+)\s*\)$")
         .expect("content key regex must compile")
@@ -190,8 +185,11 @@ impl SttpNodeParser {
         let node = SttpNode {
             raw: raw.to_string(),
             session_id: session_id.to_string(),
-            tier: parse_tier(envelope).or_else(|| parse_tier(raw)).unwrap_or_default(),
-            timestamp: parse_timestamp(envelope).unwrap_or_else(|| parse_timestamp(raw).unwrap_or_else(Utc::now)),
+            tier: parse_tier(envelope)
+                .or_else(|| parse_tier(raw))
+                .unwrap_or_default(),
+            timestamp: parse_timestamp(envelope)
+                .unwrap_or_else(|| parse_timestamp(raw).unwrap_or_else(Utc::now)),
             compression_depth: parse_int(&COMPRESSION_DEPTH_RX, provenance),
             parent_node_id: parse_parent_node(provenance).or_else(|| parse_parent_node(raw)),
             sync_key: String::new(),
@@ -333,7 +331,10 @@ fn validate_object_schema(
         }
 
         if raw_value.starts_with('{') && raw_value.ends_with('}') {
-            if let Some(inner) = raw_value.strip_prefix('{').and_then(|v| v.strip_suffix('}')) {
+            if let Some(inner) = raw_value
+                .strip_prefix('{')
+                .and_then(|v| v.strip_suffix('}'))
+            {
                 let nested_offset = object_offset
                     + pair.start
                     + colon_idx
@@ -713,7 +714,8 @@ mod tests {
 
     #[test]
     fn should_parse_avec_with_noncanonical_order() {
-        let input = r#"user_avec: { logic: 0.90, stability: 0.81, autonomy: 0.92, friction: 0.11 }"#;
+        let input =
+            r#"user_avec: { logic: 0.90, stability: 0.81, autonomy: 0.92, friction: 0.11 }"#;
         let parsed = parse_avec_block(input, AVEC_USER_KEY).expect("avec should parse");
 
         assert!((parsed.stability - 0.81).abs() < 0.0001);
@@ -747,9 +749,11 @@ mod tests {
         let content = r#"◈⟨ { topic: \"invalid\" } ⟩"#;
         let diagnostics = validate_content_schema(content, content, None);
 
-        assert!(diagnostics
-            .iter()
-            .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY"));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_KEY")
+        );
     }
 
     #[test]
@@ -757,9 +761,11 @@ mod tests {
         let content = r#"◈⟨ { topic(1.20): \"invalid\" } ⟩"#;
         let diagnostics = validate_content_schema(content, content, None);
 
-        assert!(diagnostics
-            .iter()
-            .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_CONFIDENCE"));
+        assert!(
+            diagnostics
+                .iter()
+                .any(|d| d.code == "STTP_CONTENT_SCHEMA_INVALID_CONFIDENCE")
+        );
     }
 
     #[test]
@@ -776,7 +782,10 @@ mod tests {
         assert!(parsed.success);
 
         let node = parsed.node.expect("parsed node should exist");
-        assert_eq!(node.context_summary.as_deref(), Some("parser hardening session"));
+        assert_eq!(
+            node.context_summary.as_deref(),
+            Some("parser hardening session")
+        );
     }
 
     #[test]

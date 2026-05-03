@@ -3,8 +3,8 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use axum::http::HeaderValue;
 use sttp_core_rs::application::services::{
-    CalibrationService, ContextQueryService, MonthlyRollupService, MoodCatalogService,
-    RekeyScopeService, StoreContextService,
+    CalibrationService, ContextQueryService, EmbeddingMigrationService, MonthlyRollupService,
+    MoodCatalogService, RekeyScopeService, StoreContextService,
 };
 use sttp_core_rs::application::validation::TreeSitterValidator;
 use sttp_core_rs::domain::contracts::{
@@ -19,9 +19,9 @@ use tracing::{error, info};
 use crate::app_state::AppState;
 use crate::gateway_args::{EmbeddingsProviderKind, GatewayArgs, GatewayBackend};
 use crate::http_models::CorsAllowedOrigins;
-use crate::providers::{AvecScorer, OllamaAvecScorer, OllamaEmbeddingProvider};
 #[cfg(feature = "candle-local")]
 use crate::providers::SttpCandleProvider;
+use crate::providers::{AvecScorer, OllamaAvecScorer, OllamaEmbeddingProvider};
 use crate::surreal_client::RuntimeSurrealDbClient;
 
 pub(crate) async fn build_state(args: &GatewayArgs) -> Result<AppState> {
@@ -45,7 +45,11 @@ pub(crate) fn parse_cors_allowed_origins(value: &str) -> Result<CorsAllowedOrigi
     }
 
     let mut origins = Vec::new();
-    for origin in trimmed.split(',').map(str::trim).filter(|part| !part.is_empty()) {
+    for origin in trimmed
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+    {
         let header = HeaderValue::from_str(origin)
             .map_err(|_| anyhow!("Invalid CORS origin value: {origin}"))?;
         origins.push(header);
@@ -74,9 +78,7 @@ async fn build_state_with_backend(
         GatewayBackend::InMemory => build_in_memory_state_with_args(options).await,
         GatewayBackend::Surreal => {
             let options = options.ok_or_else(|| {
-                anyhow!(
-                    "Surreal backend selected, but no gateway runtime options were provided."
-                )
+                anyhow!("Surreal backend selected, but no gateway runtime options were provided.")
             })?;
             build_surreal_state(options).await
         }
@@ -122,12 +124,16 @@ fn build_services(
 
     AppState {
         node_store: store_trait.clone(),
-        embedding_provider,
+        embedding_provider: embedding_provider.clone(),
         avec_scorer,
         calibration: Arc::new(CalibrationService::new(store_trait.clone())),
         context_query: Arc::new(ContextQueryService::new(store_trait.clone())),
         mood_catalog: Arc::new(MoodCatalogService::new()),
         store_context,
+        embedding_migration: Arc::new(EmbeddingMigrationService::new(
+            store_trait.clone(),
+            embedding_provider,
+        )),
         monthly_rollup: Arc::new(MonthlyRollupService::new(store_trait.clone(), validator)),
         rekey_scope: Arc::new(RekeyScopeService::new(store_trait)),
     }
@@ -164,7 +170,11 @@ async fn build_surreal_state(args: &GatewayArgs) -> Result<AppState> {
     info!(
         backend = "surreal",
         root_dir = runtime.root_dir,
-        mode = if runtime.use_remote { "remote" } else { "embedded" },
+        mode = if runtime.use_remote {
+            "remote"
+        } else {
+            "embedded"
+        },
         endpoint = runtime.endpoint,
         namespace = runtime.namespace,
         database = runtime.database,
@@ -210,7 +220,9 @@ fn build_avec_scorer(args: Option<&GatewayArgs>) -> Option<Arc<dyn AvecScorer>> 
     )))
 }
 
-fn build_embedding_provider(args: Option<&GatewayArgs>) -> Result<Option<Arc<dyn EmbeddingProvider>>> {
+fn build_embedding_provider(
+    args: Option<&GatewayArgs>,
+) -> Result<Option<Arc<dyn EmbeddingProvider>>> {
     let Some(args) = args else {
         return Ok(None);
     };

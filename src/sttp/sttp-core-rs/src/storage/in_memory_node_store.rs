@@ -6,9 +6,8 @@ use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
-    NodeUpsertResult, NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint,
-    SyncCursor,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery, NodeUpsertResult,
+    NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint, SyncCursor,
 };
 
 const DEFAULT_TENANT: &str = "default";
@@ -70,7 +69,12 @@ impl NodeStore for InMemoryNodeStore {
                     .map(|s| &n.session_id == s)
                     .unwrap_or(true)
             })
-            .filter(|n| query.from_utc.map(|from| n.timestamp >= from).unwrap_or(true))
+            .filter(|n| {
+                query
+                    .from_utc
+                    .map(|from| n.timestamp >= from)
+                    .unwrap_or(true)
+            })
             .filter(|n| query.to_utc.map(|to| n.timestamp <= to).unwrap_or(true))
             .filter(|n| {
                 query
@@ -266,7 +270,11 @@ impl NodeStore for InMemoryNodeStore {
         Ok(result)
     }
 
-    async fn list_nodes_async(&self, limit: usize, session_id: Option<&str>) -> Result<Vec<SttpNode>> {
+    async fn list_nodes_async(
+        &self,
+        limit: usize,
+        session_id: Option<&str>,
+    ) -> Result<Vec<SttpNode>> {
         self.query_nodes_async(NodeQuery {
             limit: limit.clamp(1, 200),
             session_id: session_id.map(|s| s.to_string()),
@@ -426,10 +434,9 @@ impl NodeStore for InMemoryNodeStore {
             };
 
             let tenant_id = derive_tenant_id_from_session(&node.session_id);
-            if !scopes
-                .iter()
-                .any(|(tenant, session): &(String, String)| tenant == &tenant_id && session == &node.session_id)
-            {
+            if !scopes.iter().any(|(tenant, session): &(String, String)| {
+                tenant == &tenant_id && session == &node.session_id
+            }) {
                 scopes.push((tenant_id, node.session_id.clone()));
             }
         }
@@ -440,7 +447,8 @@ impl NodeStore for InMemoryNodeStore {
         let mut sources_to_apply = Vec::new();
 
         for (source_tenant_id, source_session_id) in scopes {
-            let same_scope = source_tenant_id == target_tenant_id && source_session_id == target_session_id;
+            let same_scope =
+                source_tenant_id == target_tenant_id && source_session_id == target_session_id;
 
             let temporal_nodes = nodes_snapshot
                 .iter()
@@ -476,8 +484,10 @@ impl NodeStore for InMemoryNodeStore {
             let message = if same_scope {
                 Some("source and target scopes are identical".to_string())
             } else if conflict {
-                Some("target scope already contains rows; set allow_merge=true to override"
-                    .to_string())
+                Some(
+                    "target scope already contains rows; set allow_merge=true to override"
+                        .to_string(),
+                )
             } else {
                 if !dry_run {
                     applied = true;
@@ -506,7 +516,10 @@ impl NodeStore for InMemoryNodeStore {
         if !dry_run && !sources_to_apply.is_empty() {
             let mut nodes = self.nodes.write().await;
             for (_, node) in nodes.iter_mut() {
-                if sources_to_apply.iter().any(|source| source == &node.session_id) {
+                if sources_to_apply
+                    .iter()
+                    .any(|source| source == &node.session_id)
+                {
                     node.session_id = target_session_id.to_string();
                 }
             }
@@ -522,7 +535,9 @@ impl NodeStore for InMemoryNodeStore {
         Ok(BatchRekeyResult {
             dry_run,
             requested_node_ids: normalized_node_ids.len(),
-            resolved_node_ids: normalized_node_ids.len().saturating_sub(missing_node_ids.len()),
+            resolved_node_ids: normalized_node_ids
+                .len()
+                .saturating_sub(missing_node_ids.len()),
             missing_node_ids,
             scopes: scope_results,
             temporal_nodes_updated,
@@ -610,7 +625,9 @@ fn hybrid_score(
     let resonance = resonance.clamp(0.0, 1.0);
 
     let semantic = match (query_embedding, node.embedding.as_deref()) {
-        (Some(query), Some(node_vec)) => cosine_similarity(query, node_vec).map(|v| (v + 1.0) / 2.0),
+        (Some(query), Some(node_vec)) => {
+            cosine_similarity(query, node_vec).map(|v| (v + 1.0) / 2.0)
+        }
         _ => None,
     };
 

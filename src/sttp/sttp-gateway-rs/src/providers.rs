@@ -189,7 +189,10 @@ impl CandleRuntime {
         let seq_len = encodings[0].get_ids().len();
         let batch_size = texts.len();
 
-        let input_ids: Vec<u32> = encodings.iter().flat_map(|e| e.get_ids().to_vec()).collect();
+        let input_ids: Vec<u32> = encodings
+            .iter()
+            .flat_map(|e| e.get_ids().to_vec())
+            .collect();
         let attention_mask: Vec<u32> = encodings
             .iter()
             .flat_map(|e| e.get_attention_mask().to_vec())
@@ -197,10 +200,8 @@ impl CandleRuntime {
         let token_type_ids: Vec<u32> = vec![0u32; batch_size * seq_len];
 
         let input_ids = Tensor::from_vec(input_ids, (batch_size, seq_len), &self.device)?;
-        let attention_mask =
-            Tensor::from_vec(attention_mask, (batch_size, seq_len), &self.device)?;
-        let token_type_ids =
-            Tensor::from_vec(token_type_ids, (batch_size, seq_len), &self.device)?;
+        let attention_mask = Tensor::from_vec(attention_mask, (batch_size, seq_len), &self.device)?;
+        let token_type_ids = Tensor::from_vec(token_type_ids, (batch_size, seq_len), &self.device)?;
 
         let output = self
             .model

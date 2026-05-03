@@ -28,7 +28,9 @@ impl MonthlyRollupService {
     pub async fn create_async(&self, request: MonthlyRollupRequest) -> MonthlyRollupResult {
         if request.end_utc < request.start_utc {
             return MonthlyRollupResult {
-                error: Some("InvalidRange: end must be greater than or equal to start.".to_string()),
+                error: Some(
+                    "InvalidRange: end must be greater than or equal to start.".to_string(),
+                ),
                 ..MonthlyRollupResult::default()
             };
         }
@@ -49,7 +51,7 @@ impl MonthlyRollupService {
                 return MonthlyRollupResult {
                     error: Some(format!("QueryFailure: {err}")),
                     ..MonthlyRollupResult::default()
-                }
+                };
             }
         };
 
@@ -78,7 +80,8 @@ impl MonthlyRollupService {
 
         let user_average = average_avec(user_nodes.iter().map(|n| n.user_avec));
         let model_average = average_avec(model_nodes.iter().map(|n| n.model_avec));
-        let compression_average = average_avec(compression_nodes.iter().filter_map(|n| n.compression_avec));
+        let compression_average =
+            average_avec(compression_nodes.iter().filter_map(|n| n.compression_avec));
 
         let rho_range = range_for(ordered_nodes.iter().map(|n| n.rho));
         let kappa_range = range_for(ordered_nodes.iter().map(|n| n.kappa));
@@ -169,7 +172,7 @@ impl MonthlyRollupService {
                         kappa_bands,
                         error: Some(format!("StoreFailure: {err}")),
                         ..MonthlyRollupResult::default()
-                    }
+                    };
                 }
             }
         }
@@ -229,7 +232,10 @@ fn build_monthly_node(
         .replace("__PARENT_REFERENCE__", parent_reference)
         .replace("__TIMESTAMP__", &timestamp)
         .replace("__SOURCE_NODES__", &source_nodes.to_string())
-        .replace("__SOURCE_USER_AVEC_NODES__", &source_user_avec_nodes.to_string())
+        .replace(
+            "__SOURCE_USER_AVEC_NODES__",
+            &source_user_avec_nodes.to_string(),
+        )
         .replace("__ACTIVE_DAYS__", &active_days.to_string())
         .replace("__START__", &start)
         .replace("__END__", &end)
@@ -240,15 +246,27 @@ fn build_monthly_node(
         .replace("__USER_LOGIC__", &format_float(user_average.logic))
         .replace("__USER_AUTONOMY__", &format_float(user_average.autonomy))
         .replace("__USER_PSI__", &format_float(user_average.psi()))
-        .replace("__MODEL_STABILITY__", &format_float(model_average.stability))
+        .replace(
+            "__MODEL_STABILITY__",
+            &format_float(model_average.stability),
+        )
         .replace("__MODEL_FRICTION__", &format_float(model_average.friction))
         .replace("__MODEL_LOGIC__", &format_float(model_average.logic))
         .replace("__MODEL_AUTONOMY__", &format_float(model_average.autonomy))
         .replace("__MODEL_PSI__", &format_float(model_average.psi()))
-        .replace("__COMP_STABILITY__", &format_float(compression_average.stability))
-        .replace("__COMP_FRICTION__", &format_float(compression_average.friction))
+        .replace(
+            "__COMP_STABILITY__",
+            &format_float(compression_average.stability),
+        )
+        .replace(
+            "__COMP_FRICTION__",
+            &format_float(compression_average.friction),
+        )
         .replace("__COMP_LOGIC__", &format_float(compression_average.logic))
-        .replace("__COMP_AUTONOMY__", &format_float(compression_average.autonomy))
+        .replace(
+            "__COMP_AUTONOMY__",
+            &format_float(compression_average.autonomy),
+        )
         .replace("__COMP_PSI__", &format_float(compression_average.psi()))
         .replace("__RHO_AVG__", &format_float(rho_range.average))
         .replace("__RHO_MIN__", &format_float(rho_range.min))
@@ -299,7 +317,9 @@ where
         return NumericRange::default();
     }
 
-    let min = values.iter().fold(f32::INFINITY, |acc, value| acc.min(*value));
+    let min = values
+        .iter()
+        .fold(f32::INFINITY, |acc, value| acc.min(*value));
     let max = values
         .iter()
         .fold(f32::NEG_INFINITY, |acc, value| acc.max(*value));
@@ -315,10 +335,7 @@ where
     let values = values.into_iter().collect::<Vec<_>>();
     ConfidenceBandSummary {
         low: values.iter().filter(|v| **v < 0.5).count(),
-        medium: values
-            .iter()
-            .filter(|v| **v >= 0.5 && **v < 0.85)
-            .count(),
+        medium: values.iter().filter(|v| **v >= 0.5 && **v < 0.85).count(),
         high: values.iter().filter(|v| **v >= 0.85).count(),
     }
 }
@@ -331,11 +348,7 @@ fn format_float(value: f32) -> String {
     if s.ends_with('.') {
         s.pop();
     }
-    if s.is_empty() {
-        "0".to_string()
-    } else {
-        s
-    }
+    if s.is_empty() { "0".to_string() } else { s }
 }
 
 fn slug(value: &str) -> String {

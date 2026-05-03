@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sttp_core_rs::domain::contracts::EmbeddingProvider;
 use sttp_core_rs::{
-    CalibrationService, ContextQueryService, InMemoryNodeStore, MonthlyRollupRequest,
-    MonthlyRollupService, MoodCatalogService, NodeStore, NodeStoreInitializer, NodeValidator,
-    StoreContextService, SurrealDbClient, SurrealDbNodeStore, SurrealDbRuntimeOptions,
-    SurrealDbSettings, TreeSitterValidator,
+    CalibrationService, ContextQueryService, EmbeddingMigrationFilter, EmbeddingMigrationMode,
+    EmbeddingMigrationPreviewRequest, EmbeddingMigrationRunRequest, EmbeddingMigrationService,
+    InMemoryNodeStore, MonthlyRollupRequest, MonthlyRollupService, MoodCatalogService, NodeStore,
+    NodeStoreInitializer, NodeValidator, StoreContextService, SurrealDbClient, SurrealDbNodeStore,
+    SurrealDbRuntimeOptions, SurrealDbSettings, TreeSitterValidator,
 };
 use surrealdb::engine::any::{Any, connect};
 use surrealdb::opt::auth::Root;
@@ -256,6 +257,7 @@ struct SttpMcpServer {
     calibration: Arc<CalibrationService>,
     store_context: Arc<StoreContextService>,
     context_query: Arc<ContextQueryService>,
+    embedding_migration: Arc<EmbeddingMigrationService>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     moods: Arc<MoodCatalogService>,
     monthly_rollup: Arc<MonthlyRollupService>,
@@ -268,6 +270,7 @@ impl SttpMcpServer {
         calibration: Arc<CalibrationService>,
         store_context: Arc<StoreContextService>,
         context_query: Arc<ContextQueryService>,
+        embedding_migration: Arc<EmbeddingMigrationService>,
         embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
         moods: Arc<MoodCatalogService>,
         monthly_rollup: Arc<MonthlyRollupService>,
@@ -276,6 +279,7 @@ impl SttpMcpServer {
             calibration,
             store_context,
             context_query,
+            embedding_migration,
             embedding_provider,
             moods,
             monthly_rollup,
@@ -357,7 +361,7 @@ impl SttpMcpServer {
 
     #[tool(
         name = "get_context",
-        description = "Primary memory retrieval tool (resonance search, not inventory listing). Returns top resonant memory nodes for the provided AVEC state. Optional context_keywords enables server-side semantic retrieval (with internal embedding generation) and fuzzy context_summary matching fallback. If session_id is omitted, retrieval is global across sessions. Use list_nodes for inventory and debugging."
+        description = "Primary memory retrieval tool (resonance search, not inventory listing). Returns top resonant memory nodes for the provided AVEC state. Optional context_keywords enables server-side semantic retrieval (with internal embedding generation); keyword fallback is only used when semantic retrieval returns no nodes (or embeddings are unavailable). If session_id is omitted, retrieval is global across sessions. Use list_nodes for inventory and debugging."
     )]
     async fn get_context(&self, Parameters(request): Parameters<GetContextRequest>) -> String {
         let from_utc = match parse_utc_optional(request.from_utc.as_deref(), "from_utc") {
@@ -394,40 +398,7 @@ impl SttpMcpServer {
         let alpha = request.alpha.unwrap_or(0.7);
         let beta = request.beta.unwrap_or(0.3);
 
-        let result = if !context_keywords.is_empty() {
-            if let Some(keyword_embedding) = self.embed_context_keywords(&context_keywords).await {
-                self.context_query
-                    .get_context_hybrid_scoped_filtered_async(
-                        request.session_id.as_deref(),
-                        request.stability,
-                        request.friction,
-                        request.logic,
-                        request.autonomy,
-                        from_utc,
-                        to_utc,
-                        tiers.as_deref(),
-                        Some(keyword_embedding.as_slice()),
-                        alpha,
-                        beta,
-                        expanded_limit(limit),
-                    )
-                    .await
-            } else {
-                self.context_query
-                    .get_context_scoped_filtered_async(
-                        request.session_id.as_deref(),
-                        request.stability,
-                        request.friction,
-                        request.logic,
-                        request.autonomy,
-                        from_utc,
-                        to_utc,
-                        tiers.as_deref(),
-                        expanded_limit(limit),
-                    )
-                    .await
-            }
-        } else {
+        let result = if context_keywords.is_empty() {
             self.context_query
                 .get_context_scoped_filtered_async(
                     request.session_id.as_deref(),
@@ -441,12 +412,62 @@ impl SttpMcpServer {
                     limit,
                 )
                 .await
-        };
+        } else if let Some(keyword_embedding) = self.embed_context_keywords(&context_keywords).await {
+            let semantic_result = self
+                .context_query
+                .get_context_hybrid_scoped_filtered_async(
+                    request.session_id.as_deref(),
+                    request.stability,
+                    request.friction,
+                    request.logic,
+                    request.autonomy,
+                    from_utc,
+                    to_utc,
+                    tiers.as_deref(),
+                    Some(keyword_embedding.as_slice()),
+                    alpha,
+                    beta,
+                    limit,
+                )
+                .await;
 
-        let result = if context_keywords.is_empty() {
-            result
+            if semantic_result.nodes.is_empty() {
+                let fallback_result = self
+                    .context_query
+                    .get_context_scoped_filtered_async(
+                        request.session_id.as_deref(),
+                        request.stability,
+                        request.friction,
+                        request.logic,
+                        request.autonomy,
+                        from_utc,
+                        to_utc,
+                        tiers.as_deref(),
+                        expanded_limit(limit),
+                    )
+                    .await;
+
+                filter_retrieve_result_by_context_keywords(fallback_result, &context_keywords, limit)
+            } else {
+                semantic_result
+            }
         } else {
-            filter_retrieve_result_by_context_keywords(result, &context_keywords, limit)
+            let fallback_result = self
+                .context_query
+                .get_context_scoped_filtered_async(
+                    request.session_id.as_deref(),
+                    request.stability,
+                    request.friction,
+                    request.logic,
+                    request.autonomy,
+                    from_utc,
+                    to_utc,
+                    tiers.as_deref(),
+                    expanded_limit(limit),
+                )
+                .await;
+
+            filter_retrieve_result_by_context_keywords(fallback_result, &context_keywords, limit)
         };
 
         to_json_string(retrieve_result_to_json(result))
@@ -491,6 +512,156 @@ impl SttpMcpServer {
             Err(err) => {
                 error!(error = %err, "list_nodes failed");
                 tool_error("ListNodesFailure", &err.to_string())
+            }
+        }
+    }
+
+    #[tool(
+        name = "preview_embedding_migration",
+        description = "Preview which nodes would be selected for embedding migration/backfill based on optional filters. Use this before running migration to verify scope and provider availability."
+    )]
+    async fn preview_embedding_migration(
+        &self,
+        Parameters(request): Parameters<PreviewEmbeddingMigrationRequest>,
+    ) -> String {
+        let from_utc = match parse_utc_optional(request.from_utc.as_deref(), "from_utc") {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidDate", &message),
+        };
+        let to_utc = match parse_utc_optional(request.to_utc.as_deref(), "to_utc") {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidDate", &message),
+        };
+        let tiers = request
+            .tiers
+            .as_ref()
+            .map(|values| normalize_tiers(values.as_slice()));
+        let sample_limit = match validate_limit(request.sample_limit, "sample_limit") {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidArgument", &message),
+        };
+        let max_nodes = match validate_max_nodes(request.max_nodes) {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidArgument", &message),
+        };
+
+        let filter = EmbeddingMigrationFilter {
+            session_id: request.session_id,
+            from_utc,
+            to_utc,
+            tiers,
+            has_embedding: request.has_embedding,
+            embedding_model: request.embedding_model,
+            sync_keys: request.sync_keys,
+        };
+
+        match self
+            .embedding_migration
+            .preview_async(EmbeddingMigrationPreviewRequest {
+                filter,
+                sample_limit,
+                max_nodes,
+            })
+            .await
+        {
+            Ok(result) => to_json_string(json!({
+                "total_candidates": result.total_candidates,
+                "provider_available": result.provider_available,
+                "provider_model": result.provider_model,
+                "sample": result
+                    .sample
+                    .iter()
+                    .map(|sample| json!({
+                        "sync_key": sample.sync_key,
+                        "session_id": sample.session_id,
+                        "tier": sample.tier,
+                        "has_embedding": sample.has_embedding,
+                        "embedding_model": sample.embedding_model,
+                        "embedding_dimensions": sample.embedding_dimensions,
+                        "embedded_at": sample.embedded_at.map(|value| value.to_rfc3339()),
+                        "updated_at": sample.updated_at.to_rfc3339(),
+                        "context_summary": sample.context_summary,
+                    }))
+                    .collect::<Vec<_>>(),
+            })),
+            Err(err) => {
+                error!(error = %err, "preview_embedding_migration failed");
+                tool_error("MigrationPreviewFailure", &err.to_string())
+            }
+        }
+    }
+
+    #[tool(
+        name = "run_embedding_migration",
+        description = "Run embedding migration/backfill for selected nodes. Supports dry_run, missing_only mode, and reindex_all mode using the currently configured embedding provider."
+    )]
+    async fn run_embedding_migration(
+        &self,
+        Parameters(request): Parameters<RunEmbeddingMigrationRequest>,
+    ) -> String {
+        let from_utc = match parse_utc_optional(request.from_utc.as_deref(), "from_utc") {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidDate", &message),
+        };
+        let to_utc = match parse_utc_optional(request.to_utc.as_deref(), "to_utc") {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidDate", &message),
+        };
+        let tiers = request
+            .tiers
+            .as_ref()
+            .map(|values| normalize_tiers(values.as_slice()));
+        let batch_size = match validate_batch_size(request.batch_size) {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidArgument", &message),
+        };
+        let max_nodes = match validate_max_nodes(request.max_nodes) {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidArgument", &message),
+        };
+        let mode = match parse_migration_mode(request.mode.as_deref()) {
+            Ok(value) => value,
+            Err(message) => return tool_error("InvalidArgument", &message),
+        };
+
+        let filter = EmbeddingMigrationFilter {
+            session_id: request.session_id,
+            from_utc,
+            to_utc,
+            tiers,
+            has_embedding: request.has_embedding,
+            embedding_model: request.embedding_model,
+            sync_keys: request.sync_keys,
+        };
+
+        match self
+            .embedding_migration
+            .run_async(EmbeddingMigrationRunRequest {
+                filter,
+                mode,
+                dry_run: request.dry_run,
+                batch_size,
+                max_nodes,
+            })
+            .await
+        {
+            Ok(result) => to_json_string(json!({
+                "scanned": result.scanned,
+                "selected": result.selected,
+                "updated": result.updated,
+                "skipped": result.skipped,
+                "failed": result.failed,
+                "duplicate": result.duplicate,
+                "started_at": result.started_at.to_rfc3339(),
+                "completed_at": result.completed_at.to_rfc3339(),
+                "provider_model": result.provider_model,
+                "dry_run": request.dry_run,
+                "mode": mode_to_string(mode),
+                "failure_reasons": result.failure_reasons,
+            })),
+            Err(err) => {
+                error!(error = %err, "run_embedding_migration failed");
+                tool_error("MigrationRunFailure", &err.to_string())
             }
         }
     }
@@ -692,6 +863,66 @@ fn default_limit_list_nodes() -> usize {
     50
 }
 
+fn default_sample_limit_preview_migration() -> usize {
+    20
+}
+
+fn default_batch_size_migration() -> usize {
+    100
+}
+
+fn default_max_nodes_migration() -> usize {
+    5000
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct PreviewEmbeddingMigrationRequest {
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    from_utc: Option<String>,
+    #[serde(default)]
+    to_utc: Option<String>,
+    #[serde(default)]
+    tiers: Option<Vec<String>>,
+    #[serde(default)]
+    has_embedding: Option<bool>,
+    #[serde(default)]
+    embedding_model: Option<String>,
+    #[serde(default)]
+    sync_keys: Option<Vec<String>>,
+    #[serde(default = "default_sample_limit_preview_migration")]
+    sample_limit: usize,
+    #[serde(default = "default_max_nodes_migration")]
+    max_nodes: usize,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+struct RunEmbeddingMigrationRequest {
+    #[serde(default)]
+    session_id: Option<String>,
+    #[serde(default)]
+    from_utc: Option<String>,
+    #[serde(default)]
+    to_utc: Option<String>,
+    #[serde(default)]
+    tiers: Option<Vec<String>>,
+    #[serde(default)]
+    has_embedding: Option<bool>,
+    #[serde(default)]
+    embedding_model: Option<String>,
+    #[serde(default)]
+    sync_keys: Option<Vec<String>>,
+    #[serde(default)]
+    mode: Option<String>,
+    #[serde(default = "default_true")]
+    dry_run: bool,
+    #[serde(default = "default_batch_size_migration")]
+    batch_size: usize,
+    #[serde(default = "default_max_nodes_migration")]
+    max_nodes: usize,
+}
+
 #[derive(Debug, Deserialize, JsonSchema)]
 struct GetMoodsRequest {
     #[serde(default)]
@@ -884,6 +1115,10 @@ async fn main() -> Result<()> {
         None => Arc::new(StoreContextService::new(store.clone(), validator.clone())),
     };
     let context_query = Arc::new(ContextQueryService::new(store.clone()));
+    let embedding_migration = Arc::new(EmbeddingMigrationService::new(
+        store.clone(),
+        embedding_provider.clone(),
+    ));
     let moods = Arc::new(MoodCatalogService::new());
     let monthly_rollup = Arc::new(MonthlyRollupService::new(store, validator));
 
@@ -891,6 +1126,7 @@ async fn main() -> Result<()> {
         calibration,
         store_context,
         context_query,
+        embedding_migration,
         embedding_provider,
         moods,
         monthly_rollup,
@@ -1071,6 +1307,42 @@ fn validate_limit(limit: usize, field: &str) -> Result<usize, String> {
     }
 }
 
+fn validate_batch_size(batch_size: usize) -> Result<usize, String> {
+    if (1..=500).contains(&batch_size) {
+        Ok(batch_size)
+    } else {
+        Err("batch_size must be between 1 and 500".to_string())
+    }
+}
+
+fn validate_max_nodes(max_nodes: usize) -> Result<usize, String> {
+    if (1..=50000).contains(&max_nodes) {
+        Ok(max_nodes)
+    } else {
+        Err("max_nodes must be between 1 and 50000".to_string())
+    }
+}
+
+fn parse_migration_mode(value: Option<&str>) -> Result<EmbeddingMigrationMode, String> {
+    match value
+        .unwrap_or("missing_only")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "missing_only" => Ok(EmbeddingMigrationMode::MissingOnly),
+        "reindex_all" => Ok(EmbeddingMigrationMode::ReindexAll),
+        _ => Err("mode must be one of: missing_only, reindex_all".to_string()),
+    }
+}
+
+fn mode_to_string(mode: EmbeddingMigrationMode) -> &'static str {
+    match mode {
+        EmbeddingMigrationMode::MissingOnly => "missing_only",
+        EmbeddingMigrationMode::ReindexAll => "reindex_all",
+    }
+}
+
 fn expanded_limit(limit: usize) -> usize {
     limit.saturating_mul(5).clamp(1, 200)
 }
@@ -1093,14 +1365,19 @@ fn normalize_context_keywords(keywords: Option<&[String]>) -> Vec<String> {
 }
 
 fn context_keyword_score(node: &sttp_core_rs::SttpNode, keywords: &[String]) -> usize {
-    let Some(summary) = node.context_summary.as_ref() else {
-        return 0;
-    };
+    let summary = node
+        .context_summary
+        .as_deref()
+        .map(|value| value.to_ascii_lowercase())
+        .unwrap_or_default();
+    let session_id = node.session_id.to_ascii_lowercase();
 
-    let summary = summary.to_ascii_lowercase();
     keywords
         .iter()
-        .filter(|keyword| summary.contains(keyword.as_str()))
+        .filter(|keyword| {
+            let needle = keyword.as_str();
+            summary.contains(needle) || session_id.contains(needle)
+        })
         .count()
 }
 
