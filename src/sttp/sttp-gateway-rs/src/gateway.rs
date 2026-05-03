@@ -20,10 +20,16 @@ use tracing_subscriber::EnvFilter;
 use sttp_core_rs::domain::models::{
     self as core_models, ConfidenceBandSummary, MonthlyRollupRequest, NumericRange, PsiRange,
 };
-use sttp_core_rs::{
-    EmbeddingMigrationFilter, EmbeddingMigrationMode, EmbeddingMigrationPreviewRequest,
-    EmbeddingMigrationRunRequest,
+use sttp_core_rs::domain::contracts::EmbeddingProvider;
+use sttp_sdk_rs::application::memory_find::MemoryFindService;
+use sttp_sdk_rs::application::memory_recall::MemoryRecallService;
+use sttp_sdk_rs::application::memory_transform::MemoryTransformService;
+use sttp_sdk_rs::domain::memory::{
+    FallbackPolicy, MemoryFilter, MemoryFindRequest, MemoryPage, MemoryRecallRequest,
+    MemoryScope, MemoryScoring, MemoryTransformOperation, MemoryTransformRequest,
 };
+use sttp_sdk_rs::infrastructure::registry::InMemoryAiProviderRegistry;
+use sttp_sdk_rs::infrastructure::sttp_native::embedding_provider_adapter::SttpEmbeddingProviderAdapter;
 
 use crate::app_state::AppState;
 use crate::constants::{
@@ -363,52 +369,49 @@ async fn get_context_handler(
         request.query_embedding.as_deref(),
     )
     .await;
-
-    let result = if query_embedding.is_some() {
-        state
-            .context_query
-            .get_context_hybrid_scoped_filtered_async(
-                Some(&scoped_session_id),
-                request.stability,
-                request.friction,
-                request.logic,
-                request.autonomy,
-                request.from_utc,
-                request.to_utc,
-                tiers.as_deref(),
-                query_embedding.as_deref(),
-                request
+    let recall_service = MemoryRecallService::new(state.node_store.clone());
+    let recall_result = recall_service
+        .execute(&MemoryRecallRequest {
+            scope: MemoryScope {
+                tenant_id: None,
+                session_ids: Some(vec![scoped_session_id]),
+                tiers,
+                from_utc: request.from_utc,
+                to_utc: request.to_utc,
+            },
+            page: MemoryPage {
+                limit,
+                cursor: None,
+            },
+            scoring: MemoryScoring {
+                alpha: request
                     .alpha
                     .unwrap_or(DEFAULT_HYBRID_ALPHA)
                     .clamp(0.0, 1.0),
-                request.beta.unwrap_or(DEFAULT_HYBRID_BETA).clamp(0.0, 1.0),
-                limit,
-            )
-            .await
-    } else {
-        state
-            .context_query
-            .get_context_scoped_filtered_async(
-                Some(&scoped_session_id),
-                request.stability,
-                request.friction,
-                request.logic,
-                request.autonomy,
-                request.from_utc,
-                request.to_utc,
-                tiers.as_deref(),
-                limit,
-            )
-            .await
-    };
+                beta: request.beta.unwrap_or(DEFAULT_HYBRID_BETA).clamp(0.0, 1.0),
+                fallback_policy: FallbackPolicy::Never,
+                ..Default::default()
+            },
+            current_avec: Some(core_models::AvecState {
+                stability: request.stability,
+                friction: request.friction,
+                logic: request.logic,
+                autonomy: request.autonomy,
+            }),
+            query_text: request.query_text,
+            query_embedding,
+            ..Default::default()
+        })
+        .await
+        .map_err(internal_error)?;
 
     Ok(Json(RetrieveResultDto {
-        nodes: result.nodes.iter().map(to_node_dto).collect(),
-        retrieved: result.retrieved,
+        nodes: recall_result.nodes.iter().map(to_node_dto).collect(),
+        retrieved: recall_result.retrieved,
         psi_range: PsiRangeDto {
-            min: result.psi_range.min,
-            max: result.psi_range.max,
-            average: result.psi_range.average,
+            min: recall_result.psi_range.min,
+            max: recall_result.psi_range.max,
+            average: recall_result.psi_range.average,
         },
     }))
 }
@@ -531,9 +534,22 @@ async fn list_nodes_handler(
         TENANT_SCAN_LIMIT
     };
 
-    let result = state
-        .context_query
-        .list_nodes_async(backend_limit, scoped_session_filter.as_deref())
+    let find_service = MemoryFindService::new(state.node_store.clone());
+    let result = find_service
+        .execute(&MemoryFindRequest {
+            scope: MemoryScope {
+                tenant_id: None,
+                session_ids: scoped_session_filter.map(|session| vec![session]),
+                tiers: None,
+                from_utc: None,
+                to_utc: None,
+            },
+            page: MemoryPage {
+                limit: backend_limit,
+                cursor: None,
+            },
+            ..Default::default()
+        })
         .await
         .map_err(internal_error)?;
 
@@ -567,9 +583,22 @@ async fn graph_handler(
         TENANT_SCAN_LIMIT
     };
 
-    let result = state
-        .context_query
-        .list_nodes_async(backend_limit, scoped_session_filter.as_deref())
+    let find_service = MemoryFindService::new(state.node_store.clone());
+    let result = find_service
+        .execute(&MemoryFindRequest {
+            scope: MemoryScope {
+                tenant_id: None,
+                session_ids: scoped_session_filter.map(|session| vec![session]),
+                tiers: None,
+                from_utc: None,
+                to_utc: None,
+            },
+            page: MemoryPage {
+                limit: backend_limit,
+                cursor: None,
+            },
+            ..Default::default()
+        })
         .await
         .map_err(internal_error)?;
 
@@ -820,19 +849,58 @@ async fn preview_embedding_migration_handler(
     Json(request): Json<EmbeddingMigrationPreviewHttpRequest>,
 ) -> ApiResult<EmbeddingMigrationPreviewResultDto> {
     let tenant = resolve_http_tenant(request.tenant_id.as_deref(), &headers);
-    let filter = scoped_embedding_filter(request.filter, &tenant);
+    let sample_limit = request.sample_limit.unwrap_or(20).clamp(1, 200);
+    let max_nodes = request.max_nodes.unwrap_or(5_000).clamp(1, 50_000);
+    let (scope, filter, sync_keys) = scoped_memory_filter(request.filter, &tenant);
 
-    let result = state
-        .embedding_migration
-        .preview_async(EmbeddingMigrationPreviewRequest {
+    let find_service = MemoryFindService::new(state.node_store.clone());
+    let find_result = find_service
+        .execute(&MemoryFindRequest {
+            scope,
             filter,
-            sample_limit: request.sample_limit.unwrap_or(20),
-            max_nodes: request.max_nodes.unwrap_or(5_000),
+            page: MemoryPage {
+                limit: max_nodes,
+                cursor: None,
+            },
+            ..Default::default()
         })
         .await
         .map_err(internal_error)?;
 
-    Ok(Json(to_embedding_migration_preview_dto(result)))
+    let mut nodes = find_result.nodes;
+    if let Some(sync_keys) = sync_keys {
+        nodes.retain(|node| sync_keys.iter().any(|key| key == &node.sync_key));
+    }
+
+    let total_candidates = nodes.len();
+    let sample = nodes
+        .into_iter()
+        .take(sample_limit)
+        .map(|sample| EmbeddingMigrationSampleDto {
+            sync_key: sample.sync_key,
+            session_id: display_session_id(&sample.session_id),
+            tier: sample.tier,
+            has_embedding: sample
+                .embedding
+                .as_ref()
+                .is_some_and(|values| !values.is_empty()),
+            embedding_model: sample.embedding_model,
+            embedding_dimensions: sample.embedding_dimensions,
+            embedded_at: sample.embedded_at,
+            updated_at: sample.updated_at,
+            context_summary: sample.context_summary,
+        })
+        .collect::<Vec<_>>();
+
+    Ok(Json(EmbeddingMigrationPreviewResultDto {
+        total_candidates,
+        sample,
+        provider_available: state.embedding_provider.is_some(),
+        provider_model: state
+            .embedding_provider
+            .as_ref()
+            .map(|provider| provider.model_name().to_string()),
+    }))
 }
 
 async fn run_embedding_migration_handler(
@@ -845,24 +913,46 @@ async fn run_embedding_migration_handler(
         .mode
         .unwrap_or(EmbeddingMigrationModeHttp::MissingOnly)
     {
-        EmbeddingMigrationModeHttp::MissingOnly => EmbeddingMigrationMode::MissingOnly,
-        EmbeddingMigrationModeHttp::ReindexAll => EmbeddingMigrationMode::ReindexAll,
+        EmbeddingMigrationModeHttp::MissingOnly => MemoryTransformOperation::EmbedBackfill,
+        EmbeddingMigrationModeHttp::ReindexAll => MemoryTransformOperation::ReindexEmbeddings,
     };
     let dry_run = request.dry_run.unwrap_or(true);
+    let batch_size = request.batch_size.unwrap_or(100).clamp(1, 500);
+    let max_nodes = request.max_nodes.unwrap_or(5_000).clamp(1, 50_000);
+    let (scope, filter, _sync_keys) = scoped_memory_filter(request.filter, &tenant);
 
-    let result = state
-        .embedding_migration
-        .run_async(EmbeddingMigrationRunRequest {
-            filter: scoped_embedding_filter(request.filter, &tenant),
-            mode,
+    let providers = build_gateway_provider_registry(state.embedding_provider.clone());
+    let transform_service = MemoryTransformService::new(state.node_store.clone(), providers);
+
+    let result = transform_service
+        .execute(&MemoryTransformRequest {
+            scope,
+            filter,
+            operation: mode,
             dry_run,
-            batch_size: request.batch_size.unwrap_or(100),
-            max_nodes: request.max_nodes.unwrap_or(5_000),
+            batch_size,
+            max_nodes,
+            provider_id: state
+                .embedding_provider
+                .as_ref()
+                .map(|_| "gateway-embedding".to_string()),
+            model: state
+                .embedding_provider
+                .as_ref()
+                .map(|provider| provider.model_name().to_string()),
         })
         .await
         .map_err(internal_error)?;
 
-    Ok(Json(to_embedding_migration_run_dto(result, mode, dry_run)))
+    Ok(Json(to_embedding_migration_run_dto(
+        result,
+        mode,
+        dry_run,
+        state
+            .embedding_provider
+            .as_ref()
+            .map(|provider| provider.model_name().to_string()),
+    )))
 }
 
 fn bad_request(message: impl Into<String>) -> (StatusCode, Json<ErrorResponse>) {
@@ -996,10 +1086,10 @@ fn to_batch_rekey_dto(result: core_models::BatchRekeyResult) -> BatchRekeyResult
     }
 }
 
-fn scoped_embedding_filter(
+fn scoped_memory_filter(
     request_filter: Option<EmbeddingMigrationFilterHttp>,
     tenant: &str,
-) -> EmbeddingMigrationFilter {
+) -> (MemoryScope, MemoryFilter, Option<Vec<String>>) {
     let filter = request_filter.unwrap_or(EmbeddingMigrationFilterHttp {
         session_id: None,
         from_utc: None,
@@ -1010,48 +1100,40 @@ fn scoped_embedding_filter(
         sync_keys: None,
     });
 
-    EmbeddingMigrationFilter {
-        session_id: filter
-            .session_id
-            .map(|session_id| scope_session_id(tenant, &session_id)),
-        from_utc: filter.from_utc,
-        to_utc: filter.to_utc,
-        tiers: filter.tiers,
-        has_embedding: filter.has_embedding,
-        embedding_model: filter.embedding_model,
-        sync_keys: filter.sync_keys,
-    }
+    (
+        MemoryScope {
+            tenant_id: None,
+            session_ids: filter
+                .session_id
+                .map(|session_id| vec![scope_session_id(tenant, &session_id)]),
+            tiers: filter.tiers,
+            from_utc: filter.from_utc,
+            to_utc: filter.to_utc,
+        },
+        MemoryFilter {
+            has_embedding: filter.has_embedding,
+            embedding_model: filter.embedding_model,
+            ..Default::default()
+        },
+        filter.sync_keys,
+    )
 }
 
-fn to_embedding_migration_preview_dto(
-    result: sttp_core_rs::EmbeddingMigrationPreviewResult,
-) -> EmbeddingMigrationPreviewResultDto {
-    EmbeddingMigrationPreviewResultDto {
-        total_candidates: result.total_candidates,
-        sample: result
-            .sample
-            .into_iter()
-            .map(|sample| EmbeddingMigrationSampleDto {
-                sync_key: sample.sync_key,
-                session_id: display_session_id(&sample.session_id),
-                tier: sample.tier,
-                has_embedding: sample.has_embedding,
-                embedding_model: sample.embedding_model,
-                embedding_dimensions: sample.embedding_dimensions,
-                embedded_at: sample.embedded_at,
-                updated_at: sample.updated_at,
-                context_summary: sample.context_summary,
-            })
-            .collect::<Vec<_>>(),
-        provider_available: result.provider_available,
-        provider_model: result.provider_model,
+fn build_gateway_provider_registry(
+    provider: Option<Arc<dyn EmbeddingProvider>>,
+) -> Arc<InMemoryAiProviderRegistry> {
+    let mut registry = InMemoryAiProviderRegistry::new();
+    if let Some(provider) = provider {
+        registry.register(SttpEmbeddingProviderAdapter::new("gateway-embedding", provider));
     }
+    Arc::new(registry)
 }
 
 fn to_embedding_migration_run_dto(
-    result: sttp_core_rs::EmbeddingMigrationRunResult,
-    mode: EmbeddingMigrationMode,
+    result: sttp_sdk_rs::domain::memory::MemoryTransformResult,
+    mode: MemoryTransformOperation,
     dry_run: bool,
+    provider_model: Option<String>,
 ) -> EmbeddingMigrationRunResultDto {
     EmbeddingMigrationRunResultDto {
         scanned: result.scanned,
@@ -1062,13 +1144,13 @@ fn to_embedding_migration_run_dto(
         duplicate: result.duplicate,
         started_at: result.started_at,
         completed_at: result.completed_at,
-        provider_model: result.provider_model,
+        provider_model,
         dry_run,
         mode: match mode {
-            EmbeddingMigrationMode::MissingOnly => "missing_only".to_string(),
-            EmbeddingMigrationMode::ReindexAll => "reindex_all".to_string(),
+            MemoryTransformOperation::EmbedBackfill => "missing_only".to_string(),
+            MemoryTransformOperation::ReindexEmbeddings => "reindex_all".to_string(),
         },
-        failure_reasons: result.failure_reasons,
+        failure_reasons: result.failures,
     }
 }
 
@@ -1189,46 +1271,43 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
             request.limit as usize
         };
         let tiers = normalize_request_tiers(Some(&request.tiers));
-
-        let result = if query_embedding.is_some() {
-            self.state
-                .context_query
-                .get_context_hybrid_scoped_filtered_async(
-                    Some(&scoped_session_id),
-                    request.stability,
-                    request.friction,
-                    request.logic,
-                    request.autonomy,
-                    timestamp_from_proto_optional(request.from_utc)?,
-                    timestamp_from_proto_optional(request.to_utc)?,
-                    tiers.as_deref(),
-                    query_embedding.as_deref(),
-                    request
+        let recall_service = MemoryRecallService::new(self.state.node_store.clone());
+        let recall_result = recall_service
+            .execute(&MemoryRecallRequest {
+                scope: MemoryScope {
+                    tenant_id: None,
+                    session_ids: Some(vec![scoped_session_id]),
+                    tiers,
+                    from_utc: timestamp_from_proto_optional(request.from_utc)?,
+                    to_utc: timestamp_from_proto_optional(request.to_utc)?,
+                },
+                page: MemoryPage {
+                    limit,
+                    cursor: None,
+                },
+                scoring: MemoryScoring {
+                    alpha: request
                         .alpha
                         .unwrap_or(DEFAULT_HYBRID_ALPHA)
                         .clamp(0.0, 1.0),
-                    request.beta.unwrap_or(DEFAULT_HYBRID_BETA).clamp(0.0, 1.0),
-                    limit,
-                )
-                .await
-        } else {
-            self.state
-                .context_query
-                .get_context_scoped_filtered_async(
-                    Some(&scoped_session_id),
-                    request.stability,
-                    request.friction,
-                    request.logic,
-                    request.autonomy,
-                    timestamp_from_proto_optional(request.from_utc)?,
-                    timestamp_from_proto_optional(request.to_utc)?,
-                    tiers.as_deref(),
-                    limit,
-                )
-                .await
-        };
+                    beta: request.beta.unwrap_or(DEFAULT_HYBRID_BETA).clamp(0.0, 1.0),
+                    fallback_policy: FallbackPolicy::Never,
+                    ..Default::default()
+                },
+                current_avec: Some(core_models::AvecState {
+                    stability: request.stability,
+                    friction: request.friction,
+                    logic: request.logic,
+                    autonomy: request.autonomy,
+                }),
+                query_text: request.query_text,
+                query_embedding,
+                ..Default::default()
+            })
+            .await
+            .map_err(|err| Status::internal(err.to_string()))?;
 
-        let nodes = result
+        let nodes = recall_result
             .nodes
             .iter()
             .cloned()
@@ -1238,7 +1317,7 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
         let reply = proto::GetContextReply {
             nodes: nodes.iter().map(to_grpc_node).collect(),
             retrieved: clamp_usize_to_i32(nodes.len()),
-            psi_range: Some(to_grpc_psi_range(result.psi_range)),
+            psi_range: Some(to_grpc_psi_range(recall_result.psi_range)),
         };
 
         Ok(Response::new(reply))
@@ -1355,10 +1434,22 @@ impl proto::sttp_gateway_service_server::SttpGatewayService for GrpcGatewayServi
             TENANT_SCAN_LIMIT
         };
 
-        let result = self
-            .state
-            .context_query
-            .list_nodes_async(backend_limit, scoped_session_filter.as_deref())
+        let find_service = MemoryFindService::new(self.state.node_store.clone());
+        let result = find_service
+            .execute(&MemoryFindRequest {
+                scope: MemoryScope {
+                    tenant_id: None,
+                    session_ids: scoped_session_filter.map(|session| vec![session]),
+                    tiers: None,
+                    from_utc: None,
+                    to_utc: None,
+                },
+                page: MemoryPage {
+                    limit: backend_limit,
+                    cursor: None,
+                },
+                ..Default::default()
+            })
             .await
             .map_err(|err| Status::internal(err.to_string()))?;
 

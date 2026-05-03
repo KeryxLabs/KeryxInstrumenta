@@ -12,6 +12,52 @@ Project-specific changes are now tracked in per-service changelogs.
 - `sttp-mcp/CHANGELOG.md`
 - `sttp-ui/CHANGELOG.md`
 
+## [1.2.6] - 2026-05-03
+
+### Added
+
+- **`sttp-sdk-rs` - deterministic recursive node-from-text composite**
+  - Added recursive composition contracts for role-tagged text ingestion with bounded context trees:
+    - `CompositeRole`
+    - `CompositeInputItem`
+    - `CompositeRoleAvecOverrides`
+    - `CompositeNodeFromTextRequest` / `CompositeNodeFromTextOptions` / `CompositeNodeFromTextResult`
+  - Added `MemoryCompositionService::build_content_from_text` for deterministic content-layer payload construction.
+  - Added AVEC resolution chain with explicit policy order:
+    - item override -> role override -> global override -> optional LLM fallback -> typed failure when unresolved.
+  - Enforced recursion safety and spec alignment with max depth clamped to 5.
+
+- **`sttp-sdk-rs` - manual deterministic compression hardening**
+  - Added trait-based lexicon provider surface for runtime/domain customization:
+    - `ManualCompressionLexiconProvider`
+    - `DefaultManualCompressionLexiconProvider`
+    - `CompressionLexicons`
+  - Added request-level lexicon overrides for stopwords, fillers, and negations.
+  - Added deterministic negation handling including double-negative cancellation.
+
+- **`sttp-sdk-rs` - DTO and example expansion for composite workflows**
+  - Added transport DTOs for recursive composite workflow request/response surfaces.
+  - Added runnable end-to-end example:
+    - `examples/recursive_composite_pipeline.rs`
+    - demonstrates content build -> validator check -> strict parser check.
+
+### Changed
+
+- **`sttp-sdk-rs` - documentation expansion for humans and assistant collaborators**
+  - README expanded with deterministic compression + recursive composite guidance and practical recipes.
+  - Added dedicated guide:
+    - `src/sttp/docs/sttp_sdk_rs_recursive_composite_guide.md`
+  - Updated architecture plan with Phase 6 recursive composite rollout details.
+
+### Validated
+
+- `sttp-sdk-rs` test suite: `cargo test -q` passed with new composite + parser/validator conformance coverage.
+- `sttp-sdk-rs` examples: `cargo check --examples -q` passed.
+- `recursive_composite_pipeline` runtime output confirmed:
+  - resolved AVEC across all items
+  - validator success
+  - strict parser success.
+
 ## [1.2.5] - 2026-04-14
 
 ### Fixed

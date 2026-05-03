@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::{Result, anyhow};
 use axum::http::HeaderValue;
 use sttp_core_rs::application::services::{
-    CalibrationService, ContextQueryService, EmbeddingMigrationService, MonthlyRollupService,
+    CalibrationService, ContextQueryService, MonthlyRollupService,
     MoodCatalogService, RekeyScopeService, StoreContextService,
 };
 use sttp_core_rs::application::validation::TreeSitterValidator;
@@ -130,10 +130,6 @@ fn build_services(
         context_query: Arc::new(ContextQueryService::new(store_trait.clone())),
         mood_catalog: Arc::new(MoodCatalogService::new()),
         store_context,
-        embedding_migration: Arc::new(EmbeddingMigrationService::new(
-            store_trait.clone(),
-            embedding_provider,
-        )),
         monthly_rollup: Arc::new(MonthlyRollupService::new(store_trait.clone(), validator)),
         rekey_scope: Arc::new(RekeyScopeService::new(store_trait)),
     }

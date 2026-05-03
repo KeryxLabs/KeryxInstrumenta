@@ -10,12 +10,15 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sttp_core_rs::domain::contracts::EmbeddingProvider;
 use sttp_core_rs::{
-    CalibrationService, ContextQueryService, EmbeddingMigrationFilter, EmbeddingMigrationMode,
+    CalibrationService, EmbeddingMigrationFilter, EmbeddingMigrationMode,
     EmbeddingMigrationPreviewRequest, EmbeddingMigrationRunRequest, EmbeddingMigrationService,
     InMemoryNodeStore, MonthlyRollupRequest, MonthlyRollupService, MoodCatalogService, NodeStore,
     NodeStoreInitializer, NodeValidator, StoreContextService, SurrealDbClient, SurrealDbNodeStore,
     SurrealDbRuntimeOptions, SurrealDbSettings, TreeSitterValidator,
 };
+use sttp_sdk_rs::application::memory_recall::MemoryRecallService;
+use sttp_sdk_rs::application::memory_find::MemoryFindService;
+use sttp_sdk_rs::domain::memory::{MemoryFindRequest, MemoryPage, MemoryRecallRequest, MemoryScope, MemoryScoring};
 use surrealdb::engine::any::{Any, connect};
 use surrealdb::opt::auth::Root;
 use tracing::{error, info};
@@ -254,9 +257,9 @@ impl EmbeddingsProviderKind {
 
 #[derive(Clone)]
 struct SttpMcpServer {
+    node_store: Arc<dyn NodeStore>,
     calibration: Arc<CalibrationService>,
     store_context: Arc<StoreContextService>,
-    context_query: Arc<ContextQueryService>,
     embedding_migration: Arc<EmbeddingMigrationService>,
     embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
     moods: Arc<MoodCatalogService>,
@@ -267,18 +270,18 @@ struct SttpMcpServer {
 
 impl SttpMcpServer {
     fn new(
+        node_store: Arc<dyn NodeStore>,
         calibration: Arc<CalibrationService>,
         store_context: Arc<StoreContextService>,
-        context_query: Arc<ContextQueryService>,
         embedding_migration: Arc<EmbeddingMigrationService>,
         embedding_provider: Option<Arc<dyn EmbeddingProvider>>,
         moods: Arc<MoodCatalogService>,
         monthly_rollup: Arc<MonthlyRollupService>,
     ) -> Self {
         Self {
+            node_store,
             calibration,
             store_context,
-            context_query,
             embedding_migration,
             embedding_provider,
             moods,
@@ -397,80 +400,68 @@ impl SttpMcpServer {
 
         let alpha = request.alpha.unwrap_or(0.7);
         let beta = request.beta.unwrap_or(0.3);
-
-        let result = if context_keywords.is_empty() {
-            self.context_query
-                .get_context_scoped_filtered_async(
-                    request.session_id.as_deref(),
-                    request.stability,
-                    request.friction,
-                    request.logic,
-                    request.autonomy,
-                    from_utc,
-                    to_utc,
-                    tiers.as_deref(),
-                    limit,
-                )
-                .await
-        } else if let Some(keyword_embedding) = self.embed_context_keywords(&context_keywords).await {
-            let semantic_result = self
-                .context_query
-                .get_context_hybrid_scoped_filtered_async(
-                    request.session_id.as_deref(),
-                    request.stability,
-                    request.friction,
-                    request.logic,
-                    request.autonomy,
-                    from_utc,
-                    to_utc,
-                    tiers.as_deref(),
-                    Some(keyword_embedding.as_slice()),
-                    alpha,
-                    beta,
-                    limit,
-                )
-                .await;
-
-            if semantic_result.nodes.is_empty() {
-                let fallback_result = self
-                    .context_query
-                    .get_context_scoped_filtered_async(
-                        request.session_id.as_deref(),
-                        request.stability,
-                        request.friction,
-                        request.logic,
-                        request.autonomy,
-                        from_utc,
-                        to_utc,
-                        tiers.as_deref(),
-                        expanded_limit(limit),
-                    )
-                    .await;
-
-                filter_retrieve_result_by_context_keywords(fallback_result, &context_keywords, limit)
-            } else {
-                semantic_result
-            }
+        let query_text = if context_keywords.is_empty() {
+            None
         } else {
-            let fallback_result = self
-                .context_query
-                .get_context_scoped_filtered_async(
-                    request.session_id.as_deref(),
-                    request.stability,
-                    request.friction,
-                    request.logic,
-                    request.autonomy,
-                    from_utc,
-                    to_utc,
-                    tiers.as_deref(),
-                    expanded_limit(limit),
-                )
-                .await;
-
-            filter_retrieve_result_by_context_keywords(fallback_result, &context_keywords, limit)
+            Some(context_keywords.join(" "))
+        };
+        let query_embedding = if context_keywords.is_empty() {
+            None
+        } else {
+            self.embed_context_keywords(&context_keywords).await
         };
 
-        to_json_string(retrieve_result_to_json(result))
+        let recall_service = MemoryRecallService::new(self.node_store.clone());
+        let recall_result = match recall_service
+            .execute(&MemoryRecallRequest {
+                scope: MemoryScope {
+                    tenant_id: None,
+                    session_ids: request.session_id.map(|session| vec![session]),
+                    tiers,
+                    from_utc,
+                    to_utc,
+                },
+                page: MemoryPage {
+                    limit,
+                    cursor: None,
+                },
+                scoring: MemoryScoring {
+                    alpha,
+                    beta,
+                    ..Default::default()
+                },
+                current_avec: Some(sttp_core_rs::AvecState {
+                    stability: request.stability,
+                    friction: request.friction,
+                    logic: request.logic,
+                    autonomy: request.autonomy,
+                }),
+                query_text,
+                query_embedding,
+                ..Default::default()
+            })
+            .await
+        {
+            Ok(result) => result,
+            Err(err) => {
+                error!(error = %err, "get_context failed");
+                return tool_error("GetContextFailure", &err.to_string());
+            }
+        };
+
+        to_json_string(json!({
+            "retrieved": recall_result.retrieved,
+            "psi_range": {
+                "min": recall_result.psi_range.min,
+                "max": recall_result.psi_range.max,
+                "average": recall_result.psi_range.average,
+            },
+            "nodes": recall_result
+                .nodes
+                .iter()
+                .map(sttp_node_to_json)
+                .collect::<Vec<_>>(),
+        }))
     }
 
     #[tool(
@@ -489,31 +480,44 @@ impl SttpMcpServer {
             expanded_limit(limit)
         };
 
-        match self
-            .context_query
-            .list_nodes_async(query_limit, request.session_id.as_deref())
+        let find_service = MemoryFindService::new(self.node_store.clone());
+        let find_result = match find_service
+            .execute(&MemoryFindRequest {
+                scope: MemoryScope {
+                    tenant_id: None,
+                    session_ids: request.session_id.map(|session| vec![session]),
+                    tiers: None,
+                    from_utc: None,
+                    to_utc: None,
+                },
+                page: MemoryPage {
+                    limit: query_limit,
+                    cursor: None,
+                },
+                ..Default::default()
+            })
             .await
         {
-            Ok(result) => {
-                let nodes = if context_keywords.is_empty() {
-                    result.nodes.into_iter().take(limit).collect::<Vec<_>>()
-                } else {
-                    filter_nodes_by_context_keywords(&result.nodes, &context_keywords, limit)
-                };
-
-                to_json_string(json!({
-                    "retrieved": nodes.len(),
-                    "nodes": nodes
-                        .iter()
-                        .map(sttp_node_to_json)
-                        .collect::<Vec<_>>()
-                }))
-            }
+            Ok(result) => result,
             Err(err) => {
                 error!(error = %err, "list_nodes failed");
-                tool_error("ListNodesFailure", &err.to_string())
+                return tool_error("ListNodesFailure", &err.to_string());
             }
-        }
+        };
+
+        let nodes = if context_keywords.is_empty() {
+            find_result.nodes.into_iter().take(limit).collect::<Vec<_>>()
+        } else {
+            filter_nodes_by_context_keywords(&find_result.nodes, &context_keywords, limit)
+        };
+
+        to_json_string(json!({
+            "retrieved": nodes.len(),
+            "nodes": nodes
+                .iter()
+                .map(sttp_node_to_json)
+                .collect::<Vec<_>>()
+        }))
     }
 
     #[tool(
@@ -1114,18 +1118,17 @@ async fn main() -> Result<()> {
         )),
         None => Arc::new(StoreContextService::new(store.clone(), validator.clone())),
     };
-    let context_query = Arc::new(ContextQueryService::new(store.clone()));
     let embedding_migration = Arc::new(EmbeddingMigrationService::new(
         store.clone(),
         embedding_provider.clone(),
     ));
     let moods = Arc::new(MoodCatalogService::new());
-    let monthly_rollup = Arc::new(MonthlyRollupService::new(store, validator));
+    let monthly_rollup = Arc::new(MonthlyRollupService::new(store.clone(), validator));
 
     let server = SttpMcpServer::new(
+        store,
         calibration,
         store_context,
-        context_query,
         embedding_migration,
         embedding_provider,
         moods,
@@ -1407,43 +1410,6 @@ fn filter_nodes_by_context_keywords(
         .collect::<Vec<_>>()
 }
 
-fn build_retrieve_result(nodes: Vec<sttp_core_rs::SttpNode>) -> sttp_core_rs::RetrieveResult {
-    if nodes.is_empty() {
-        return sttp_core_rs::RetrieveResult {
-            nodes,
-            retrieved: 0,
-            psi_range: sttp_core_rs::PsiRange::default(),
-        };
-    }
-
-    let (min, max, total) = nodes
-        .iter()
-        .map(|node| node.psi)
-        .fold((f32::MAX, f32::MIN, 0.0_f32), |(min, max, sum), value| {
-            (min.min(value), max.max(value), sum + value)
-        });
-
-    let retrieved = nodes.len();
-    sttp_core_rs::RetrieveResult {
-        nodes,
-        retrieved,
-        psi_range: sttp_core_rs::PsiRange {
-            min,
-            max,
-            average: total / retrieved as f32,
-        },
-    }
-}
-
-fn filter_retrieve_result_by_context_keywords(
-    result: sttp_core_rs::RetrieveResult,
-    keywords: &[String],
-    limit: usize,
-) -> sttp_core_rs::RetrieveResult {
-    let nodes = filter_nodes_by_context_keywords(&result.nodes, keywords, limit);
-    build_retrieve_result(nodes)
-}
-
 fn to_json_string(value: Value) -> String {
     match serde_json::to_string(&value) {
         Ok(serialized) => serialized,
@@ -1495,18 +1461,3 @@ fn sttp_node_to_json(node: &sttp_core_rs::SttpNode) -> Value {
     })
 }
 
-fn retrieve_result_to_json(result: sttp_core_rs::RetrieveResult) -> Value {
-    json!({
-        "retrieved": result.retrieved,
-        "psi_range": {
-            "min": result.psi_range.min,
-            "max": result.psi_range.max,
-            "average": result.psi_range.average,
-        },
-        "nodes": result
-            .nodes
-            .iter()
-            .map(sttp_node_to_json)
-            .collect::<Vec<_>>(),
-    })
-}

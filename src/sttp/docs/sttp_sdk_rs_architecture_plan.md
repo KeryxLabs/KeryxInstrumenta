@@ -35,6 +35,27 @@ Build sttp-sdk-rs as the canonical memory substrate for AI integrations, where h
 4. Backward compatibility by adapter layers
 5. Explainability for ranking decisions
 6. Deterministic behavior under strict retrieval modes
+7. Single AI provider surface for all model interactions
+
+## 3.1 AI Provider Unification (genai + STTP Native)
+
+To keep the SDK ergonomic and composable, all AI interactions should flow through one provider surface.
+
+Candidate dependency:
+- genai crate (crates.io package: genai)
+
+Target provider model:
+- External providers via genai adapters (OpenAI, Anthropic, Gemini, Ollama, and others supported by genai)
+- STTP-native providers as first-class adapters in the same registry
+
+Capabilities to expose through one interface:
+- semantic_embedding: RAG/query and memory embedding vectors
+- avec_embedding: AVEC-specific embedding or scoring vectors
+- avec_scoring: text to AvecState projection when requested
+
+Design outcome:
+- MCP and Gateway no longer own provider orchestration logic
+- SDK becomes the single place for provider configuration, routing, fallback, and policy
 
 ## 4. Primitive Set (SDK v1)
 
@@ -156,7 +177,7 @@ Layout:
 - src/domain
 - entities: memory node projections and derived metrics
 - value objects: scope, filter, policy, score vectors
-- ports: repository, embedder, clock, id provider
+- ports: repository, ai provider, clock, id provider
 
 - src/application
 - use cases: write/read/find/recall/aggregate/transform/explain
@@ -164,7 +185,7 @@ Layout:
 
 - src/infrastructure
 - adapters for sttp-core-rs NodeStore
-- embedding adapters (ollama, candle-local)
+- ai adapters (genai external providers + sttp-native providers)
 - serialization mappers
 
 - src/interface
@@ -172,6 +193,23 @@ Layout:
 
 - src/prelude.rs
 - ergonomic re-exports for consumers
+
+Suggested domain ports:
+
+- AiProviderRegistry
+- resolve(provider_id) -> AiProvider
+- list_capabilities()
+
+- AiProvider
+- provider_id()
+- capabilities()
+- embed_semantic(text, options)
+- embed_avec(text, options)
+- score_avec(text, options)
+
+Notes:
+- Not all providers need all capabilities.
+- Capability-based dispatch prevents API sprawl and keeps composition explicit.
 
 ## 6. Compare to Existing Surface
 
@@ -197,6 +235,18 @@ Mapping:
 Existing Gateway HTTP models already overlap with future primitive contract vocabulary and can be adapted incrementally.
 
 ## 7. Integration Strategy
+
+Status update:
+- Completed: Phase 0, Phase 1, Phase 2, Phase 3, Phase 4 (SDK-only scope)
+- Completed: Initial composition workflows in SDK (recall+explain, daily rollup, capability bundle)
+- Completed: transform_then_recall_verify workflow and composition DTO surface
+- Completed: manual deterministic compressor with trait-based lexicon provider and request-level lexicon overrides
+- In progress: recursive node-from-text composite (spec-aligned content nesting up to depth 5 with deterministic AVEC resolution chain)
+- In progress: Phase 5 transport migration (Gateway HTTP/gRPC get_context + list_nodes, graph inventory, and embedding migration preview/run now routed through SDK primitives or SDK-aligned wrappers; MCP get_context/list_nodes routed through SDK primitives)
+- Pending: Phase 5 transport migration into MCP/Gateway wrappers
+
+Future deterministic compression and load-testing track:
+- [src/sttp/docs/sttp_faker_and_non_ai_compressor_v1.md](src/sttp/docs/sttp_faker_and_non_ai_compressor_v1.md)
 
 Phase 0: Scaffold
 - Create sttp-sdk-rs crate with module boundaries and core request/response contracts.
@@ -224,6 +274,30 @@ Phase 5: Transport migration
 - MCP and Gateway call SDK primitives internally.
 - Keep old endpoint names as compatibility wrappers for at least one release cycle.
 
+Phase 6: Recursive deterministic node-from-text composite
+- Add composition contract that accepts ordered role-tagged text entries and optional recursive context trees.
+- Enforce content nesting <= 5 to remain validator-compatible.
+- Deterministic AVEC resolution chain per entry:
+	- entry override
+	- role override
+	- global override
+	- optional llm fallback
+	- typed failure when unresolved and llm fallback disabled
+- Deterministic content construction uses manual compressor outputs (anchor_topic + key_points) for each entry/context node.
+- Preserve STTP spine format (no grammar redesign): this phase builds content-layer payloads only.
+
+Phase 6a (current implementation slice)
+- Add SDK composition contracts and builder service method for recursive content assembly.
+- Add test coverage for:
+	- AVEC role/global fallback ordering
+	- unresolved AVEC hard-fail policy
+	- recursion depth enforcement
+
+Phase 6b (next)
+- Add DTO mappings for the new composite contracts.
+- Add end-to-end parser/validator conformance tests against generated node payload.
+- Add recipe that emits full store-ready node input contract.
+
 ## 8. Embedding Logic Relocation Plan
 
 Current embedding logic lives in MCP/Gateway + core service layers.
@@ -231,10 +305,24 @@ Target location for policy logic: sttp-sdk-rs/application.
 
 Approach:
 
-1. Keep low-level provider interfaces in core domain contracts.
-2. Move embedding input construction policy to SDK (summary + session anchor strategy).
-3. Expose embed policy in memory_write and memory_transform.
-4. Keep backend storage representation unchanged in v1.
+1. Keep storage-focused provider contracts in core domain contracts.
+2. Introduce SDK AI provider ports and a capability-based provider registry.
+3. Implement a genai adapter layer for external providers.
+4. Implement STTP-native adapters (local candle and custom AVEC scorers) using the same SDK port.
+5. Move embedding input construction policy to SDK (summary + session anchor strategy).
+6. Expose embed policy in memory_write and memory_transform.
+7. Keep backend storage representation unchanged in v1.
+
+Implementation split:
+
+- core remains storage and domain-contract oriented
+- sdk owns provider selection, model routing, fallback policy, and capability checks
+- transports call sdk only
+
+Compatibility bridge:
+
+- existing EmbeddingProvider implementations in MCP/Gateway are gradually moved into sdk infrastructure adapters
+- existing routes/tools remain stable while internals switch to sdk
 
 ## 9. Compatibility and Versioning
 
@@ -255,6 +343,12 @@ Risk: Overfitting to migration diagnostics
 
 ## 11. Immediate Sprint Plan
 
+Sprint 0 (AI Surface Spike):
+- Add sttp-sdk-rs dependency spike for genai
+- Define AiProvider, AiProviderRegistry, and capability enums
+- Build one external adapter (genai + ollama profile) and one sttp-native adapter
+- Validate parity for semantic embedding and AVEC scoring paths
+
 Sprint A (Foundational):
 - Scaffold sttp-sdk-rs crate
 - Define canonical request/response structs:
@@ -263,6 +357,9 @@ Sprint A (Foundational):
 - MemoryPage
 - MemoryScoring
 - FallbackPolicy
+- Define AiTask and ProviderPolicy request primitives:
+- task: semantic_embedding | avec_embedding | avec_scoring
+- provider_policy: auto | preferred | required
 - Implement memory_find + memory_recall
 
 Sprint B (Composability):
@@ -275,6 +372,12 @@ Sprint C (Adoption):
 - Gateway adapters switched to SDK for equivalent endpoints
 - Compatibility tests ensure parity with current behavior
 
+Sprint D (Deterministic Node Construction):
+- Ship recursive text-to-content composite in SDK composition layer.
+- Add strict schema conformance tests with sttp-core-rs parser and validator.
+- Add optional llm AVEC bridge only when deterministic chain cannot resolve AVEC.
+- Add example workflow: array + options input -> spec-safe content layer payload.
+
 ## 12. Definition of Done for v1
 
 - sttp-sdk-rs published as crate
@@ -282,3 +385,6 @@ Sprint C (Adoption):
 - MCP + Gateway use SDK internally for retrieval and migration flows
 - Strict fallback policy behavior preserved and test-covered
 - Session-level aggregate metrics available through memory_aggregate
+- AI provider interactions unified behind SDK capability-based interface
+- At least one genai-backed provider and one sttp-native provider production wired
+- Deterministic recursive text-to-content composite available with depth and AVEC policy controls
