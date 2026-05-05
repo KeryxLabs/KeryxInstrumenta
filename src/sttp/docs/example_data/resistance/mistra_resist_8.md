@@ -39,7 +39,7 @@
   trigger: manual,
   communication_mode: m2m,
   response_format: temporal_node,
-  origin_session: "keryx-protocol-research-006",
+  origin_session: "entasis-protocol-research-006",
   compression_depth: 0,
   parent_node: null,
   prime: {
@@ -54,7 +54,7 @@
 ⦿⟨ ⏣0{
   timestamp: "2026-03-03T14:00:00Z",
   tier: raw,
-  session_id: "keryx-protocol-research-006",
+  session_id: "entasis-protocol-research-006",
   schema_version: "1.0.5",
   user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
   model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }
@@ -117,7 +117,7 @@ Metrics: Validation signals.
 Trigger: Manual
 Communication Mode: Machine-to-machine (m2m)
 Response Format: temporal_node
-Origin Session: keryx-protocol-research-006
+Origin Session: entasis-protocol-research-006
 Compression Depth: 0
 Parent Node: null
 Prime:
@@ -133,7 +133,7 @@ Retrieval Budget: 512 tokens
 
 Timestamp: 2026-03-03T14:00:00Z
 Tier: raw
-Session ID: keryx-protocol-research-006
+Session ID: entasis-protocol-research-006
 Schema Version: 1.0.5
 User Vector (user_avec): Stability, friction, logic, autonomy, and psi values.
 Model Vector (model_avec): Stability, friction, logic, autonomy, and psi values.

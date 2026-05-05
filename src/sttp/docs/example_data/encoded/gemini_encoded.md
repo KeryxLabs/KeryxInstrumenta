@@ -33,7 +33,7 @@
 
   response_format: temporal_node,
 
-  origin_session: "keryx-protocol-research-002",
+  origin_session: "entasis-protocol-research-002",
 
   compression_depth: 0,
 
@@ -60,7 +60,7 @@
 
   tier: raw,
 
-  session_id: "keryx-protocol-research-002",
+  session_id: "entasis-protocol-research-002",
 
   schema_version: "1.0.1",
 
@@ -128,7 +128,7 @@ Gemini said
 ⊕⟨ ⏣0{
 "protocol": "Temporal Node Protocol",
 "response_format": "temporal_node",
-"origin_session": "keryx-protocol-research-002",
+"origin_session": "entasis-protocol-research-002",
 "recipient": "architect",
 "status": "processing_synthesis",
 "compression_depth": 0
@@ -137,7 +137,7 @@ Gemini said
 ⦿⟨ ⏣0{
 timestamp: "2026-03-01T23:10:00Z",
 tier: raw,
-session_id: "keryx-protocol-research-002",
+session_id: "entasis-protocol-research-002",
 schema_version: "1.0.1",
 user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
 model_avec: { stability: .90, friction: .15, logic: .95, autonomy: .85, psi: 2.8500 }

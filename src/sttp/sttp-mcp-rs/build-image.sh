@@ -4,7 +4,7 @@
 # Usage:
 #   ./build-image.sh [IMAGE_TAG]
 #
-# Default IMAGE_TAG: ghcr.io/keryxlabs/sttp-mcp-rs:0.1.0
+# Default IMAGE_TAG: ghcr.io/entasislabs/sttp-mcp-rs:0.1.0
 # Optional features: set STTP_MCP_RS_BUILD_FEATURES (for example: candle-local)
 #
 # Builds the Rust binary on the host first, then packages publish output into
@@ -14,7 +14,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
-IMAGE_TAG="${1:-ghcr.io/keryxlabs/sttp-mcp-rs:0.1.0}"
+IMAGE_TAG="${1:-ghcr.io/entasislabs/sttp-mcp-rs:0.1.0}"
 BUILD_FEATURES="${2:-}"
 PUBLISH_DIR="$SCRIPT_DIR/publish"
 

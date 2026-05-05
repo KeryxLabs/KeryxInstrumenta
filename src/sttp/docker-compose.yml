@@ -1,6 +1,6 @@
 services:
   gateway:
-    image: ghcr.io/keryxlabs/sttp-gateway-rs:${STTP_GATEWAY_IMAGE_TAG:-2.0.0-beta.0}
+    image: ghcr.io/entasislabs/sttp-gateway-rs:${STTP_GATEWAY_IMAGE_TAG:-2.0.0-beta.0}
     environment:
       STTP_GATEWAY_BACKEND: "${STTP_GATEWAY_BACKEND:-surreal}"
       STTP_GATEWAY_REMOTE: "${STTP_GATEWAY_REMOTE:-true}"
@@ -9,7 +9,7 @@ services:
       STTP_GATEWAY_CORS_ENABLED: "${STTP_GATEWAY_CORS_ENABLED:-true}"
       STTP_GATEWAY_CORS_ALLOWED_ORIGINS: "${STTP_GATEWAY_CORS_ALLOWED_ORIGINS:-*}"
       STTP_SURREAL_REMOTE_ENDPOINT: "${STTP_SURREAL_REMOTE_ENDPOINT:-ws://10.12.0.11:1908/rpc}"
-      STTP_SURREAL_NAMESPACE: "${STTP_SURREAL_NAMESPACE:-keryx}"
+      STTP_SURREAL_NAMESPACE: "${STTP_SURREAL_NAMESPACE:-entasis}"
       STTP_SURREAL_DATABASE: "${STTP_SURREAL_DATABASE:-sttp_mcp_test}"
       STTP_SURREAL_USER: "${STTP_SURREAL_USER:-root}"
       STTP_SURREAL_PASSWORD: "${STTP_SURREAL_PASSWORD:-root}"
@@ -23,7 +23,7 @@ services:
     restart: unless-stopped
 
   ui:
-    image: ghcr.io/keryxlabs/sttp-ui:1.2.4
+    image: ghcr.io/entasislabs/sttp-ui:1.2.4
     ports:
       - "5257:8080"
     environment:

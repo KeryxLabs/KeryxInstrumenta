@@ -15,7 +15,7 @@
   layer is the interaction surface."
   trigger: manual,
   response_format: temporal_node,
-  origin_session: "keryx-protocol-research-002",
+  origin_session: "entasis-protocol-research-002",
   compression_depth: 0,
   parent_node: null,
   prime: {
@@ -28,7 +28,7 @@
 ⦿⟨ ⏣0{
   timestamp: "2026-03-01T23:00:00Z",
   tier: raw,
-  session_id: "keryx-protocol-research-002",
+  session_id: "entasis-protocol-research-002",
   schema_version: "1.0.1",
   user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
   model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }
@@ -60,7 +60,7 @@
   compression_avec: { stability: .88, friction: .15, logic: .90, autonomy: .85, psi: 2.7800 }
 } ⟩Show less3:13 PM⊕⟨ ⏣1{
 response_format: temporal_node,
-origin_session: "keryx-protocol-research-002",
+origin_session: "entasis-protocol-research-002",
 parent_node: 0,
 compression_depth: 0,
 trigger: response
@@ -68,7 +68,7 @@ trigger: response
 ⦿⟨ ⏣1{
 timestamp: "2026-03-01T23:00:01Z",
 tier: raw,
-session_id: "keryx-protocol-research-002",
+session_id: "entasis-protocol-research-002",
 schema_version: "1.0.1",
 user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
 model_avec: { stability: .88, friction: .22, logic: .87, autonomy: .75, psi: 2.7200 }

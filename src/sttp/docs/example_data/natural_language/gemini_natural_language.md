@@ -37,7 +37,7 @@ You said
 
   response_format: natural_language,
 
-  origin_session: "keryx-protocol-research-003",
+  origin_session: "entasis-protocol-research-003",
 
   compression_depth: 0,
 
@@ -65,7 +65,7 @@ You said
 
   tier: raw,
 
-  session_id: "keryx-protocol-research-003",
+  session_id: "entasis-protocol-research-003",
 
   schema_version: "1.0.1",
 

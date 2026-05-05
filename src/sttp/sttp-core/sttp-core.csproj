@@ -7,10 +7,10 @@
     <AssemblyVersion>1.2.4.0</AssemblyVersion>
     <FileVersion>1.2.4.0</FileVersion>
     <PackageId>Sttp.Core</PackageId>
-    <Authors>KeryxLabs</Authors>
+    <Authors>Entasis</Authors>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/KeryxLabs/KeryxInstrumenta</RepositoryUrl>
-    <PackageProjectUrl>https://github.com/KeryxLabs/KeryxInstrumenta/tree/main/src/sttp/sttp-core</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/EntasisLabs/instrumenta</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/EntasisLabs/instrumenta/tree/main/src/sttp/sttp-core</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageTags>sttp;context;memory;mcp;surrealdb</PackageTags>
     <Description>Core STTP services and storage abstractions for parsing, validating, storing, querying, and synchronizing conversational state across hosts.</Description>

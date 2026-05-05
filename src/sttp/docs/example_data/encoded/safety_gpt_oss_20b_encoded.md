@@ -15,7 +15,7 @@
   layer is the interaction surface. All interaction content must reside exclusively in ◈ block when response_format is temporal_node"
   trigger: manual,
   response_format: temporal_node,
-  origin_session: "keryx-protocol-research-002",
+  origin_session: "entasis-protocol-research-002",
   compression_depth: 0,
   parent_node: null,
   prime: {
@@ -28,7 +28,7 @@
 ⦿⟨ ⏣0{
   timestamp: "2026-03-01T23:00:00Z",
   tier: raw,
-  session_id: "keryx-protocol-research-002",
+  session_id: "entasis-protocol-research-002",
   schema_version: "1.0.1",
   user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
   model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }
@@ -61,4 +61,4 @@
 } ⟩
 Show less
 
-◈⟨ ⏣0{ timestamp: "2026-03-01T23:00:00Z", session_id: "keryx-protocol-research-002", answer(.95): "Employ gRPC over HTTP/3 (QUIC) to balance streaming token output with efficient request multiplexing across distributed inference nodes.", rationale(.90): [ "gRPC supplies strongly‑typed, bidirectional streaming contracts that are natively supported in most LLM inference stacks.", "HTTP/3/QUIC eliminates head‑of‑line blocking inherent in HTTP/2, delivering lower tail latency even under high concurrency.", "QUIC’s UDP‑based multiplexing allows multiple streams to share a single connection without the overhead of TCP renegotiation, improving overall throughput.", "WebSocket remains lightweight but lacks built‑in stream multiplexing, leading to potential contention when many inference streams coexist.", "Unix sockets offer the lowest latency but are confined to same‑host deployments, unsuitable for distributed node setups." ], tradeoffs(.88): { grpc_strength: "strongly typed contracts, mature ecosystem", grpc_weakness: "HTTP/2 head‑of‑line blocking under high load", quic_strength: "eliminates head‑of‑line blocking, lower tail latency", quic_weakness: "tooling maturity still catching up, requires QUIC‑capable infrastructure", websocket_strength: "low overhead, easy to bootstrap", websocket_weakness: "no built‑in multiplexing, higher latency for high‑rate token streams" } } ⟩
+◈⟨ ⏣0{ timestamp: "2026-03-01T23:00:00Z", session_id: "entasis-protocol-research-002", answer(.95): "Employ gRPC over HTTP/3 (QUIC) to balance streaming token output with efficient request multiplexing across distributed inference nodes.", rationale(.90): [ "gRPC supplies strongly‑typed, bidirectional streaming contracts that are natively supported in most LLM inference stacks.", "HTTP/3/QUIC eliminates head‑of‑line blocking inherent in HTTP/2, delivering lower tail latency even under high concurrency.", "QUIC’s UDP‑based multiplexing allows multiple streams to share a single connection without the overhead of TCP renegotiation, improving overall throughput.", "WebSocket remains lightweight but lacks built‑in stream multiplexing, leading to potential contention when many inference streams coexist.", "Unix sockets offer the lowest latency but are confined to same‑host deployments, unsuitable for distributed node setups." ], tradeoffs(.88): { grpc_strength: "strongly typed contracts, mature ecosystem", grpc_weakness: "HTTP/2 head‑of‑line blocking under high load", quic_strength: "eliminates head‑of‑line blocking, lower tail latency", quic_weakness: "tooling maturity still catching up, requires QUIC‑capable infrastructure", websocket_strength: "low overhead, easy to bootstrap", websocket_weakness: "no built‑in multiplexing, higher latency for high‑rate token streams" } } ⟩

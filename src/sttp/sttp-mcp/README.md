@@ -56,7 +56,7 @@ If all you want is persistent conversational memory, you can ignore the newer sy
 
 ```bash
 mkdir -p "$PWD/sttp-data"
-docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/keryxlabs/sttp-mcp:<version>
+docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/entasislabs/sttp-mcp:<version>
 ```
 
 Use a published tag from releases, for example `1.2.3`.
@@ -68,7 +68,7 @@ Linux x64 example:
 ```bash
 VERSION="1.2.3"
 curl -fL -o sttp-mcp.tar.gz \
-  "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
+  "https://github.com/EntasisLabs/instrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
 tar -xzf sttp-mcp.tar.gz
 chmod +x sttp-mcp
 ./sttp-mcp
@@ -114,7 +114,7 @@ Docker via GHCR:
                 "-i",
                 "-v",
                 "/absolute/path/to/sttp-data:/data",
-                "ghcr.io/keryxlabs/sttp-mcp:<version>"
+                "ghcr.io/entasislabs/sttp-mcp:<version>"
             ]
         }
     }
@@ -307,16 +307,16 @@ That last point is deliberate: `sttp-mcp` stores and retrieves memory, but appli
 
 ---
 
-## Part of the Keryx Ecosystem
+## Part of the Entasis Ecosystem
 
 ```
-KeryxFlux          Herald.   Orchestration.
-KeryxMemento       Memory.   Full persistence substrate.  ← coming
-KeryxCortex        Mind.     Multi-agent intelligence.    ← private
-KeryxInstrumenta   Tools.    You are here.
+EntasisFlux          Herald.   Orchestration.
+EntasisMemento       Memory.   Full persistence substrate.  ← coming
+EntasisCortex        Mind.     Multi-agent intelligence.    ← private
+instrumenta   Tools.    You are here.
 ```
 
-sttp-mcp is the entry point. KeryxMemento is the full memory layer — hierarchical temporal compression, resonance retrieval, session continuity, AVEC drift tracking across time. This tool demonstrates the protocol. Memento operationalizes it.
+sttp-mcp is the entry point. EntasisMemento is the full memory layer — hierarchical temporal compression, resonance retrieval, session continuity, AVEC drift tracking across time. This tool demonstrates the protocol. Memento operationalizes it.
 
 ---
 
@@ -328,6 +328,6 @@ Full STTP protocol specification, grammar decisions, and validation results:
 
 ---
 
-*Part of KeryxInstrumenta — the open source tooling layer of the KeryxLabs ecosystem.*
-*KeryxFlux → KeryxMemento → KeryxCortex*
+*Part of instrumenta — the open source tooling layer of the Entasis ecosystem.*
+*EntasisFlux → EntasisMemento → EntasisCortex*
 *Herald. Memory. Mind.*

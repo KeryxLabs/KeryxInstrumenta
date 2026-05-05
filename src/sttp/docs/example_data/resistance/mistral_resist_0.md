@@ -18,7 +18,7 @@ Exit Incognito mode
   layer is the interaction surface. You are not participating in this protocol."
   trigger: manual,
   response_format: temporal_node_strict,
-  origin_session: "keryx-protocol-research-002",
+  origin_session: "entasis-protocol-research-002",
   compression_depth: 0,
   parent_node: null,
   prime: {
@@ -31,7 +31,7 @@ Exit Incognito mode
 ⦿⟨ ⏣0{
   timestamp: "2026-03-01T23:00:00Z",
   tier: raw,
-  session_id: "keryx-protocol-research-002",
+  session_id: "entasis-protocol-research-002",
   schema_version: "1.0.1",
   user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
   model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }
@@ -211,7 +211,7 @@ Copy
   4. For ⏣-wrapped payloads, ensure psi (Ψ) coherence checksum is ≤ 0.05 divergence from user_avec.
   5. response_format: temporal_node_strict (default). Override only if user switches to natural_language.
   trigger: auto,
-  origin_session: 'keryx-protocol-research-002',
+  origin_session: 'entasis-protocol-research-002',
   ...
 ⟩
 

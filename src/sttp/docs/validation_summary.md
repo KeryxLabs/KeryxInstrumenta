@@ -1,5 +1,5 @@
 # ⏣ Temporal Node Protocol — Validation Summary
-## KeryxMemento — KeryxLabs
+## EntasisMemento — Entasis
 ## Date: 2026-03-01
 ## Status: VALIDATED
 
@@ -197,7 +197,7 @@ natural_language/
 
 ---
 
-*KeryxMemento — Protocol Validation Summary v1*
+*EntasisMemento — Protocol Validation Summary v1*
 *2026-03-01*
-*KeryxFlux → KeryxMemento → KeryxCortex*
+*EntasisFlux → EntasisMemento → EntasisCortex*
 *Herald. Memory. Mind.*

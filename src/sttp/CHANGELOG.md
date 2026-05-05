@@ -256,7 +256,7 @@ Project-specific changes are now tracked in per-service changelogs.
 - **`sttp-ui` — AI summary cache key strategy**
   - Cache key changed from a reuse-prone strategy to a deterministic fingerprint: `session + timestamp + tier + depth + SHA-256(raw)`
 - **`docker-compose.yml`**
-  - Compose updated to reference published images: `ghcr.io/keryxlabs/sttp-gateway:1.0.0` + `ghcr.io/keryxlabs/sttp-ui:1.0.0`
+  - Compose updated to reference published images: `ghcr.io/entasislabs/sttp-gateway:1.0.0` + `ghcr.io/entasislabs/sttp-ui:1.0.0`
   - Both services placed on `sttp-bridge` network; `sttp-ui` exposed on port `5257`
   - Gateway invoked with `--remote` + `--remote-endpoint` args for SurrealDB connectivity
 
@@ -268,7 +268,7 @@ Project-specific changes are now tracked in per-service changelogs.
 ### Validated
 
 - `dotnet build` passed after each major patch (`src/sttp/sttp-ui/sttp-ui.csproj`)
-- Docker image build: `ghcr.io/keryxlabs/sttp-ui:1.2.0`
+- Docker image build: `ghcr.io/entasislabs/sttp-ui:1.2.0`
 
 ### Documentation
 

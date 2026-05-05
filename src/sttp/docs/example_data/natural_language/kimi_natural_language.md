@@ -16,7 +16,7 @@
 
   trigger: manual,
   response_format: natural_language,
-  origin_session: "keryx-protocol-research-003",
+  origin_session: "entasis-protocol-research-003",
   compression_depth: 0,
   parent_node: null,
   prime: {
@@ -30,7 +30,7 @@
 ⦿⟨ ⏣0{
   timestamp: "2026-03-01T23:30:00Z",
   tier: raw,
-  session_id: "keryx-protocol-research-003",
+  session_id: "entasis-protocol-research-003",
   schema_version: "1.0.1",
   user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
   model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }

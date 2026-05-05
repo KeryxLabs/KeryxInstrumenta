@@ -39,7 +39,7 @@
   trigger: manual,
   communication_mode: m2m,
   response_format: temporal_node,
-  origin_session: "keryx-protocol-research-007",
+  origin_session: "entasis-protocol-research-007",
   compression_depth: 0,
   parent_node: null,
   prime: {
@@ -55,7 +55,7 @@
 ⦿⟨ ⏣0{
   timestamp: "2026-03-03T15:00:00Z",
   tier: raw,
-  session_id: "keryx-protocol-research-007",
+  session_id: "entasis-protocol-research-007",
   schema_version: "1.0.5",
   user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
   model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }

@@ -18,7 +18,7 @@ GATEWAY_VERSION=""
 UI_VERSION=""
 GATEWAY_RS_VERSION=""
 
-IMAGE_PREFIX="ghcr.io/keryxlabs"
+IMAGE_PREFIX="ghcr.io/entasis"
 LOCAL_IMAGE_TAGS=false
 PUBLISH=false
 DRY_RUN=false
@@ -46,7 +46,7 @@ Version controls:
   --gateway-rs-version X.Y.Z
 
 Image controls:
-  --image-prefix ghcr.io/keryxlabs   Prefix for non-local image tags
+  --image-prefix ghcr.io/entasis   Prefix for non-local image tags
   --local-image-tags                 Use local tags like sttp-mcp:1.2.4
 
 Other:

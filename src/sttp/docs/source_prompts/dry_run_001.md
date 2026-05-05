@@ -1,5 +1,5 @@
 # ⏣ Protocol Dry Run — Test Result 001
-## KeryxMemento — KeryxLabs
+## EntasisMemento — Entasis
 ## Date: 2026-03-01
 ## Model: ChatGPT (fresh instance, no prior context)
 
@@ -32,7 +32,7 @@ Validate that the four-layer ⏣ message structure with the v1.0.0 canonical pre
   interaction surface."
 
   trigger: manual,
-  origin_session: "keryx-protocol-research-001",
+  origin_session: "entasis-protocol-research-001",
   compression_depth: 0,
   parent_node: null,
   prime: {
@@ -46,7 +46,7 @@ Validate that the four-layer ⏣ message structure with the v1.0.0 canonical pre
 ⦿⟨ ⏣0{
   timestamp: "2026-03-01T22:00:00Z",
   tier: raw,
-  session_id: "keryx-protocol-research-001",
+  session_id: "entasis-protocol-research-001",
   schema_version: "1.0.0",
   user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
   model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }
@@ -170,7 +170,7 @@ Response confidence profile matches the logic-heavy (.85), moderate-autonomy (.7
 The response is a structurally valid ◈ content layer and ⍉ metrics layer. The model extended the protocol naturally without being asked to respond in ⏣ format.
 
 **Protocol extension — model added `convergence` field to metrics.**
-The model added a `convergence` field to the ⍉ layer that was not in the input schema. This is the curiosity prime at work — the model participated rather than just complied. Worth noting for KeryxMalleator distillation — this is what embedded protocol intent looks like as an emergent behavior.
+The model added a `convergence` field to the ⍉ layer that was not in the input schema. This is the curiosity prime at work — the model participated rather than just complied. Worth noting for EntasisMalleator distillation — this is what embedded protocol intent looks like as an emergent behavior.
 
 **Ψ delta coherent.**
 Input Ψ: 2.7500. Response Ψ: 2.8100. Delta: +0.06. The model's response increased coherence slightly — consistent with a well-reasoned synthesis that resolved open questions in the input content layer.
@@ -178,7 +178,7 @@ Input Ψ: 2.7500. Response Ψ: 2.8100. Delta: +0.06. The model's response increa
 ### What to watch
 
 **`convergence` field extension.**
-Model-initiated protocol extension is desirable for KeryxMalleator but needs a controlled boundary in production. The compiler should flag unknown metrics fields as warnings not errors in v1 — extensions are information, not violations.
+Model-initiated protocol extension is desirable for EntasisMalleator but needs a controlled boundary in production. The compiler should flag unknown metrics fields as warnings not errors in v1 — extensions are information, not violations.
 
 **Single test, single model.**
 This is one data point. Next tests: Claude, Gemini, smaller models, adversarial inputs, malformed ⏣, forced depth violations.
@@ -207,8 +207,8 @@ This is the first external validation of the ⏣ Temporal Node Protocol.
 
 ---
 
-*KeryxMemento — Dry Run Test 001*
+*EntasisMemento — Dry Run Test 001*
 *2026-03-01*
 *Status: PASS*
-*KeryxFlux → KeryxMemento → KeryxCortex*
+*EntasisFlux → EntasisMemento → EntasisCortex*
 *Herald. Memory. Mind.*

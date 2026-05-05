@@ -38,7 +38,7 @@ Before starting `acc-mcp`, start ACC engine and build/index your graph.
 docker run --rm -i \
   -e AccEngine__Host=host.docker.internal \
   -e AccEngine__Port=9339 \
-  ghcr.io/keryxlabs/acc-mcp:<version>
+  ghcr.io/entasislabs/acc-mcp:<version>
 ```
 
 On Linux, if `host.docker.internal` is not available, use your host IP.
@@ -50,7 +50,7 @@ Linux x64 example:
 ```bash
 VERSION="0.1.0"
 curl -fL -o acc-mcp.tar.gz \
-  "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-mcp/v${VERSION}/acc-mcp-${VERSION}-linux-x64.tar.gz"
+  "https://github.com/EntasisLabs/instrumenta/releases/download/acc-mcp/v${VERSION}/acc-mcp-${VERSION}-linux-x64.tar.gz"
 tar -xzf acc-mcp.tar.gz
 chmod +x AccMcpServer
 ./AccMcpServer
@@ -81,7 +81,7 @@ dotnet run --project ./AccMcpServer.csproj
         "AccEngine__Host=host.docker.internal",
         "-e",
         "AccEngine__Port=9339",
-        "ghcr.io/keryxlabs/acc-mcp:<version>"
+        "ghcr.io/entasislabs/acc-mcp:<version>"
       ]
     }
   }

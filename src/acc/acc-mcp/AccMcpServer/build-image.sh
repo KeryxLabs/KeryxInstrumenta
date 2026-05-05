@@ -4,7 +4,7 @@
 # Usage:
 #   ./build-image.sh [IMAGE_TAG]
 #
-# Default IMAGE_TAG: ghcr.io/keryxlabs/acc-mcp:latest
+# Default IMAGE_TAG: ghcr.io/entasislabs/acc-mcp:latest
 #
 # Publishes the binary on the host first, then packages it into a minimal
 # runtime-deps image. No dotnet toolchain is required inside the container.
@@ -16,7 +16,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
-IMAGE_TAG="${1:-ghcr.io/keryxlabs/acc-mcp:latest}"
+IMAGE_TAG="${1:-ghcr.io/entasislabs/acc-mcp:latest}"
 
 echo "▶ Publishing binary on host..."
 dotnet publish "$SCRIPT_DIR/AccMcpServer.csproj" \

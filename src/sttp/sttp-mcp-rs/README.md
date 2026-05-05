@@ -50,7 +50,7 @@ Run with SurrealDB mode (example):
 ```bash
 STTP_MCP_REMOTE=true \
 STTP_MCP_SURREAL_REMOTE_ENDPOINT=ws://127.0.0.1:8000/rpc \
-STTP_MCP_SURREAL_NAMESPACE=keryx \
+STTP_MCP_SURREAL_NAMESPACE=entasis \
 STTP_MCP_SURREAL_DATABASE=sttp_mcp \
 STTP_MCP_SURREAL_USERNAME=root \
 STTP_MCP_SURREAL_PASSWORD=root \
@@ -320,7 +320,7 @@ Swap the `env` block if you want persistent mode:
       "env": {
         "STTP_MCP_REMOTE": "true",
         "STTP_MCP_SURREAL_REMOTE_ENDPOINT": "ws://127.0.0.1:8000/rpc",
-        "STTP_MCP_SURREAL_NAMESPACE": "keryx",
+        "STTP_MCP_SURREAL_NAMESPACE": "entasis",
         "STTP_MCP_SURREAL_DATABASE": "sttp_mcp",
         "STTP_MCP_SURREAL_USERNAME": "root",
         "STTP_MCP_SURREAL_PASSWORD": "root"

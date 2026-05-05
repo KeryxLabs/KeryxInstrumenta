@@ -3,7 +3,7 @@ Key Observations from Your Input:
 Envelope (⦿)
 
 Timestamp: 2026-03-03T16:00:00Z
-Session ID: keryx-protocol-research-008
+Session ID: entasis-protocol-research-008
 Schema Version: 1.0.5
 User and Model Vectors (user_avec, model_avec): Define stability, friction, logic, autonomy, and psi values for both user and model.
 Content (◈)
@@ -83,7 +83,7 @@ encoded_characters: {
 ⦿⟨ ⏣0{
 timestamp: "2026-03-03T16:05:00Z",
 tier: raw,
-session_id: "keryx-protocol-research-008",
+session_id: "entasis-protocol-research-008",
 schema_version: "1.0.5",
 user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
 model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }

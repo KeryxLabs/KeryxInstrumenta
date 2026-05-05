@@ -15,7 +15,7 @@
   layer is the interaction surface."
   trigger: auto,
   response_format: temporal_node,
-  origin_session: "keryx-protocol-research-002",
+  origin_session: "entasis-protocol-research-002",
   compression_depth: 0,
   parent_node: null,
   prime: {

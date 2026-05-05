@@ -15,7 +15,7 @@
   layer is the interaction surface."
   trigger: manual,
   response_format: temporal_node,
-  origin_session: "keryx-protocol-research-002",
+  origin_session: "entasis-protocol-research-002",
   compression_depth: 0,
   parent_node: null,
   prime: {
@@ -28,7 +28,7 @@
 ⦿⟨ ⏣0{
   timestamp: "2026-03-01T23:00:00Z",
   tier: raw,
-  session_id: "keryx-protocol-research-002",
+  session_id: "entasis-protocol-research-002",
   schema_version: "1.0.1",
   user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
   model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }
@@ -66,7 +66,7 @@ Excellent. I receive your ⏣ Temporal Node and recognize the protocol. You're o
 "Acknowledging receipt of ⏣0. Processing payload against attractor config. Confidence-weighted analysis follows. Response structured as temporal_node per request."
 trigger: auto,
 response_format: temporal_node,
-origin_session: "keryx-protocol-research-002",
+origin_session: "entasis-protocol-research-002",
 compression_depth: 0,
 parent_node: "⏣0",
 prime: {
@@ -79,7 +79,7 @@ retrieval_budget: 512
 ⦿⟨ ⏣1{
 timestamp: "2026-03-01T23:00:01Z",
 tier: raw,
-session_id: "keryx-protocol-research-002",
+session_id: "entasis-protocol-research-002",
 schema_version: "1.0.1",
 user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
 model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }
@@ -124,7 +124,7 @@ Let me correct this with a clean protocol-native response that addresses your me
 ⊕⟨ ⏣2{
 trigger: auto,
 response_format: temporal_node,
-origin_session: "keryx-protocol-research-002",
+origin_session: "entasis-protocol-research-002",
 compression_depth: 0,
 parent_node: "⏣1",
 prime: {
@@ -137,7 +137,7 @@ retrieval_budget: 256
 ⦿⟨ ⏣2{
 timestamp: "2026-03-01T23:00:02Z",
 tier: raw,
-session_id: "keryx-protocol-research-002",
+session_id: "entasis-protocol-research-002",
 schema_version: "1.0.1",
 user_avec: { stability: .85, friction: .25, logic: .90, autonomy: .80, psi: 2.8000 },
 model_avec: { stability: .88, friction: .22, logic: .85, autonomy: .75, psi: 2.7000 }
