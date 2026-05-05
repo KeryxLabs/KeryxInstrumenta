@@ -44,6 +44,6 @@ services.AddSttpSurrealDbStorage(configuration, args, ".sttp-mcp");
 
 ## Repository
 
-- Source: https://github.com/KeryxLabs/KeryxInstrumenta
+- Source: https://github.com/EntasisLabs/instrumenta
 - Project path: src/sttp/sttp-core
 - License: Apache-2.0

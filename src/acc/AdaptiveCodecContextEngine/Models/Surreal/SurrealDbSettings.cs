@@ -18,7 +18,7 @@ public class SurrealDbSettings
         );
 
     public SurrealDbEndpointsSettings? Endpoints { get; set; } = SurrealDbEndpointsSettings.Default;
-    public string Namespace { get; set; } = "keryx";
+    public string Namespace { get; set; } = "entasis";
     public string Database { get; set; } = "acc-engine";
     public string? User { get; set; } = "root";
     public string? Password { get; set; } = "root";

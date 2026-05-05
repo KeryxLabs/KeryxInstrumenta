@@ -2,10 +2,10 @@
   "name": "acc-vscode",
   "displayName": "ACC - Adaptive Codec Context",
   "version": "0.3.2",
-  "publisher": "KeryxLabs",
+  "publisher": "EntasisLabs",
   "repository": {
     "type": "git",
-    "url": "https://github.com/KeryxLabs/KeryxInstrumenta"
+    "url": "https://github.com/EntasisLabs/instrumenta"
   },
   "engines": {
     "vscode": "^1.110.0"

@@ -66,17 +66,17 @@ ACC publishes separate release tags per tool:
 ```bash
 # ACC engine (linux-x64)
 curl -fsSL \
-  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-engine/v0.3.1/acc-0.3.1-linux-x64.tar.gz \
+  https://github.com/EntasisLabs/instrumenta/releases/download/acc-engine/v0.3.1/acc-0.3.1-linux-x64.tar.gz \
   | tar -xz
 
 # ACC CLI (linux-x64)
 curl -fsSL \
-  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-cli/v0.1.0/acc-cli-0.1.0-linux-x64.tar.gz \
+  https://github.com/EntasisLabs/instrumenta/releases/download/acc-cli/v0.1.0/acc-cli-0.1.0-linux-x64.tar.gz \
   | tar -xz
 
 # ACC MCP server (linux-x64)
 curl -fsSL \
-  https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-mcp/v0.1.0/acc-mcp-0.1.0-linux-x64.tar.gz \
+  https://github.com/EntasisLabs/instrumenta/releases/download/acc-mcp/v0.1.0/acc-mcp-0.1.0-linux-x64.tar.gz \
   | tar -xz
 ```
 
@@ -89,8 +89,8 @@ code --install-extension acc-vscode-0.3.1.vsix
 ### Build from source
 
 ```bash
-git clone https://github.com/KeryxLabs/KeryxInstrumenta.git
-cd KeryxInstrumenta/src/acc/AdaptiveCodecContextEngine
+git clone https://github.com/EntasisLabs/instrumenta.git
+cd instrumenta/src/acc/AdaptiveCodecContextEngine
 
 # Build release artifacts for all supported platforms
 ./build.sh
@@ -124,7 +124,7 @@ Install with your plugin manager:
 
 ```lua
 {
-  "KeryxLabs/acc.nvim",
+  "EntasisLabs/acc.nvim",
   event = "VeryLazy",
   opts = {},
 }
@@ -416,14 +416,14 @@ Have the agent:
 - [ ] Git Branch Switching Detection and Auto Database Migration
 - [ ] Real-time change propagation (WebSocket events)
 
-## Part of KeryxLabs Ecosystem
+## Part of Entasis Ecosystem
 
-ACC is the perception layer for the broader KeryxLabs infrastructure:
+ACC is the perception layer for the broader Entasis infrastructure:
 
-- **KeryxFlux (Herald)** - Data/message orchestration
-- **KeryxMemento (Memory)** - Persistence substrate
-- **KeryxCortex (Mind)** - Intelligence layer (private)
-- **KeryxInstrumenta** - Tool suite:
+- **EntasisFlux (Herald)** - Data/message orchestration
+- **EntasisMemento (Memory)** - Persistence substrate
+- **EntasisCortex (Mind)** - Intelligence layer (private)
+- **instrumenta** - Tool suite:
   - **STTP** - Spatio-Temporal Transfer Protocol (context persistence)
   - **RCP** - Reasoning Construction Protocol (reasoning graphs)
   - **ACC** - Adaptive Codec Context (this project)

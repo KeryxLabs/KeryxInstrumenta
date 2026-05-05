@@ -58,16 +58,19 @@ pub mod parsing;
 pub mod storage;
 
 pub use application::services::{
-	CalibrationService, ContextQueryService, MonthlyRollupService, MoodCatalogService,
-	RekeyScopeService, StoreContextService, SyncCoordinatorService,
+    CalibrationService, ContextQueryService, EmbeddingMigrationFilter, EmbeddingMigrationMode,
+    EmbeddingMigrationPreviewRequest, EmbeddingMigrationPreviewResult,
+    EmbeddingMigrationRunRequest, EmbeddingMigrationRunResult, EmbeddingMigrationSample,
+    EmbeddingMigrationService, MonthlyRollupService, MoodCatalogService, RekeyScopeService,
+    StoreContextService, SyncCoordinatorService,
 };
 pub use application::validation::TreeSitterValidator;
 pub use domain::contracts::{
-	NodeStore, NodeStoreInitializer, NodeValidator, SyncChangeSource, SyncCoordinatorPolicy,
+    NodeStore, NodeStoreInitializer, NodeValidator, SyncChangeSource, SyncCoordinatorPolicy,
 };
 pub use domain::models::*;
 pub use parsing::SttpNodeParser;
 pub use storage::{
-	InMemoryNodeStore, QueryParams, SurrealDbClient, SurrealDbEndpointsSettings,
-	SurrealDbNodeStore, SurrealDbRuntimeOptions, SurrealDbSettings,
+    InMemoryNodeStore, QueryParams, SurrealDbClient, SurrealDbEndpointsSettings,
+    SurrealDbNodeStore, SurrealDbRuntimeOptions, SurrealDbSettings,
 };

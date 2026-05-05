@@ -53,7 +53,8 @@ fn should_parse_valid_node_with_all_avec_blocks() {
 #[test]
 fn should_parse_user_avec_block() {
     let parser = SttpNodeParser::new();
-    let avec_block = "user_avec: { stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70, psi: 2.60 }";
+    let avec_block =
+        "user_avec: { stability: 0.85, friction: 0.25, logic: 0.80, autonomy: 0.70, psi: 2.60 }";
 
     let input = format!(
         "⊕⟨ {{ trigger: manual, response_format: temporal_node, origin_session: \"test\", compression_depth: 1, parent_node: null }} ⟩\n\
@@ -64,20 +65,14 @@ fn should_parse_user_avec_block() {
 
     let result = parser.try_parse(&input, "test");
     assert!(result.success, "parse failed: {:?}", result.error);
-    assert!(
-        result
-            .node
-            .expect("node should exist")
-            .user_avec
-            .psi()
-            > 0.0
-    );
+    assert!(result.node.expect("node should exist").user_avec.psi() > 0.0);
 }
 
 #[test]
 fn should_parse_model_avec_block() {
     let parser = SttpNodeParser::new();
-    let avec_block = "model_avec: { stability: 0.86, friction: 0.24, logic: 0.93, autonomy: 0.84, psi: 2.87 }";
+    let avec_block =
+        "model_avec: { stability: 0.86, friction: 0.24, logic: 0.93, autonomy: 0.84, psi: 2.87 }";
 
     let input = format!(
         "⊕⟨ {{ trigger: manual, response_format: temporal_node, origin_session: \"test\", compression_depth: 1, parent_node: null }} ⟩\n\

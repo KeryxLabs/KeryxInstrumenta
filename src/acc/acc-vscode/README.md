@@ -118,4 +118,4 @@ vsce package
 ## Related
 
 - ACC engine docs: `../README.md`
-- Repository: https://github.com/KeryxLabs/KeryxInstrumenta
+- Repository: https://github.com/EntasisLabs/instrumenta

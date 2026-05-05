@@ -45,7 +45,7 @@ cargo run --manifest-path src/sttp/sttp-gateway-rs/Cargo.toml -- \
   --backend surreal \
   --remote \
   --surreal-remote-endpoint ws://127.0.0.1:8000/rpc \
-  --surreal-namespace keryx \
+  --surreal-namespace entasis \
   --surreal-database sttp_mcp \
   --surreal-user root \
   --surreal-password root
@@ -75,7 +75,7 @@ All flags have environment variable equivalents.
 | `--remote` | `STTP_GATEWAY_REMOTE` | `false` | Surreal remote mode toggle |
 | `--surreal-embedded-endpoint` | `STTP_SURREAL_EMBEDDED_ENDPOINT` | unset | Embedded endpoint override |
 | `--surreal-remote-endpoint` | `STTP_SURREAL_REMOTE_ENDPOINT` | unset | Remote endpoint override |
-| `--surreal-namespace` | `STTP_SURREAL_NAMESPACE` | `keryx` | Surreal namespace |
+| `--surreal-namespace` | `STTP_SURREAL_NAMESPACE` | `entasis` | Surreal namespace |
 | `--surreal-database` | `STTP_SURREAL_DATABASE` | `sttp-mcp` | Surreal database |
 | `--surreal-user` | `STTP_SURREAL_USER` | `root` | Surreal username |
 | `--surreal-password` | `STTP_SURREAL_PASSWORD` | `root` | Surreal password |
@@ -334,7 +334,7 @@ No Rust toolchain is installed in the container image.
 Custom tag:
 
 ```bash
-./src/sttp/sttp-gateway-rs/build-image.sh ghcr.io/keryxlabs/sttp-gateway-rs:1.2.3
+./src/sttp/sttp-gateway-rs/build-image.sh ghcr.io/entasislabs/sttp-gateway-rs:1.2.3
 ```
 
 ### Manual Build And Package
@@ -388,7 +388,7 @@ docker run --rm \
   -e STTP_GATEWAY_BACKEND=surreal \
   -e STTP_GATEWAY_REMOTE=true \
   -e STTP_SURREAL_REMOTE_ENDPOINT=ws://host.docker.internal:8000/rpc \
-  -e STTP_SURREAL_NAMESPACE=keryx \
+  -e STTP_SURREAL_NAMESPACE=entasis \
   -e STTP_SURREAL_DATABASE=sttp_mcp \
   -e STTP_SURREAL_USER=root \
   -e STTP_SURREAL_PASSWORD=root \

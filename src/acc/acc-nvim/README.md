@@ -1,6 +1,6 @@
 # acc.nvim
 
-Neovim plugin for the [ACC (AdaptiveCodecContext)](https://github.com/KeryxLabs/KeryxInstrumenta) engine.
+Neovim plugin for the [ACC (AdaptiveCodecContext)](https://github.com/EntasisLabs/instrumenta) engine.
 Indexes your codebase into a live code graph and surfaces AVEC dimensional metrics
 (Stability, Logic, Friction, Autonomy) directly in your editor.
 
@@ -16,7 +16,7 @@ Indexes your codebase into a live code graph and surfaces AVEC dimensional metri
 ### lazy.nvim
 ```lua
 {
-  "KeryxLabs/acc.nvim",
+  "EntasisLabs/acc.nvim",
   event = "VeryLazy",
   opts = {},   -- uses defaults; see Configuration below
 }
@@ -25,7 +25,7 @@ Indexes your codebase into a live code graph and surfaces AVEC dimensional metri
 ### packer.nvim
 ```lua
 use {
-  "KeryxLabs/acc.nvim",
+  "EntasisLabs/acc.nvim",
   config = function()
     require("acc").setup()
   end,

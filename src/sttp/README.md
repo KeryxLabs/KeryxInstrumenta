@@ -121,7 +121,7 @@ For most users, this is the simplest entry point: store context, retrieve contex
 mkdir -p "$PWD/sttp-data"
 docker run --rm -i \
   -v "$PWD/sttp-data:/data" \
-  ghcr.io/keryxlabs/sttp-mcp:1.2.3
+  ghcr.io/entasislabs/sttp-mcp:1.2.3
 ```
 
 **MCP client config:**
@@ -134,7 +134,7 @@ docker run --rm -i \
       "args": [
         "run", "--rm", "-i",
         "-v", "/absolute/path/to/sttp-data:/data",
-        "ghcr.io/keryxlabs/sttp-mcp:1.2.3"
+        "ghcr.io/entasislabs/sttp-mcp:1.2.3"
       ]
     }
   }
@@ -146,7 +146,7 @@ docker run --rm -i \
 ```bash
 VERSION="1.2.3"
 curl -fL -o sttp-mcp.tar.gz \
-  "https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
+  "https://github.com/EntasisLabs/instrumenta/releases/download/sttp-mcp/v${VERSION}/sttp-mcp-${VERSION}-linux-x64.tar.gz"
 tar -xzf sttp-mcp.tar.gz && chmod +x sttp-mcp
 ./sttp-mcp
 ```
@@ -188,7 +188,7 @@ dotnet run --project sttp-gateway/sttp-gateway.csproj -- \
 docker run --rm \
   -p 8080:8080 \
   -p 8081:8081 \
-  ghcr.io/keryxlabs/sttp-gateway:1.2.3 \
+  ghcr.io/entasislabs/sttp-gateway:1.2.3 \
   --remote --remote-endpoint "ws://10.12.0.11:9096/rpc" \
   --username root --password root --database sttp_mcp
 ```
@@ -234,7 +234,7 @@ dotnet run --project sttp-ui/sttp-ui.csproj
 docker run --rm \
   -p 5000:8080 \
   -e Gateway__BaseUrl=http://gateway:8080 \
-  ghcr.io/keryxlabs/sttp-ui:1.2.3
+  ghcr.io/entasislabs/sttp-ui:1.2.3
 ```
 
 ---

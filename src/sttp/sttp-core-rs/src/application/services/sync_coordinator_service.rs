@@ -5,8 +5,8 @@ use chrono::Utc;
 
 use crate::domain::contracts::{NodeStore, SyncChangeSource, SyncCoordinatorPolicy};
 use crate::domain::models::{
-    ConnectorMetadata, NodeUpsertStatus, SttpNode, SyncCheckpoint, SyncCursor,
-    SyncPullRequest, SyncPullResult,
+    ConnectorMetadata, NodeUpsertStatus, SttpNode, SyncCheckpoint, SyncCursor, SyncPullRequest,
+    SyncPullResult,
 };
 
 pub struct SyncCoordinatorService {
@@ -100,7 +100,9 @@ impl SyncCoordinatorService {
                     ),
                 };
 
-                self.store.put_checkpoint_async(next_checkpoint.clone()).await?;
+                self.store
+                    .put_checkpoint_async(next_checkpoint.clone())
+                    .await?;
                 checkpoint = Some(next_checkpoint);
             }
 

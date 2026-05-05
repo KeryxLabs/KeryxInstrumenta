@@ -1,13 +1,13 @@
 use anyhow::{Result, anyhow};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
-    NodeUpsertResult, NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint,
-    SyncCursor,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery, NodeUpsertResult,
+    NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint, SyncCursor,
 };
 
 const DEFAULT_TENANT: &str = "default";
@@ -19,6 +19,20 @@ struct CalibrationRecord {
     avec: AvecState,
 }
 
+fn normalize_tiers(tiers: Option<&[String]>) -> Option<Vec<String>> {
+    let normalized = tiers
+        .unwrap_or(&[])
+        .iter()
+        .map(|tier| tier.trim().to_ascii_lowercase())
+        .filter(|tier| !tier.is_empty())
+        .collect::<Vec<_>>();
+
+    if normalized.is_empty() {
+        None
+    } else {
+        Some(normalized)
+    }
+}
 #[derive(Debug, Default)]
 pub struct InMemoryNodeStore {
     nodes: RwLock<Vec<(String, SttpNode)>>,
@@ -55,8 +69,20 @@ impl NodeStore for InMemoryNodeStore {
                     .map(|s| &n.session_id == s)
                     .unwrap_or(true)
             })
-            .filter(|n| query.from_utc.map(|from| n.timestamp >= from).unwrap_or(true))
+            .filter(|n| {
+                query
+                    .from_utc
+                    .map(|from| n.timestamp >= from)
+                    .unwrap_or(true)
+            })
             .filter(|n| query.to_utc.map(|to| n.timestamp <= to).unwrap_or(true))
+            .filter(|n| {
+                query
+                    .tiers
+                    .as_ref()
+                    .map(|tiers| tiers.iter().any(|tier| n.tier.eq_ignore_ascii_case(tier)))
+                    .unwrap_or(true)
+            })
             .cloned()
             .collect::<Vec<_>>();
 
@@ -90,6 +116,11 @@ impl NodeStore for InMemoryNodeStore {
                 || existing.timestamp != candidate.timestamp
                 || existing.compression_depth != candidate.compression_depth
                 || existing.parent_node_id != candidate.parent_node_id
+                || existing.context_summary != candidate.context_summary
+                || existing.embedding != candidate.embedding
+                || existing.embedding_model != candidate.embedding_model
+                || existing.embedding_dimensions != candidate.embedding_dimensions
+                || existing.embedded_at != candidate.embedded_at
                 || existing.user_avec != candidate.user_avec
                 || existing.model_avec != candidate.model_avec
                 || existing.compression_avec != candidate.compression_avec
@@ -131,33 +162,125 @@ impl NodeStore for InMemoryNodeStore {
         &self,
         session_id: &str,
         current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
         limit: usize,
     ) -> Result<Vec<SttpNode>> {
-        let nodes = self.nodes.read().await;
-
-        let mut result = nodes
-            .iter()
-            .map(|(_, node)| node)
-            .filter(|n| n.session_id == session_id)
-            .cloned()
-            .collect::<Vec<_>>();
+        let mut result = self
+            .query_nodes_async(NodeQuery {
+                limit: usize::MAX,
+                session_id: Some(session_id.to_string()),
+                from_utc,
+                to_utc,
+                tiers: normalize_tiers(tiers),
+            })
+            .await?;
 
         result.sort_by(|a, b| {
-            let ad = (a.psi - current_avec.psi()).abs();
-            let bd = (b.psi - current_avec.psi()).abs();
+            let ad = avec_distance(&a.model_avec, &current_avec);
+            let bd = avec_distance(&b.model_avec, &current_avec);
             ad.total_cmp(&bd)
+                .then_with(|| b.updated_at.cmp(&a.updated_at))
         });
-        result.truncate(limit);
+        result.truncate(limit.max(1));
 
         Ok(result)
     }
 
-    async fn list_nodes_async(&self, limit: usize, session_id: Option<&str>) -> Result<Vec<SttpNode>> {
+    async fn get_by_resonance_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let mut result = self
+            .query_nodes_async(NodeQuery {
+                limit: usize::MAX,
+                session_id: None,
+                from_utc,
+                to_utc,
+                tiers: normalize_tiers(tiers),
+            })
+            .await?;
+
+        result.sort_by(|a, b| {
+            let ad = avec_distance(&a.model_avec, &current_avec);
+            let bd = avec_distance(&b.model_avec, &current_avec);
+            ad.total_cmp(&bd)
+                .then_with(|| b.updated_at.cmp(&a.updated_at))
+        });
+        result.truncate(limit.max(1));
+
+        Ok(result)
+    }
+
+    async fn get_by_hybrid_async(
+        &self,
+        session_id: &str,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let mut result = self
+            .query_nodes_async(NodeQuery {
+                limit: usize::MAX,
+                session_id: Some(session_id.to_string()),
+                from_utc,
+                to_utc,
+                tiers: normalize_tiers(tiers),
+            })
+            .await?;
+
+        rank_nodes_hybrid(&mut result, current_avec, query_embedding, alpha, beta);
+        result.truncate(limit.max(1));
+        Ok(result)
+    }
+
+    async fn get_by_hybrid_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let mut result = self
+            .query_nodes_async(NodeQuery {
+                limit: usize::MAX,
+                session_id: None,
+                from_utc,
+                to_utc,
+                tiers: normalize_tiers(tiers),
+            })
+            .await?;
+
+        rank_nodes_hybrid(&mut result, current_avec, query_embedding, alpha, beta);
+        result.truncate(limit.max(1));
+        Ok(result)
+    }
+
+    async fn list_nodes_async(
+        &self,
+        limit: usize,
+        session_id: Option<&str>,
+    ) -> Result<Vec<SttpNode>> {
         self.query_nodes_async(NodeQuery {
             limit: limit.clamp(1, 200),
             session_id: session_id.map(|s| s.to_string()),
             from_utc: None,
             to_utc: None,
+            tiers: None,
         })
         .await
     }
@@ -311,10 +434,9 @@ impl NodeStore for InMemoryNodeStore {
             };
 
             let tenant_id = derive_tenant_id_from_session(&node.session_id);
-            if !scopes
-                .iter()
-                .any(|(tenant, session): &(String, String)| tenant == &tenant_id && session == &node.session_id)
-            {
+            if !scopes.iter().any(|(tenant, session): &(String, String)| {
+                tenant == &tenant_id && session == &node.session_id
+            }) {
                 scopes.push((tenant_id, node.session_id.clone()));
             }
         }
@@ -325,7 +447,8 @@ impl NodeStore for InMemoryNodeStore {
         let mut sources_to_apply = Vec::new();
 
         for (source_tenant_id, source_session_id) in scopes {
-            let same_scope = source_tenant_id == target_tenant_id && source_session_id == target_session_id;
+            let same_scope =
+                source_tenant_id == target_tenant_id && source_session_id == target_session_id;
 
             let temporal_nodes = nodes_snapshot
                 .iter()
@@ -361,8 +484,10 @@ impl NodeStore for InMemoryNodeStore {
             let message = if same_scope {
                 Some("source and target scopes are identical".to_string())
             } else if conflict {
-                Some("target scope already contains rows; set allow_merge=true to override"
-                    .to_string())
+                Some(
+                    "target scope already contains rows; set allow_merge=true to override"
+                        .to_string(),
+                )
             } else {
                 if !dry_run {
                     applied = true;
@@ -391,7 +516,10 @@ impl NodeStore for InMemoryNodeStore {
         if !dry_run && !sources_to_apply.is_empty() {
             let mut nodes = self.nodes.write().await;
             for (_, node) in nodes.iter_mut() {
-                if sources_to_apply.iter().any(|source| source == &node.session_id) {
+                if sources_to_apply
+                    .iter()
+                    .any(|source| source == &node.session_id)
+                {
                     node.session_id = target_session_id.to_string();
                 }
             }
@@ -407,7 +535,9 @@ impl NodeStore for InMemoryNodeStore {
         Ok(BatchRekeyResult {
             dry_run,
             requested_node_ids: normalized_node_ids.len(),
-            resolved_node_ids: normalized_node_ids.len().saturating_sub(missing_node_ids.len()),
+            resolved_node_ids: normalized_node_ids
+                .len()
+                .saturating_sub(missing_node_ids.len()),
             missing_node_ids,
             scopes: scope_results,
             temporal_nodes_updated,
@@ -462,4 +592,77 @@ fn normalize_temporal_node_id(value: &str) -> Option<String> {
 
 fn normalize_metadata(metadata: Option<&ConnectorMetadata>) -> Option<String> {
     metadata.and_then(|value| serde_json::to_string(value).ok())
+}
+
+fn rank_nodes_hybrid(
+    nodes: &mut [SttpNode],
+    current_avec: AvecState,
+    query_embedding: Option<&[f32]>,
+    alpha: f32,
+    beta: f32,
+) {
+    let alpha = alpha.clamp(0.0, 1.0);
+    let beta = beta.clamp(0.0, 1.0);
+
+    nodes.sort_by(|left, right| {
+        let left_score = hybrid_score(left, current_avec, query_embedding, alpha, beta);
+        let right_score = hybrid_score(right, current_avec, query_embedding, alpha, beta);
+
+        right_score
+            .total_cmp(&left_score)
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+    });
+}
+
+fn hybrid_score(
+    node: &SttpNode,
+    target_avec: AvecState,
+    query_embedding: Option<&[f32]>,
+    alpha: f32,
+    beta: f32,
+) -> f32 {
+    let resonance = 1.0 - avec_distance(&node.model_avec, &target_avec);
+    let resonance = resonance.clamp(0.0, 1.0);
+
+    let semantic = match (query_embedding, node.embedding.as_deref()) {
+        (Some(query), Some(node_vec)) => {
+            cosine_similarity(query, node_vec).map(|v| (v + 1.0) / 2.0)
+        }
+        _ => None,
+    };
+
+    match semantic {
+        Some(value) => (alpha * resonance + beta * value).clamp(0.0, 1.0),
+        None => resonance,
+    }
+}
+
+fn avec_distance(left: &AvecState, right: &AvecState) -> f32 {
+    ((left.stability - right.stability).abs()
+        + (left.friction - right.friction).abs()
+        + (left.logic - right.logic).abs()
+        + (left.autonomy - right.autonomy).abs())
+        / 4.0
+}
+
+fn cosine_similarity(left: &[f32], right: &[f32]) -> Option<f32> {
+    if left.is_empty() || right.is_empty() || left.len() != right.len() {
+        return None;
+    }
+
+    let mut dot = 0.0f32;
+    let mut left_norm = 0.0f32;
+    let mut right_norm = 0.0f32;
+
+    for (l, r) in left.iter().zip(right.iter()) {
+        dot += l * r;
+        left_norm += l * l;
+        right_norm += r * r;
+    }
+
+    if left_norm <= f32::EPSILON || right_norm <= f32::EPSILON {
+        return None;
+    }
+
+    Some(dot / (left_norm.sqrt() * right_norm.sqrt()))
 }

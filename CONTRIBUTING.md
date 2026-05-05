@@ -1,6 +1,6 @@
-# Contributing to KeryxInstrumenta
+# Contributing to instrumenta
 
-Thanks for helping improve KeryxInstrumenta.
+Thanks for helping improve instrumenta.
 
 ## Quick start
 

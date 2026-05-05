@@ -1,6 +1,6 @@
 # acc-cli
 
-A command-line interface for querying the [ACC (AdaptiveCodecContext)](https://github.com/KeryxLabs/KeryxInstrumenta) engine — a code graph indexer that surfaces AVEC dimensional metrics (Stability, Logic, Friction, Autonomy) over your codebase.
+A command-line interface for querying the [ACC (AdaptiveCodecContext)](https://github.com/EntasisLabs/instrumenta) engine — a code graph indexer that surfaces AVEC dimensional metrics (Stability, Logic, Friction, Autonomy) over your codebase.
 
 
 ## Installation
@@ -8,13 +8,13 @@ A command-line interface for querying the [ACC (AdaptiveCodecContext)](https://g
 ### Download a release
 #### Download the pre-built binary for your platform from the latest release:
 ```
-curl -fsSL https://github.com/KeryxLabs/KeryxInstrumenta/releases/download/acc-cli/v{version_number}/acc-cli-linux-x64.tar.gz | tar -xz
+curl -fsSL https://github.com/EntasisLabs/instrumenta/releases/download/acc-cli/v{version_number}/acc-cli-linux-x64.tar.gz | tar -xz
 ```
 
 ### Build from source
 
 ```bash
-git clone https://github.com/KeryxLabs/KeryxInstrumenta
+git clone https://github.com/EntasisLabs/instrumenta
 cd src/acc/acc-cli
 dotnet build -c Release
 ```

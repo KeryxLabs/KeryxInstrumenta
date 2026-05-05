@@ -12,14 +12,13 @@ use uuid::Uuid;
 
 use crate::domain::contracts::{NodeStore, NodeStoreInitializer};
 use crate::domain::models::{
-    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery,
-    NodeUpsertResult, NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint,
-    SyncCursor,
+    AvecState, BatchRekeyResult, ChangeQueryResult, ConnectorMetadata, NodeQuery, NodeUpsertResult,
+    NodeUpsertStatus, ScopeRekeyResult, SttpNode, SyncCheckpoint, SyncCursor,
 };
 use crate::storage::surrealdb::client::{QueryParams, SurrealDbClient};
 use crate::storage::surrealdb::models::{
-    SurrealAvecRecord, SurrealCheckpointRecord, SurrealExistingNodeRecord,
-    SurrealNodeRecord, SurrealTriggerRecord,
+    SurrealAvecRecord, SurrealCheckpointRecord, SurrealExistingNodeRecord, SurrealNodeRecord,
+    SurrealTriggerRecord,
 };
 use crate::storage::surrealdb::raw_queries;
 
@@ -119,7 +118,10 @@ impl SurrealDbNodeStore {
             );
             parameters.insert(
                 "sync_key".to_string(),
-                json!(normalize_legacy_sync_key(record.sync_key.as_deref(), &record_id)),
+                json!(normalize_legacy_sync_key(
+                    record.sync_key.as_deref(),
+                    &record_id
+                )),
             );
             parameters.insert(
                 "updated_at".to_string(),
@@ -206,6 +208,79 @@ impl SurrealDbNodeStore {
 
         Ok(())
     }
+
+    async fn find_existing_node_any_tenant_async(
+        &self,
+        session_id: &str,
+        sync_key: &str,
+    ) -> Result<Option<SurrealExistingNodeRecord>> {
+        let mut lookup_parameters = QueryParams::new();
+        lookup_parameters.insert("session_id".to_string(), json!(session_id));
+        lookup_parameters.insert("sync_key".to_string(), json!(sync_key));
+
+        let rows = self
+            .client
+            .raw_query(
+                raw_queries::FIND_EXISTING_NODE_BY_SYNC_KEY_ANY_TENANT_QUERY,
+                lookup_parameters,
+            )
+            .await?;
+        let records: Vec<SurrealExistingNodeRecord> = decode_rows(rows)?;
+
+        Ok(records.into_iter().next())
+    }
+
+    async fn find_existing_node_exact_async(
+        &self,
+        tenant_id: &str,
+        session_id: &str,
+        sync_key: &str,
+    ) -> Result<Option<SurrealExistingNodeRecord>> {
+        let mut lookup_parameters = QueryParams::new();
+        lookup_parameters.insert("tenant_id".to_string(), json!(tenant_id));
+        lookup_parameters.insert("session_id".to_string(), json!(session_id));
+        lookup_parameters.insert("sync_key".to_string(), json!(sync_key));
+
+        let rows = self
+            .client
+            .raw_query(
+                raw_queries::FIND_EXISTING_NODE_BY_SYNC_KEY_EXACT_QUERY,
+                lookup_parameters,
+            )
+            .await?;
+        let records: Vec<SurrealExistingNodeRecord> = decode_rows(rows)?;
+
+        Ok(records.into_iter().next())
+    }
+
+    async fn update_existing_temporal_node_async(
+        &self,
+        record_id: &str,
+        include_parent_assignment: bool,
+        include_source_metadata_assignment: bool,
+        include_embedding_assignment: bool,
+        include_context_summary_assignment: bool,
+        include_embedding_vector_assignment: bool,
+        include_embedding_model_assignment: bool,
+        include_embedding_dimensions_assignment: bool,
+        include_embedded_at_assignment: bool,
+        parameters: QueryParams,
+    ) -> Result<()> {
+        let update_query = raw_queries::update_temporal_node_query(
+            record_id,
+            include_parent_assignment,
+            include_source_metadata_assignment,
+            include_embedding_assignment,
+            include_context_summary_assignment,
+            include_embedding_vector_assignment,
+            include_embedding_model_assignment,
+            include_embedding_dimensions_assignment,
+            include_embedded_at_assignment,
+        );
+
+        self.client.raw_query(&update_query, parameters).await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -227,9 +302,8 @@ impl NodeStore for SurrealDbNodeStore {
         let mut parameters = QueryParams::new();
 
         if let Some(session_id) = query.session_id.as_ref().filter(|s| !s.trim().is_empty()) {
-            clauses.push(
-                "(tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')".to_string(),
-            );
+            clauses
+                .push("(tenant_id = $tenant_id OR tenant_id = NONE OR tenant_id = '')".to_string());
             parameters.insert(
                 "tenant_id".to_string(),
                 json!(derive_tenant_id_from_session(session_id)),
@@ -238,14 +312,14 @@ impl NodeStore for SurrealDbNodeStore {
             parameters.insert("session_id".to_string(), json!(session_id));
         }
 
-        if let Some(from_utc) = query.from_utc {
-            clauses.push("timestamp >= <datetime>$from_utc".to_string());
-            parameters.insert("from_utc".to_string(), json!(from_utc.to_rfc3339()));
-        }
-
-        if let Some(to_utc) = query.to_utc {
-            clauses.push("timestamp <= <datetime>$to_utc".to_string());
-            parameters.insert("to_utc".to_string(), json!(to_utc.to_rfc3339()));
+        let additional_predicate = build_retrieval_predicate(
+            query.from_utc,
+            query.to_utc,
+            query.tiers.as_deref(),
+            &mut parameters,
+        );
+        if !additional_predicate.is_empty() {
+            clauses.push(additional_predicate);
         }
 
         let where_clause = if clauses.is_empty() {
@@ -278,67 +352,24 @@ impl NodeStore for SurrealDbNodeStore {
         candidate.sync_key = sync_key.clone();
         candidate.updated_at = updated_at;
 
-        let mut lookup_parameters = QueryParams::new();
-        lookup_parameters.insert(
-            "tenant_id".to_string(),
-            json!(derive_tenant_id_from_session(&candidate.session_id)),
-        );
-        lookup_parameters.insert("session_id".to_string(), json!(&candidate.session_id));
-        lookup_parameters.insert("sync_key".to_string(), json!(&sync_key));
-
-        let existing_rows = self
-            .client
-            .raw_query(raw_queries::FIND_EXISTING_NODE_BY_SYNC_KEY_QUERY, lookup_parameters)
-            .await?;
-        let existing_records: Vec<SurrealExistingNodeRecord> = decode_rows(existing_rows)?;
-
-        if let Some(existing) = existing_records.first() {
-            let existing_id = normalize_record_id(existing.id.clone(), "temporal_node")
-                .and_then(|record_id| normalize_temporal_node_id(&record_id))
-                .ok_or_else(|| anyhow!("existing node record id was invalid"))?;
-
-            if normalize_metadata(existing.source_metadata.as_ref())
-                != normalize_metadata(candidate.source_metadata.as_ref())
-            {
-                let mut update_parameters = QueryParams::new();
-                let clear_source_metadata = candidate.source_metadata.is_none();
-                if let Some(metadata) = candidate.source_metadata.clone() {
-                    update_parameters.insert(
-                        "source_metadata".to_string(),
-                        serde_json::to_value(metadata).unwrap_or(Value::Null),
-                    );
-                }
-                update_parameters
-                    .insert("updated_at".to_string(), json!(updated_at.to_rfc3339()));
-
-                let update_query = raw_queries::update_temporal_node_sync_metadata_query(
-                    &existing_id,
-                    clear_source_metadata,
-                );
-                self.client.raw_query(&update_query, update_parameters).await?;
-
-                return Ok(NodeUpsertResult {
-                    node_id: existing_id,
-                    sync_key,
-                    status: NodeUpsertStatus::Updated,
-                    updated_at,
-                });
-            }
-
-            return Ok(NodeUpsertResult {
-                node_id: existing_id,
-                sync_key,
-                status: NodeUpsertStatus::Duplicate,
-                updated_at,
-            });
-        }
-
         let include_parent_assignment = candidate.parent_node_id.is_some();
         let include_source_metadata_assignment = candidate.source_metadata.is_some();
-        let mut parameters = QueryParams::new();
+        let include_context_summary_assignment = candidate.context_summary.is_some();
+        let include_embedding_vector_assignment = candidate.embedding.is_some();
+        let include_embedding_model_assignment = candidate.embedding_model.is_some();
+        let include_embedding_dimensions_assignment = candidate.embedding_dimensions.is_some();
+        let include_embedding_assignment = include_context_summary_assignment
+            || include_embedding_vector_assignment
+            || include_embedding_model_assignment
+            || include_embedding_dimensions_assignment
+            || candidate.embedded_at.is_some();
+        let include_embedded_at_assignment = candidate.embedded_at.is_some();
+
         let tenant_id = derive_tenant_id_from_session(&candidate.session_id);
 
-        parameters.insert("tenant_id".to_string(), json!(tenant_id));
+        let mut parameters = QueryParams::new();
+
+        parameters.insert("tenant_id".to_string(), json!(&tenant_id));
         parameters.insert("session_id".to_string(), json!(&candidate.session_id));
         parameters.insert("raw".to_string(), json!(&candidate.raw));
         parameters.insert("tier".to_string(), json!(&candidate.tier));
@@ -358,6 +389,40 @@ impl NodeStore for SurrealDbNodeStore {
                 serde_json::to_value(metadata).unwrap_or(Value::Null),
             );
         }
+        parameters.insert(
+            "context_summary".to_string(),
+            candidate
+                .context_summary
+                .clone()
+                .map_or(Value::Null, |value| json!(value)),
+        );
+        parameters.insert(
+            "embedding".to_string(),
+            candidate
+                .embedding
+                .clone()
+                .map_or(Value::Null, |value| json!(value)),
+        );
+        parameters.insert(
+            "embedding_model".to_string(),
+            candidate
+                .embedding_model
+                .clone()
+                .map_or(Value::Null, |value| json!(value)),
+        );
+        parameters.insert(
+            "embedding_dimensions".to_string(),
+            candidate
+                .embedding_dimensions
+                .map_or(Value::Null, |value| json!(value)),
+        );
+        parameters.insert(
+            "embedded_at".to_string(),
+            candidate
+                .embedded_at
+                .map(|value| value.to_rfc3339())
+                .map_or(Value::Null, |value| json!(value)),
+        );
         parameters.insert("psi".to_string(), json!(candidate.psi));
         parameters.insert("rho".to_string(), json!(candidate.rho));
         parameters.insert("kappa".to_string(), json!(candidate.kappa));
@@ -397,7 +462,10 @@ impl NodeStore for SurrealDbNodeStore {
             "comp_friction".to_string(),
             json!(compression_avec_to_use.friction),
         );
-        parameters.insert("comp_logic".to_string(), json!(compression_avec_to_use.logic));
+        parameters.insert(
+            "comp_logic".to_string(),
+            json!(compression_avec_to_use.logic),
+        );
         parameters.insert(
             "comp_autonomy".to_string(),
             json!(compression_avec_to_use.autonomy),
@@ -408,13 +476,133 @@ impl NodeStore for SurrealDbNodeStore {
             parameters.insert("parent_node_id".to_string(), json!(parent_node_id));
         }
 
+        if let Some(existing) = self
+            .find_existing_node_exact_async(&tenant_id, &candidate.session_id, &sync_key)
+            .await?
+            .or(self
+                .find_existing_node_any_tenant_async(&candidate.session_id, &sync_key)
+                .await?)
+        {
+            let existing_id = normalize_record_id(existing.id.clone(), "temporal_node")
+                .and_then(|record_id| normalize_temporal_node_id(&record_id))
+                .ok_or_else(|| anyhow!("existing node record id was invalid"))?;
+
+            if existing_node_matches_candidate(&existing, &candidate) {
+                return Ok(NodeUpsertResult {
+                    node_id: existing_id,
+                    sync_key,
+                    status: NodeUpsertStatus::Duplicate,
+                    updated_at,
+                });
+            }
+
+            self.update_existing_temporal_node_async(
+                &existing_id,
+                include_parent_assignment,
+                include_source_metadata_assignment,
+                include_embedding_assignment,
+                include_context_summary_assignment,
+                include_embedding_vector_assignment,
+                include_embedding_model_assignment,
+                include_embedding_dimensions_assignment,
+                include_embedded_at_assignment,
+                parameters.clone(),
+            )
+            .await?;
+
+            return Ok(NodeUpsertResult {
+                node_id: existing_id,
+                sync_key,
+                status: NodeUpsertStatus::Updated,
+                updated_at,
+            });
+        }
+
         let record_id = Uuid::new_v4().simple().to_string();
         let query_text = raw_queries::create_temporal_node_query(
             &record_id,
             include_parent_assignment,
             include_source_metadata_assignment,
+            include_embedding_assignment,
+            include_context_summary_assignment,
+            include_embedding_vector_assignment,
+            include_embedding_model_assignment,
+            include_embedding_dimensions_assignment,
+            include_embedded_at_assignment,
         );
-        self.client.raw_query(&query_text, parameters).await?;
+
+        if let Err(create_err) = self.client.raw_query(&query_text, parameters.clone()).await {
+            if !is_sync_identity_conflict(&create_err) {
+                return Err(create_err);
+            }
+
+            if let Some(conflict_record_id) = extract_conflict_record_id(&create_err) {
+                self.update_existing_temporal_node_async(
+                    &conflict_record_id,
+                    include_parent_assignment,
+                    include_source_metadata_assignment,
+                    include_embedding_assignment,
+                    include_context_summary_assignment,
+                    include_embedding_vector_assignment,
+                    include_embedding_model_assignment,
+                    include_embedding_dimensions_assignment,
+                    include_embedded_at_assignment,
+                    parameters.clone(),
+                )
+                .await?;
+
+                return Ok(NodeUpsertResult {
+                    node_id: conflict_record_id,
+                    sync_key,
+                    status: NodeUpsertStatus::Updated,
+                    updated_at,
+                });
+            }
+
+            let Some(existing) = self
+                .find_existing_node_exact_async(&tenant_id, &candidate.session_id, &sync_key)
+                .await?
+                .or(self
+                    .find_existing_node_any_tenant_async(&candidate.session_id, &sync_key)
+                    .await?)
+            else {
+                return Err(create_err);
+            };
+
+            let existing_id = normalize_record_id(existing.id.clone(), "temporal_node")
+                .and_then(|value| normalize_temporal_node_id(&value))
+                .ok_or_else(|| anyhow!("existing node record id was invalid"))?;
+
+            if !existing_node_matches_candidate(&existing, &candidate) {
+                self.update_existing_temporal_node_async(
+                    &existing_id,
+                    include_parent_assignment,
+                    include_source_metadata_assignment,
+                    include_embedding_assignment,
+                    include_context_summary_assignment,
+                    include_embedding_vector_assignment,
+                    include_embedding_model_assignment,
+                    include_embedding_dimensions_assignment,
+                    include_embedded_at_assignment,
+                    parameters,
+                )
+                .await?;
+
+                return Ok(NodeUpsertResult {
+                    node_id: existing_id,
+                    sync_key,
+                    status: NodeUpsertStatus::Updated,
+                    updated_at,
+                });
+            }
+
+            return Ok(NodeUpsertResult {
+                node_id: existing_id,
+                sync_key,
+                status: NodeUpsertStatus::Duplicate,
+                updated_at,
+            });
+        }
 
         Ok(NodeUpsertResult {
             node_id: record_id,
@@ -428,10 +616,22 @@ impl NodeStore for SurrealDbNodeStore {
         &self,
         session_id: &str,
         current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
         limit: usize,
     ) -> Result<Vec<SttpNode>> {
-        let query_text = raw_queries::get_by_resonance_query(current_avec.psi(), limit.max(1));
         let mut parameters = QueryParams::new();
+        let additional_predicate =
+            build_retrieval_predicate(from_utc, to_utc, tiers, &mut parameters);
+        let query_text = raw_queries::get_by_resonance_query(
+            current_avec.stability,
+            current_avec.friction,
+            current_avec.logic,
+            current_avec.autonomy,
+            &additional_predicate,
+            limit.max(1),
+        );
         parameters.insert(
             "tenant_id".to_string(),
             json!(derive_tenant_id_from_session(session_id)),
@@ -444,12 +644,92 @@ impl NodeStore for SurrealDbNodeStore {
         Ok(records.into_iter().map(map_to_node).collect())
     }
 
-    async fn list_nodes_async(&self, limit: usize, session_id: Option<&str>) -> Result<Vec<SttpNode>> {
+    async fn get_by_resonance_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let mut parameters = QueryParams::new();
+        let additional_predicate =
+            build_retrieval_predicate(from_utc, to_utc, tiers, &mut parameters);
+        let query_text = raw_queries::get_by_resonance_global_query(
+            current_avec.stability,
+            current_avec.friction,
+            current_avec.logic,
+            current_avec.autonomy,
+            &additional_predicate,
+            limit.max(1),
+        );
+        let rows = self.client.raw_query(&query_text, parameters).await?;
+        let records: Vec<SurrealNodeRecord> = decode_rows(rows)?;
+
+        Ok(records.into_iter().map(map_to_node).collect())
+    }
+
+    async fn get_by_hybrid_async(
+        &self,
+        session_id: &str,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let candidate_limit = limit.max(1).saturating_mul(5);
+        let mut candidates = self
+            .get_by_resonance_async(
+                session_id,
+                current_avec,
+                from_utc,
+                to_utc,
+                tiers,
+                candidate_limit,
+            )
+            .await?;
+
+        rank_nodes_hybrid(&mut candidates, current_avec, query_embedding, alpha, beta);
+        candidates.truncate(limit.max(1));
+        Ok(candidates)
+    }
+
+    async fn get_by_hybrid_global_async(
+        &self,
+        current_avec: AvecState,
+        from_utc: Option<DateTime<Utc>>,
+        to_utc: Option<DateTime<Utc>>,
+        tiers: Option<&[String]>,
+        query_embedding: Option<&[f32]>,
+        alpha: f32,
+        beta: f32,
+        limit: usize,
+    ) -> Result<Vec<SttpNode>> {
+        let candidate_limit = limit.max(1).saturating_mul(5);
+        let mut candidates = self
+            .get_by_resonance_global_async(current_avec, from_utc, to_utc, tiers, candidate_limit)
+            .await?;
+
+        rank_nodes_hybrid(&mut candidates, current_avec, query_embedding, alpha, beta);
+        candidates.truncate(limit.max(1));
+        Ok(candidates)
+    }
+
+    async fn list_nodes_async(
+        &self,
+        limit: usize,
+        session_id: Option<&str>,
+    ) -> Result<Vec<SttpNode>> {
         self.query_nodes_async(NodeQuery {
             limit: limit.clamp(1, 200),
             session_id: session_id.map(|s| s.to_string()),
             from_utc: None,
             to_utc: None,
+            tiers: None,
         })
         .await
     }
@@ -594,7 +874,8 @@ impl NodeStore for SurrealDbNodeStore {
 
     async fn put_checkpoint_async(&self, checkpoint: SyncCheckpoint) -> Result<()> {
         let tenant_id = derive_tenant_id_from_session(&checkpoint.session_id);
-        let record_id = checkpoint_record_id(&tenant_id, &checkpoint.session_id, &checkpoint.connector_id);
+        let record_id =
+            checkpoint_record_id(&tenant_id, &checkpoint.session_id, &checkpoint.connector_id);
         let include_metadata_assignment = checkpoint.metadata.is_some();
         let mut parameters = QueryParams::new();
         parameters.insert("tenant_id".to_string(), json!(tenant_id));
@@ -627,10 +908,8 @@ impl NodeStore for SurrealDbNodeStore {
             json!(checkpoint.updated_at.to_rfc3339()),
         );
 
-        let query_text = raw_queries::upsert_sync_checkpoint_query(
-            &record_id,
-            include_metadata_assignment,
-        );
+        let query_text =
+            raw_queries::upsert_sync_checkpoint_query(&record_id, include_metadata_assignment);
         self.client.raw_query(&query_text, parameters).await?;
         Ok(())
     }
@@ -713,7 +992,8 @@ impl NodeStore for SurrealDbNodeStore {
                 )
                 .await?;
 
-            let same_scope = scope.tenant_id == target_tenant_id && scope.session_id == target_session_id;
+            let same_scope =
+                scope.tenant_id == target_tenant_id && scope.session_id == target_session_id;
 
             let target_include_legacy = includes_legacy_tenant_bucket(&target_tenant_id);
             let target_temporal_nodes = if same_scope {
@@ -747,8 +1027,10 @@ impl NodeStore for SurrealDbNodeStore {
             let message = if same_scope {
                 Some("source and target scopes are identical".to_string())
             } else if conflict {
-                Some("target scope already contains rows; set allow_merge=true to override"
-                    .to_string())
+                Some(
+                    "target scope already contains rows; set allow_merge=true to override"
+                        .to_string(),
+                )
             } else {
                 if !dry_run {
                     self.apply_scope_rekey_async(
@@ -783,7 +1065,9 @@ impl NodeStore for SurrealDbNodeStore {
         Ok(BatchRekeyResult {
             dry_run,
             requested_node_ids: normalized_node_ids.len(),
-            resolved_node_ids: normalized_node_ids.len().saturating_sub(missing_node_ids.len()),
+            resolved_node_ids: normalized_node_ids
+                .len()
+                .saturating_sub(missing_node_ids.len()),
             missing_node_ids,
             scopes: scope_results,
             temporal_nodes_updated,
@@ -793,7 +1077,12 @@ impl NodeStore for SurrealDbNodeStore {
 }
 
 fn map_to_node(record: SurrealNodeRecord) -> SttpNode {
-    let _ = (record.user_psi, record.model_psi, record.comp_psi, record.resonance_delta);
+    let _ = (
+        record.user_psi,
+        record.model_psi,
+        record.comp_psi,
+        record.resonance_delta,
+    );
 
     let timestamp = parse_timestamp(&record.timestamp);
     let updated_at = record
@@ -813,6 +1102,11 @@ fn map_to_node(record: SurrealNodeRecord) -> SttpNode {
         sync_key,
         updated_at,
         source_metadata: record.source_metadata,
+        context_summary: record.context_summary,
+        embedding: record.embedding,
+        embedding_model: record.embedding_model,
+        embedding_dimensions: record.embedding_dimensions,
+        embedded_at: record.embedded_at.as_deref().map(parse_timestamp),
         psi: record.psi as f32,
         rho: record.rho as f32,
         kappa: record.kappa as f32,
@@ -841,6 +1135,79 @@ fn map_to_node(record: SurrealNodeRecord) -> SttpNode {
     }
 
     node
+}
+
+fn rank_nodes_hybrid(
+    nodes: &mut [SttpNode],
+    current_avec: AvecState,
+    query_embedding: Option<&[f32]>,
+    alpha: f32,
+    beta: f32,
+) {
+    let alpha = alpha.clamp(0.0, 1.0);
+    let beta = beta.clamp(0.0, 1.0);
+
+    nodes.sort_by(|left, right| {
+        let left_score = hybrid_score(left, current_avec, query_embedding, alpha, beta);
+        let right_score = hybrid_score(right, current_avec, query_embedding, alpha, beta);
+
+        right_score
+            .total_cmp(&left_score)
+            .then_with(|| right.updated_at.cmp(&left.updated_at))
+    });
+}
+
+fn hybrid_score(
+    node: &SttpNode,
+    target_avec: AvecState,
+    query_embedding: Option<&[f32]>,
+    alpha: f32,
+    beta: f32,
+) -> f32 {
+    let resonance = 1.0 - avec_distance(&node.model_avec, &target_avec);
+    let resonance = resonance.clamp(0.0, 1.0);
+
+    let semantic = match (query_embedding, node.embedding.as_deref()) {
+        (Some(query), Some(node_vec)) => {
+            cosine_similarity(query, node_vec).map(|v| (v + 1.0) / 2.0)
+        }
+        _ => None,
+    };
+
+    match semantic {
+        Some(value) => (alpha * resonance + beta * value).clamp(0.0, 1.0),
+        None => resonance,
+    }
+}
+
+fn avec_distance(left: &AvecState, right: &AvecState) -> f32 {
+    ((left.stability - right.stability).abs()
+        + (left.friction - right.friction).abs()
+        + (left.logic - right.logic).abs()
+        + (left.autonomy - right.autonomy).abs())
+        / 4.0
+}
+
+fn cosine_similarity(left: &[f32], right: &[f32]) -> Option<f32> {
+    if left.is_empty() || right.is_empty() || left.len() != right.len() {
+        return None;
+    }
+
+    let mut dot = 0.0f32;
+    let mut left_norm = 0.0f32;
+    let mut right_norm = 0.0f32;
+
+    for (l, r) in left.iter().zip(right.iter()) {
+        dot += l * r;
+        left_norm += l * l;
+        right_norm += r * r;
+    }
+
+    if left_norm <= f32::EPSILON || right_norm <= f32::EPSILON {
+        return None;
+    }
+
+    Some(dot / (left_norm.sqrt() * right_norm.sqrt()))
 }
 
 fn map_to_checkpoint(record: &SurrealCheckpointRecord) -> SyncCheckpoint {
@@ -921,6 +1288,48 @@ fn value_to_record_component(value: &Value) -> Option<String> {
     }
 }
 
+fn build_retrieval_predicate(
+    from_utc: Option<DateTime<Utc>>,
+    to_utc: Option<DateTime<Utc>>,
+    tiers: Option<&[String]>,
+    parameters: &mut QueryParams,
+) -> String {
+    let mut clauses = Vec::new();
+
+    if let Some(from_utc) = from_utc {
+        clauses.push("timestamp >= <datetime>$from_utc".to_string());
+        parameters.insert("from_utc".to_string(), json!(from_utc.to_rfc3339()));
+    }
+
+    if let Some(to_utc) = to_utc {
+        clauses.push("timestamp <= <datetime>$to_utc".to_string());
+        parameters.insert("to_utc".to_string(), json!(to_utc.to_rfc3339()));
+    }
+
+    let normalized_tiers = tiers
+        .unwrap_or(&[])
+        .iter()
+        .map(|tier| tier.trim().to_ascii_lowercase())
+        .filter(|tier| !tier.is_empty())
+        .collect::<Vec<_>>();
+
+    if !normalized_tiers.is_empty() {
+        let tier_clauses = normalized_tiers
+            .iter()
+            .enumerate()
+            .map(|(idx, tier)| {
+                let key = format!("tier_{idx}");
+                parameters.insert(key.clone(), json!(tier));
+                format!("string::lowercase(tier) = ${key}")
+            })
+            .collect::<Vec<_>>();
+
+        clauses.push(format!("({})", tier_clauses.join(" OR ")));
+    }
+
+    clauses.join(" AND ")
+}
+
 fn derive_tenant_id_from_session(session_id: &str) -> String {
     session_id
         .strip_prefix(TENANT_SCOPE_PREFIX)
@@ -963,6 +1372,37 @@ fn normalize_temporal_node_id(value: &str) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn existing_node_matches_candidate(
+    existing: &SurrealExistingNodeRecord,
+    candidate: &SttpNode,
+) -> bool {
+    let existing_embedded_at = parse_optional_timestamp(existing.embedded_at.as_deref());
+
+    normalize_metadata(existing.source_metadata.as_ref())
+        == normalize_metadata(candidate.source_metadata.as_ref())
+        && existing.context_summary == candidate.context_summary
+        && existing.embedding == candidate.embedding
+        && existing.embedding_model == candidate.embedding_model
+        && existing.embedding_dimensions == candidate.embedding_dimensions
+        && existing_embedded_at == candidate.embedded_at
+}
+
+fn is_sync_identity_conflict(error: &anyhow::Error) -> bool {
+    let message = error.to_string();
+    message.contains("idx_node_sync_identity") || message.contains("already contains")
+}
+
+fn extract_conflict_record_id(error: &anyhow::Error) -> Option<String> {
+    let message = error.to_string();
+    let marker = "with record `";
+    let start = message.find(marker)? + marker.len();
+    let remainder = &message[start..];
+    let end = remainder.find('`')?;
+    let raw_record = &remainder[..end];
+
+    normalize_temporal_node_id(raw_record)
 }
 
 fn normalize_metadata(metadata: Option<&ConnectorMetadata>) -> Option<String> {

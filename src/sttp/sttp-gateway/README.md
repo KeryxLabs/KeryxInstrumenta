@@ -53,7 +53,7 @@ dotnet run --project ./sttp-gateway.csproj -- \
   --http-port 8082 \
   --grpc-port 8083 \
   --database sttp_gateway \
-  --namespace keryx
+  --namespace entasis
 ```
 
 Optional local config file:

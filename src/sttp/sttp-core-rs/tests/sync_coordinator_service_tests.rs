@@ -61,6 +61,11 @@ fn build_test_node(session_id: &str, raw: &str, sync_key: &str, updated_at: &str
             .expect("timestamp should parse")
             .with_timezone(&Utc),
         source_metadata: None,
+        context_summary: None,
+        embedding: None,
+        embedding_model: None,
+        embedding_dimensions: None,
+        embedded_at: None,
         user_avec: AvecState {
             stability: 0.85,
             friction: 0.25,
@@ -142,11 +147,8 @@ async fn coordinator_pages_changes_and_advances_checkpoint_without_owning_policy
         }),
         has_more: false,
     }]));
-    let coordinator = SyncCoordinatorService::with_policy(
-        store.clone(),
-        source,
-        Arc::new(RejectSkipPolicy),
-    );
+    let coordinator =
+        SyncCoordinatorService::with_policy(store.clone(), source, Arc::new(RejectSkipPolicy));
 
     let result = coordinator
         .pull_async(SyncPullRequest {
@@ -177,6 +179,7 @@ async fn coordinator_pages_changes_and_advances_checkpoint_without_owning_policy
             session_id: Some("sync-session".to_string()),
             from_utc: None,
             to_utc: None,
+            tiers: None,
         })
         .await
         .expect("query should succeed");

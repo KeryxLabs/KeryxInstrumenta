@@ -31,7 +31,7 @@ impl Default for SurrealDbSettings {
     fn default() -> Self {
         Self {
             endpoints: SurrealDbEndpointsSettings::default(),
-            namespace: "keryx".to_string(),
+            namespace: "entasis".to_string(),
             database: "sttp-mcp".to_string(),
             user: Some("root".to_string()),
             password: Some("root".to_string()),
@@ -109,7 +109,11 @@ impl SurrealDbRuntimeOptions {
     }
 }
 
-fn normalize_embedded_endpoint(endpoint: &str, root_dir: &Path, use_remote: bool) -> Result<String> {
+fn normalize_embedded_endpoint(
+    endpoint: &str,
+    root_dir: &Path,
+    use_remote: bool,
+) -> Result<String> {
     if use_remote {
         return Ok(endpoint.to_string());
     }

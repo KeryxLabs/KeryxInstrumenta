@@ -16,14 +16,12 @@ impl RuntimeSurrealDbClient {
         user: Option<&str>,
         password: Option<&str>,
     ) -> Result<Self> {
-        let db = connect(runtime.endpoint.as_str())
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to connect to SurrealDB endpoint '{}'",
-                    runtime.endpoint
-                )
-            })?;
+        let db = connect(runtime.endpoint.as_str()).await.with_context(|| {
+            format!(
+                "failed to connect to SurrealDB endpoint '{}'",
+                runtime.endpoint
+            )
+        })?;
 
         if runtime.use_remote {
             let username = user.filter(|v| !v.trim().is_empty()).unwrap_or("root");
@@ -33,8 +31,8 @@ impl RuntimeSurrealDbClient {
                 username: username.to_string(),
                 password: password.to_string(),
             })
-                .await
-                .context("failed to authenticate against remote SurrealDB")?;
+            .await
+            .context("failed to authenticate against remote SurrealDB")?;
         } else if let (Some(username), Some(password)) = (
             user.filter(|v| !v.trim().is_empty()),
             password.filter(|v| !v.trim().is_empty()),

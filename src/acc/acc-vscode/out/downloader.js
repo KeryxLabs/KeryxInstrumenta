@@ -42,7 +42,7 @@ const path = __importStar(require("path"));
 const tar = __importStar(require("tar"));
 const child_process = __importStar(require("child_process"));
 const ACC_VERSION = '0.3.2'; // Update this with releases
-const GITHUB_RELEASES_URL = `https://github.com/KeryxLabs/KeryxInstrumenta/releases/download`;
+const GITHUB_RELEASES_URL = `https://github.com/EntasisLabs/instrumenta/releases/download`;
 const ACC_RELEASE_TAG = `acc-engine/v${ACC_VERSION}`;
 class AccServerDownloader {
     constructor(context, outputChannel) {

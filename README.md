@@ -1,9 +1,9 @@
-# KeryxInstrumenta
+# instrumenta
 <img width="892" height="848" alt="image" src="https://github.com/user-attachments/assets/185d4675-a7cc-4784-bec1-136d79f61df2" />
 
 > Protocol-first infrastructure for persistent AI memory and adaptive code intelligence.
 
-Language models are stateless by default, and codebases are harder to understand than they should be. KeryxInstrumenta is a collection of open instruments built to address both problems without hiding the machinery behind vague magic.
+Language models are stateless by default, and codebases are harder to understand than they should be. instrumenta is a collection of open instruments built to address both problems without hiding the machinery behind vague magic.
 
 Some parts of this repository help conversations survive across sessions and models. Other parts help developers and agents reason about real codebases as living systems.
 
@@ -11,7 +11,7 @@ Licensed under Apache-2.0. See [LICENSE](LICENSE).
 
 ## What This Repo Contains
 
-KeryxInstrumenta currently ships two independent instruments:
+instrumenta currently ships two independent instruments:
 
 - [`sttp`](./src/sttp): Spatio-Temporal Transfer Protocol, a full stack for persistent AI memory.
 - [`acc`](./src/acc): Adaptive Codec Context, a dimensional code-intelligence system for repository indexing and analysis.
@@ -113,7 +113,7 @@ If you want persistent conversational memory inside an MCP-capable AI client, st
 Fast path:
 
 ```bash
-docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/keryxlabs/sttp-mcp:1.2.1
+docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/entasislabs/sttp-mcp:1.2.1
 ```
 
 ### Option 2: Run the STTP stack in a browser
@@ -140,8 +140,8 @@ That doc will point you to the best entry path depending on whether you want VS 
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/KeryxLabs/KeryxInstrumenta.git
-cd KeryxInstrumenta
+git clone https://github.com/EntasisLabs/instrumenta.git
+cd instrumenta
 ```
 
 ### 2. Choose an instrument
@@ -161,14 +161,14 @@ docker compose up
 STTP MCP only:
 
 ```bash
-docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/keryxlabs/sttp-mcp:1.2.1
+docker run --rm -i -v "$PWD/sttp-data:/data" ghcr.io/entasislabs/sttp-mcp:1.2.1
 ```
 
 For anything deeper than that, the component readmes are the better source of truth.
 
 ## Release Tags And Artifacts
 
-KeryxInstrumenta uses namespaced release tags per component so each stream can evolve independently.
+instrumenta uses namespaced release tags per component so each stream can evolve independently.
 
 - `sttp-mcp/v...`
 - `sttp-gateway/v...`
@@ -237,7 +237,7 @@ Real-time ACC health tracking (Grafana):
 
 ## Why The Repo Looks This Way
 
-KeryxInstrumenta is organized around instruments rather than one monolithic platform.
+instrumenta is organized around instruments rather than one monolithic platform.
 
 - STTP is about persistent conversational state.
 - ACC is about queryable code understanding.
@@ -251,13 +251,13 @@ That separation is deliberate. You should be able to adopt one without buying in
 - Model agnostic: the instruments are not tied to one provider or one interface.
 - Infrastructure, not ideology: the goal is to give people and tools better substrate, not to bury decisions behind hype.
 
-## Keryx Ecosystem
+## Entasis Ecosystem
 
 ```text
-KeryxFlux          Herald.   Orchestration layer.
-KeryxMemento       Memory.   Persistence substrate.
-KeryxCortex        Mind.     Multi-agent intelligence.
-KeryxInstrumenta   Tools.    You are here.
+EntasisFlux          Herald.   Orchestration layer.
+EntasisMemento       Memory.   Persistence substrate.
+EntasisCortex        Mind.     Multi-agent intelligence.
+instrumenta   Tools.    You are here.
 ```
 
 ## AVEC Glossary
@@ -281,4 +281,4 @@ Contributions are welcome across instruments, adapters, docs, and integrations.
 - STTP changelog: [src/sttp/CHANGELOG.md](./src/sttp/CHANGELOG.md)
 - Component-level docs live beside the code for each instrument
 
-Part of the KeryxLabs ecosystem.
+Part of the Entasis ecosystem.

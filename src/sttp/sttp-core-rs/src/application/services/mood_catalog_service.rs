@@ -1,6 +1,4 @@
-use crate::domain::models::{
-    AvecState, MoodCatalogResult, MoodPreset, MoodSwapPreview,
-};
+use crate::domain::models::{AvecState, MoodCatalogResult, MoodPreset, MoodSwapPreview};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct MoodCatalogService;

@@ -15,8 +15,7 @@ fn should_validate_complete_node() {
     assert!(
         result.is_valid,
         "validation failed: {:?} ({:?})",
-        result.error,
-        result.reason
+        result.error, result.reason
     );
 }
 

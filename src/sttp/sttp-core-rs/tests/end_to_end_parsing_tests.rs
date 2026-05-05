@@ -18,10 +18,18 @@ fn should_parse_and_validate_complete_workflow() {
 "#;
 
     let validation = validator.validate(node_text);
-    assert!(validation.is_valid, "validation failed: {:?}", validation.error);
+    assert!(
+        validation.is_valid,
+        "validation failed: {:?}",
+        validation.error
+    );
 
     let parse_result = parser.try_parse(node_text, "regex-fix-test-2026-03-05");
-    assert!(parse_result.success, "parse failed: {:?}", parse_result.error);
+    assert!(
+        parse_result.success,
+        "parse failed: {:?}",
+        parse_result.error
+    );
 
     let node = parse_result.node.expect("node must exist");
 
